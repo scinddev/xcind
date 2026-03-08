@@ -59,7 +59,7 @@ After the workflows complete:
 
 ```bash
 # Check npm
-npm view xcind version
+npm view @scinddev/xcind version
 
 # Check GHCR
 docker pull ghcr.io/scinddev/xcind:<version>

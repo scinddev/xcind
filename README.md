@@ -214,6 +214,34 @@ sudo ./uninstall.sh
 
 ## Docker
 
+The published Docker image is available on GHCR:
+
+```bash
+docker pull ghcr.io/scinddev/xcind:latest
+```
+
+To use it, bind-mount your project directory into the container's `/workspace`
+and mount the Docker socket so `docker compose` can reach the daemon:
+
+```bash
+docker run --rm \
+  -v "$PWD":/workspace \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/scinddev/xcind:latest up -d
+```
+
+The image's entrypoint is `xcind-compose`, so any arguments are forwarded
+directly. To run `xcind-config` instead, override the entrypoint:
+
+```bash
+docker run --rm \
+  -v "$PWD":/workspace \
+  --entrypoint xcind-config \
+  ghcr.io/scinddev/xcind:latest --preview
+```
+
+### Development and testing
+
 Build and run the test suite in a container:
 
 ```bash
