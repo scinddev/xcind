@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -20,8 +21,6 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: Publish to npmjs
         run: npm publish --ignore-scripts --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-npm:
     runs-on: ubuntu-latest
