@@ -201,7 +201,7 @@ __xcind-build-compose-opts() {
   local env_file
   while IFS= read -r env_file; do
     XCIND_DOCKER_COMPOSE_OPTS+=("--env-file" "$env_file")
-  done < <(__xcind-resolve-files "$app_root" "${XCIND_ENV_FILES[@]}")
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_ENV_FILES[@]+"${XCIND_ENV_FILES[@]}"})
 
   # Resolve compose files → -f flags
   local compose_file
@@ -210,7 +210,7 @@ __xcind-build-compose-opts() {
 
   while IFS= read -r compose_file; do
     XCIND_DOCKER_COMPOSE_OPTS+=("-f" "$compose_file")
-  done < <(__xcind-resolve-files "$resolve_base" "${XCIND_COMPOSE_FILES[@]}")
+  done < <(__xcind-resolve-files "$resolve_base" ${XCIND_COMPOSE_FILES[@]+"${XCIND_COMPOSE_FILES[@]}"})
 
   # Set project directory so relative paths in compose files resolve correctly
   XCIND_DOCKER_COMPOSE_OPTS+=("--project-directory" "$app_root")
@@ -238,7 +238,7 @@ __xcind-resolve-json() {
   local env_file
   while IFS= read -r env_file; do
     env_files+=("$env_file")
-  done < <(__xcind-resolve-files "$app_root" "${XCIND_ENV_FILES[@]}")
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_ENV_FILES[@]+"${XCIND_ENV_FILES[@]}"})
 
   local compose_files=()
   local compose_file
@@ -247,13 +247,13 @@ __xcind-resolve-json() {
 
   while IFS= read -r compose_file; do
     compose_files+=("$compose_file")
-  done < <(__xcind-resolve-files "$resolve_base" "${XCIND_COMPOSE_FILES[@]}")
+  done < <(__xcind-resolve-files "$resolve_base" ${XCIND_COMPOSE_FILES[@]+"${XCIND_COMPOSE_FILES[@]}"})
 
   local bake_files=()
   local bake_file
   while IFS= read -r bake_file; do
     bake_files+=("$bake_file")
-  done < <(__xcind-resolve-files "$app_root" "${XCIND_BAKE_FILES[@]}")
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_BAKE_FILES[@]+"${XCIND_BAKE_FILES[@]}"})
 
   # Helper: convert a bash array to a JSON array string
   __to_json_array() {
@@ -267,9 +267,9 @@ __xcind-resolve-json() {
   # Build JSON with jq
   jq -n \
     --arg project_root "$app_root" \
-    --argjson compose_files "$(__to_json_array "${compose_files[@]}")" \
-    --argjson env_files "$(__to_json_array "${env_files[@]}")" \
-    --argjson bake_files "$(__to_json_array "${bake_files[@]}")" \
+    --argjson compose_files "$(__to_json_array ${compose_files[@]+"${compose_files[@]}"})" \
+    --argjson env_files "$(__to_json_array ${env_files[@]+"${env_files[@]}"})" \
+    --argjson bake_files "$(__to_json_array ${bake_files[@]+"${bake_files[@]}"})" \
     '{
             projectRoot: $project_root,
             composeFiles: $compose_files,
