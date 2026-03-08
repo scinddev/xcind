@@ -1,5 +1,5 @@
 {
-  "name": "xcind",
+  "name": "@scinddev/xcind",
   "version": "0.1.0",
   "description": "Slim shell wrapper around docker compose with per-project config",
   "bin": {
@@ -20,9 +20,12 @@
   "scripts": {
     "test": "test/test-xcind.sh"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/beausimensen/xcind.git"
+    "url": "git+https://github.com/scinddev/xcind.git"
   }
 }

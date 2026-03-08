@@ -8,8 +8,6 @@ The following secrets must be configured in the GitHub repository settings
 | Secret | Purpose |
 |--------|---------|
 | `NPM_TOKEN` | npm access token for publishing to npmjs.org |
-| `DOCKER_USERNAME` | Docker Hub username |
-| `DOCKER_PASSWORD` | Docker Hub password or access token |
 
 `GITHUB_TOKEN` is provided automatically by GitHub Actions.
 
@@ -44,16 +42,16 @@ gh release create v<version> --generate-notes
 
 Or use the GitHub web UI at the repository's releases page.
 
-The `release: published` event triggers both `release.yml` (npm publishing) and
-`release-dockerhub.yml` (Docker image publishing).
+The `release: published` event triggers both `release-npm.yml` (npm publishing) and
+`release-docker.yml` (Docker image publishing).
 
 ## What happens automatically
 
 After the GitHub Release is published:
 
-- **`release.yml`** — publishes the package to npmjs.org and GitHub Packages
-- **`release-dockerhub.yml`** — builds multi-platform images (amd64 + arm64)
-  and pushes to Docker Hub and GHCR
+- **`release-npm.yml`** — publishes the package to npmjs.org and GitHub Packages
+- **`release-docker.yml`** — builds multi-platform images (amd64 + arm64)
+  and pushes to GHCR
 
 ## Verification
 
@@ -63,11 +61,8 @@ After the workflows complete:
 # Check npm
 npm view xcind version
 
-# Check Docker Hub
-docker pull beausimensen/xcind:<version>
-
 # Check GHCR
-docker pull ghcr.io/beausimensen/xcind:<version>
+docker pull ghcr.io/scinddev/xcind:<version>
 ```
 
 You can also check the GitHub Actions tab for workflow run status.

@@ -10,7 +10,7 @@ configuration file (`.xcind.sh`).
 
    ```bash
    # npm (recommended)
-   npm install -g xcind
+   npm install -g @scinddev/xcind
 
    # Or use the install script
    ./install.sh /usr/local
@@ -191,11 +191,11 @@ resolve compose files and env files for your IDE's Docker integration.
 
 ```bash
 # Global install
-npm install -g xcind
+npm install -g @scinddev/xcind
 
 # Or run directly with npx
-npx xcind-compose up -d
-npx xcind-config --preview
+npx -p @scinddev/xcind xcind-compose up -d
+npx -p @scinddev/xcind xcind-config --preview
 ```
 
 ### Install script

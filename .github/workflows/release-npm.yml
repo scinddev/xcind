@@ -19,7 +19,7 @@ jobs:
           node-version: lts/*
           registry-url: https://registry.npmjs.org
       - name: Publish to npmjs
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -34,8 +34,6 @@ jobs:
         with:
           node-version: lts/*
           registry-url: https://npm.pkg.github.com
-      - name: Scope package for GitHub Packages
-        run: npm init -y --scope ${{ github.repository_owner }}
       - name: Publish to GitHub Packages
         run: npm publish --ignore-scripts
         env:
