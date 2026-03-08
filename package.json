@@ -1,0 +1,28 @@
+{
+  "name": "xcind",
+  "version": "0.1.0",
+  "description": "Slim shell wrapper around docker compose with per-project config",
+  "bin": {
+    "xcind-compose": "bin/xcind-compose",
+    "xcind-config": "bin/xcind-config"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "install.sh",
+    "uninstall.sh"
+  ],
+  "directories": {
+    "bin": "bin",
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "test/test-xcind.sh"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beausimensen/xcind.git"
+  }
+}

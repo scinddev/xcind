@@ -1,0 +1,9 @@
+# Copy to compose.override.yaml for local development:
+#   cp compose.override.dist compose.override.yaml
+services:
+  xcind:
+    entrypoint: ["bash"]
+    command: []
+    # build:
+    #   args:
+    #     BASHVER: "5.1"

@@ -1,0 +1,105 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shfmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install shfmt
+        run: |
+          curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o shfmt
+          chmod +x shfmt
+          sudo mv shfmt /usr/local/bin/
+      - name: Run shfmt
+        run: shfmt --diff .
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck
+        run: |
+          shellcheck \
+            bin/xcind-compose \
+            bin/xcind-config \
+            lib/xcind/xcind-lib.sh \
+            test/test-xcind.sh \
+            install.sh \
+            uninstall.sh
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+          - macos-14
+          - macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Run tests
+        run: bash test/test-xcind.sh
+
+  npm-install-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642195f882660b323c62554 # v4.4.0
+        with:
+          node-version: lts/*
+      - name: Pack and install globally
+        run: |
+          npm pack
+          npm install -g ./xcind-*.tgz
+      - name: Verify xcind-compose is on PATH
+        run: command -v xcind-compose
+      - name: Verify xcind-config is on PATH
+        run: command -v xcind-config
+
+  bash-version:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bashver:
+          - "3.2"
+          - "4.0"
+          - "4.4"
+          - "5.0"
+          - "5.1"
+          - "5"
+          - latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build image (bash ${{ matrix.bashver }})
+        run: docker build --build-arg "BASHVER=${{ matrix.bashver }}" -t "xcind-test:${{ matrix.bashver }}" .
+      - name: Run tests in container
+        run: |
+          docker run --rm \
+            -v "$PWD:/opt/xcind:ro" \
+            -w /opt/xcind \
+            --entrypoint bash \
+            "xcind-test:${{ matrix.bashver }}" \
+            test/test-xcind.sh

@@ -1,0 +1,9 @@
+.git
+.direnv
+.claude
+node_modules
+*.tgz
+.envrc
+flake.lock
+flake.nix
+compose.override.yaml

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DIR=$(cd "$(dirname "${0}")" && pwd)
+PROJECT_ROOT=$(cd "$DIR/.." && pwd)
+
+usage() {
+  echo "Usage: release.sh --major | --minor | --patch"
+  exit 1
+}
+
+# --- Parse arguments ---
+
+BUMP=""
+case "${1:-}" in
+--major) BUMP="major" ;;
+--minor) BUMP="minor" ;;
+--patch) BUMP="patch" ;;
+*) usage ;;
+esac
+
+# --- Read current version ---
+
+CURRENT_VERSION=$(jq -r .version "$PROJECT_ROOT/package.json")
+
+IFS='.' read -r MAJOR MINOR PATCH <<<"$CURRENT_VERSION"
+
+# --- Compute new version ---
+
+case "$BUMP" in
+major)
+  MAJOR=$((MAJOR + 1))
+  MINOR=0
+  PATCH=0
+  ;;
+minor)
+  MINOR=$((MINOR + 1))
+  PATCH=0
+  ;;
+patch)
+  PATCH=$((PATCH + 1))
+  ;;
+esac
+
+NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+echo "Bumping version: ${CURRENT_VERSION} -> ${NEW_VERSION}"
+
+# --- Update files ---
+
+# package.json
+sed -i'' -e "s/\"version\": \"${CURRENT_VERSION}\"/\"version\": \"${NEW_VERSION}\"/" \
+  "$PROJECT_ROOT/package.json"
+
+# lib/xcind/xcind-lib.sh
+sed -i'' -e "s/XCIND_VERSION=\"${CURRENT_VERSION}\"/XCIND_VERSION=\"${NEW_VERSION}\"/" \
+  "$PROJECT_ROOT/lib/xcind/xcind-lib.sh"
+
+# Dockerfile
+sed -i'' -e "s/org.opencontainers.image.version=\"${CURRENT_VERSION}\"/org.opencontainers.image.version=\"${NEW_VERSION}\"/" \
+  "$PROJECT_ROOT/Dockerfile"
+
+# --- Git commit and tag ---
+
+git -C "$PROJECT_ROOT" add \
+  package.json \
+  lib/xcind/xcind-lib.sh \
+  Dockerfile
+
+git -C "$PROJECT_ROOT" commit -m "release: v${NEW_VERSION}"
+git -C "$PROJECT_ROOT" tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION}"
+
+echo ""
+echo "Tagged v${NEW_VERSION}. Run: git push --follow-tags"
