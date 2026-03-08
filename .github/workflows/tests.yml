@@ -76,7 +76,7 @@ jobs:
       - name: Pack and install globally
         run: |
           npm pack
-          npm install -g ./xcind-*.tgz
+          npm install -g ./scinddev-xcind-*.tgz
       - name: Verify xcind-compose is on PATH
         run: command -v xcind-compose
       - name: Verify xcind-config is on PATH

@@ -13,12 +13,12 @@ The following secrets must be configured in the GitHub repository settings
 
 ## Bump the version
 
-Run `contrib/release.sh` with the desired bump type:
+Run `contrib/release` with the desired bump type:
 
 ```bash
-contrib/release.sh --patch   # 0.1.0 → 0.1.1
-contrib/release.sh --minor   # 0.1.0 → 0.2.0
-contrib/release.sh --major   # 0.1.0 → 1.0.0
+contrib/release --patch   # 0.1.0 → 0.1.1
+contrib/release --minor   # 0.1.0 → 0.2.0
+contrib/release --major   # 0.1.0 → 1.0.0
 ```
 
 This updates the version in `package.json`, `lib/xcind/xcind-lib.bash`, and
