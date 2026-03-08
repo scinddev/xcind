@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# xcind-lib.sh — Shared library for xcind tooling
+# xcind-lib.bash — Shared library for xcind tooling
 #
 # This file is sourced by xcind-compose and xcind-config.
 # It provides app root detection, config loading, and file resolution.

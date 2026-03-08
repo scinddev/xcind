@@ -52,9 +52,9 @@ echo "Bumping version: ${CURRENT_VERSION} -> ${NEW_VERSION}"
 sed -i'' -e "s/\"version\": \"${CURRENT_VERSION}\"/\"version\": \"${NEW_VERSION}\"/" \
   "$PROJECT_ROOT/package.json"
 
-# lib/xcind/xcind-lib.sh
+# lib/xcind/xcind-lib.bash
 sed -i'' -e "s/XCIND_VERSION=\"${CURRENT_VERSION}\"/XCIND_VERSION=\"${NEW_VERSION}\"/" \
-  "$PROJECT_ROOT/lib/xcind/xcind-lib.sh"
+  "$PROJECT_ROOT/lib/xcind/xcind-lib.bash"
 
 # Dockerfile
 sed -i'' -e "s/org.opencontainers.image.version=\"${CURRENT_VERSION}\"/org.opencontainers.image.version=\"${NEW_VERSION}\"/" \
@@ -64,7 +64,7 @@ sed -i'' -e "s/org.opencontainers.image.version=\"${CURRENT_VERSION}\"/org.openc
 
 git -C "$PROJECT_ROOT" add \
   package.json \
-  lib/xcind/xcind-lib.sh \
+  lib/xcind/xcind-lib.bash \
   Dockerfile
 
 git -C "$PROJECT_ROOT" commit -m "release: v${NEW_VERSION}"

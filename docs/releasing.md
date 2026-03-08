@@ -23,7 +23,7 @@ contrib/release.sh --minor   # 0.1.0 → 0.2.0
 contrib/release.sh --major   # 0.1.0 → 1.0.0
 ```
 
-This updates the version in `package.json`, `lib/xcind/xcind-lib.sh`, and
+This updates the version in `package.json`, `lib/xcind/xcind-lib.bash`, and
 `Dockerfile`, then creates a commit and an annotated tag `v<version>`.
 
 ## Push to GitHub

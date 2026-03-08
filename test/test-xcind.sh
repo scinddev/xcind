@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XCIND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-source "$XCIND_ROOT/lib/xcind/xcind-lib.sh"
+source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
 
 PASS=0
 FAIL=0

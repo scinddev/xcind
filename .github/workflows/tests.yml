@@ -40,7 +40,7 @@ jobs:
           shellcheck \
             bin/xcind-compose \
             bin/xcind-config \
-            lib/xcind/xcind-lib.sh \
+            lib/xcind/xcind-lib.bash \
             test/test-xcind.sh \
             install.sh \
             uninstall.sh

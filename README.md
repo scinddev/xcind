@@ -243,7 +243,7 @@ xcind/
 │   ├── xcind-compose          # Main executable — wraps docker compose
 │   └── xcind-config           # Config dump — JSON, preview, file listing
 ├── lib/xcind/
-│   └── xcind-lib.sh           # Shared library (sourced by other scripts)
+│   └── xcind-lib.bash         # Shared library (sourced by other scripts)
 ├── test/
 │   └── test-xcind.sh          # Test suite
 ├── examples/
