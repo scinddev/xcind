@@ -225,6 +225,33 @@ sudo ./uninstall.sh
 ./uninstall.sh ~/.local
 ```
 
+### Nix
+
+Xcind provides a Nix flake for installation and integration.
+
+```bash
+# Install imperatively
+nix profile install github:scinddev/xcind
+
+# Or run directly without installing
+nix run github:scinddev/xcind -- up -d
+nix run github:scinddev/xcind#xcind -- up -d
+```
+
+To use the overlay in a NixOS or home-manager configuration:
+
+```nix
+{
+  inputs.xcind.url = "github:scinddev/xcind";
+
+  # Add the overlay
+  nixpkgs.overlays = [ xcind.overlays.default ];
+
+  # Then use pkgs.xcind in your packages
+  environment.systemPackages = [ pkgs.xcind ];
+}
+```
+
 ## Docker
 
 The published Docker image is available on GHCR:
