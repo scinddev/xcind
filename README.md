@@ -238,7 +238,24 @@ nix run github:scinddev/xcind -- up -d
 nix run github:scinddev/xcind#xcind -- up -d
 ```
 
-To use the overlay in a NixOS or home-manager configuration:
+To use in another flake, reference the package output directly:
+
+```nix
+{
+  inputs.xcind.url = "github:scinddev/xcind";
+
+  outputs = { self, nixpkgs, xcind, ... }:
+    let
+      system = "x86_64-linux"; # or "aarch64-darwin", etc.
+    in {
+      devShells.${system}.default = nixpkgs.legacyPackages.${system}.mkShell {
+        buildInputs = [ xcind.packages.${system}.default ];
+      };
+    };
+}
+```
+
+Alternatively, use the overlay to access xcind as `pkgs.xcind`:
 
 ```nix
 {
@@ -319,7 +336,18 @@ xcind/
 │   │   └── .xcind.sh          # Simple example
 │   └── advanced/
 │       └── .xcind.sh          # Variable expansion example
+├── contrib/
+│   ├── release                # Release helper script
+│   └── test-all               # Full test runner (Docker + unit)
+├── docs/
+│   └── releasing.md           # Release process documentation
+├── compose.yaml               # Default Docker Compose configuration
+├── compose.override.dist      # Compose override template
+├── Dockerfile                 # Container image build
+├── flake.nix                  # Nix flake (package + overlay)
+├── flake.lock                 # Nix flake lock file
 ├── install.sh                 # Install to a PREFIX
 ├── uninstall.sh               # Remove from a PREFIX
+├── package.json               # npm package manifest
 └── README.md
 ```
