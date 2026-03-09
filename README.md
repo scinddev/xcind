@@ -20,6 +20,12 @@ configuration file (`.xcind.sh`).
 
    ```bash
    # .xcind.sh
+   # For projects using standard compose.yaml / .env, an empty file is enough!
+   # Defaults: XCIND_COMPOSE_FILES looks for compose.yaml, compose.yml,
+   #           docker-compose.yaml, docker-compose.yml
+   #           XCIND_ENV_FILES looks for .env
+   #
+   # Override only if your project needs something different:
    XCIND_ENV_FILES=(".env" ".env.local")
    XCIND_COMPOSE_DIR="docker"
    XCIND_COMPOSE_FILES=("compose.yaml" "compose.dev.yaml")
@@ -56,6 +62,8 @@ Array of environment file patterns, relative to the app root. Each file that
 exists on disk is passed via `--env-file`. For each file, an `.override` variant
 is also checked (e.g., `.env` → `.env.override`).
 
+**Default:** `(".env")`
+
 ```bash
 XCIND_ENV_FILES=(".env" ".env.local" '.env.${APP_ENV}')
 ```
@@ -74,6 +82,11 @@ XCIND_COMPOSE_DIR="docker"
 Array of compose file patterns, relative to `XCIND_COMPOSE_DIR` (or the app root
 if `XCIND_COMPOSE_DIR` is unset). Each file that exists on disk is passed via `-f`.
 For each file, an `.override` variant is also checked.
+
+**Default:** `("compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml")`
+
+This mirrors Docker Compose's own file discovery. Only files that actually exist
+on disk are used, so listing all four names is safe.
 
 ```bash
 XCIND_COMPOSE_FILES=(

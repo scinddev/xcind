@@ -195,6 +195,61 @@ unset APP_ENV
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-load-config defaults ==="
+
+# Set up a project with standard Docker Compose files and a minimal .xcind.sh
+DEFAULT_PROJECT=$(mktemp -d)
+echo '# empty config — rely on defaults' >"$DEFAULT_PROJECT/.xcind.sh"
+touch "$DEFAULT_PROJECT/compose.yaml"
+touch "$DEFAULT_PROJECT/docker-compose.yml"
+touch "$DEFAULT_PROJECT/.env"
+
+__xcind-load-config "$DEFAULT_PROJECT"
+
+assert_eq "default XCIND_COMPOSE_FILES count" "4" "${#XCIND_COMPOSE_FILES[@]}"
+assert_eq "default XCIND_COMPOSE_FILES[0]" "compose.yaml" "${XCIND_COMPOSE_FILES[0]}"
+assert_eq "default XCIND_COMPOSE_FILES[1]" "compose.yml" "${XCIND_COMPOSE_FILES[1]}"
+assert_eq "default XCIND_COMPOSE_FILES[2]" "docker-compose.yaml" "${XCIND_COMPOSE_FILES[2]}"
+assert_eq "default XCIND_COMPOSE_FILES[3]" "docker-compose.yml" "${XCIND_COMPOSE_FILES[3]}"
+assert_eq "default XCIND_ENV_FILES count" "1" "${#XCIND_ENV_FILES[@]}"
+assert_eq "default XCIND_ENV_FILES[0]" ".env" "${XCIND_ENV_FILES[0]}"
+assert_eq "default XCIND_COMPOSE_DIR is empty" "" "$XCIND_COMPOSE_DIR"
+assert_eq "default XCIND_BAKE_FILES count" "0" "${#XCIND_BAKE_FILES[@]}"
+
+# Build compose opts and verify only existing files are included
+__xcind-build-compose-opts "$DEFAULT_PROJECT"
+default_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+
+assert_contains "default opts include compose.yaml" "compose.yaml" "$default_opts"
+assert_contains "default opts include docker-compose.yml" "docker-compose.yml" "$default_opts"
+assert_not_contains "default opts skip docker-compose.yaml (doesn't exist)" "docker-compose.yaml" "$default_opts"
+assert_contains "default opts include .env" ".env" "$default_opts"
+
+rm -rf "$DEFAULT_PROJECT"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-load-config overrides defaults ==="
+
+OVERRIDE_PROJECT=$(mktemp -d)
+cat >"$OVERRIDE_PROJECT/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("my-compose.yaml")
+XCIND_ENV_FILES=(".env.custom")
+EOF
+touch "$OVERRIDE_PROJECT/my-compose.yaml"
+touch "$OVERRIDE_PROJECT/.env.custom"
+
+__xcind-load-config "$OVERRIDE_PROJECT"
+
+assert_eq "override XCIND_COMPOSE_FILES count" "1" "${#XCIND_COMPOSE_FILES[@]}"
+assert_eq "override XCIND_COMPOSE_FILES[0]" "my-compose.yaml" "${XCIND_COMPOSE_FILES[0]}"
+assert_eq "override XCIND_ENV_FILES count" "1" "${#XCIND_ENV_FILES[@]}"
+assert_eq "override XCIND_ENV_FILES[0]" ".env.custom" "${XCIND_ENV_FILES[0]}"
+
+rm -rf "$OVERRIDE_PROJECT"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-load-config + full resolution ==="
 
 cat >"$MOCK_PROJECT/.xcind.sh" <<'EOF'

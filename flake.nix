@@ -7,6 +7,32 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
+    let
+      mkXcind = pkgs: pkgs.stdenv.mkDerivation {
+        pname = "xcind";
+        version = "0.1.0";
+        src = ./.;
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+        dontBuild = true;
+        installPhase = ''
+          runHook preInstall
+          bash ./install.sh "$out"
+          runHook postInstall
+        '';
+        postInstall = ''
+          wrapProgram "$out/bin/xcind-compose" \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils ]}
+          wrapProgram "$out/bin/xcind-config" \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.jq ]}
+        '';
+        meta = with pkgs.lib; {
+          description = "Docker Compose environment manager";
+          license = licenses.mit;
+          platforms = platforms.unix;
+          mainProgram = "xcind-compose";
+        };
+      };
+    in
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -19,6 +45,11 @@
         ]);
       in
       {
+        packages = {
+          default = mkXcind pkgs;
+          xcind = mkXcind pkgs;
+        };
+
         devShells.default = pkgs.mkShell {
           name = "xcind-dev";
 
@@ -66,5 +97,9 @@
           '';
         };
       }
-    );
+    ) // {
+      overlays.default = final: _prev: {
+        xcind = mkXcind final;
+      };
+    };
 }

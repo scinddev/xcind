@@ -13,3 +13,5 @@ report.log
 /compose.override.yaml
 # direnv
 /.direnv/
+# nix
+/result

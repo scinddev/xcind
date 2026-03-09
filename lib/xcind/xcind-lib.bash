@@ -69,8 +69,10 @@ __xcind-load-config() {
   local app_root="$1"
 
   # Defaults — can be overridden by .xcind.sh
-  XCIND_COMPOSE_FILES=()
-  XCIND_ENV_FILES=()
+  # Mirror Docker Compose's default file discovery; only files that exist on
+  # disk are used (see __xcind-resolve-files).
+  XCIND_COMPOSE_FILES=("compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml")
+  XCIND_ENV_FILES=(".env")
   XCIND_BAKE_FILES=()
   XCIND_COMPOSE_DIR=""
 
