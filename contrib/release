@@ -60,12 +60,17 @@ sed -i'' -e "s/XCIND_VERSION=\"${CURRENT_VERSION}\"/XCIND_VERSION=\"${NEW_VERSIO
 sed -i'' -e "s/org.opencontainers.image.version=\"${CURRENT_VERSION}\"/org.opencontainers.image.version=\"${NEW_VERSION}\"/" \
   "$PROJECT_ROOT/Dockerfile"
 
+# flake.nix
+sed -i'' -e "s/version = \"${CURRENT_VERSION}\";/version = \"${NEW_VERSION}\";/" \
+  "$PROJECT_ROOT/flake.nix"
+
 # --- Git commit and tag ---
 
 git -C "$PROJECT_ROOT" add \
   package.json \
   lib/xcind/xcind-lib.bash \
-  Dockerfile
+  Dockerfile \
+  flake.nix
 
 git -C "$PROJECT_ROOT" commit -m "release: v${NEW_VERSION}"
 git -C "$PROJECT_ROOT" tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION}"

@@ -21,8 +21,9 @@ contrib/release --minor   # 0.1.0 → 0.2.0
 contrib/release --major   # 0.1.0 → 1.0.0
 ```
 
-This updates the version in `package.json`, `lib/xcind/xcind-lib.bash`, and
-`Dockerfile`, then creates a commit and an annotated tag `v<version>`.
+This updates the version in `package.json`, `lib/xcind/xcind-lib.bash`,
+`Dockerfile`, and `flake.nix`, then creates a commit and an annotated tag
+`v<version>`.
 
 ## Push to GitHub
 
