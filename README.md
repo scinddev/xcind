@@ -1,7 +1,7 @@
-# Xcind — Docker Compose Project Wrapper
+# Xcind — Docker Compose Application Wrapper
 
 Xcind is a slim shell wrapper around `docker compose` that automatically resolves
-compose files, environment files, and override variants based on a per-project
+compose files, environment files, and override variants based on a per-application
 configuration file (`.xcind.sh`).
 
 ## Quick Start
@@ -16,22 +16,22 @@ configuration file (`.xcind.sh`).
    ./install.sh /usr/local
    ```
 
-2. **Configure your project** — create a `.xcind.sh` file in your project root:
+2. **Configure your application** — create a `.xcind.sh` file in your application root:
 
    ```bash
    # .xcind.sh
-   # For projects using standard compose.yaml / .env, an empty file is enough!
+   # For applications using standard compose.yaml / .env, an empty file is enough!
    # Defaults: XCIND_COMPOSE_FILES looks for compose.yaml, compose.yml,
    #           docker-compose.yaml, docker-compose.yml
    #           XCIND_ENV_FILES looks for .env
    #
-   # Override only if your project needs something different:
+   # Override only if your application needs something different:
    XCIND_ENV_FILES=(".env" ".env.local")
    XCIND_COMPOSE_DIR="docker"
    XCIND_COMPOSE_FILES=("compose.yaml" "compose.dev.yaml")
    ```
 
-3. **Use it** — from anywhere inside your project:
+3. **Use it** — from anywhere inside your application:
 
    ```bash
    xcind-compose up -d
@@ -45,7 +45,7 @@ configuration file (`.xcind.sh`).
 When you run `xcind-compose`, it:
 
 1. Walks upward from `$PWD` to find the nearest `.xcind.sh` (the "app root")
-2. Sources `.xcind.sh` to load project-specific configuration
+2. Sources `.xcind.sh` to load application-specific configuration
 3. For each file pattern in the config, expands shell variables and checks if
    the file exists on disk
 4. For each existing file, also checks for an `.override` variant
@@ -169,7 +169,7 @@ xcind-config --files      # List resolved files
 Set `XCIND_APP_ROOT` to bypass automatic root detection:
 
 ```bash
-XCIND_APP_ROOT=/path/to/project xcind-compose up
+XCIND_APP_ROOT=/path/to/app xcind-compose up
 ```
 
 ## Tab Completion

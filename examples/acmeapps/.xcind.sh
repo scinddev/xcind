@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034
-# .xcind.sh — Xcind project configuration for acmeapps
+# .xcind.sh — Xcind application configuration for acmeapps
 #
 # This file is sourced by xcind-compose to determine which Docker Compose
-# files, environment files, and other settings apply to this project.
+# files, environment files, and other settings apply to this application.
 #
 # It is also the marker file that xcind uses to detect the app root:
 # xcind walks upward from $PWD until it finds a directory containing .xcind.sh.

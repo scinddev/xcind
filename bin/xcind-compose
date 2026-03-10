@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# xcind-compose — Docker Compose wrapper that resolves project config from .xcind.sh
+# xcind-compose — Docker Compose wrapper that resolves application config from .xcind.sh
 #
 # Usage:
 #   xcind-compose up -d
@@ -9,7 +9,7 @@
 #
 # This script:
 #   1. Detects the app root by walking upward to find .xcind.sh
-#   2. Sources .xcind.sh to load project-specific config
+#   2. Sources .xcind.sh to load application-specific config
 #   3. Resolves compose files, env files, and override variants
 #   4. Passes everything through to `docker compose`
 #
@@ -45,7 +45,7 @@ fi
 # Detect app root
 app_root=$(__xcind-app-root) || exit 1
 
-# Load project config
+# Load application config
 __xcind-load-config "$app_root" || exit 1
 
 # Build compose options

@@ -42,7 +42,7 @@ __xcind-app-root() {
     parent_dir=$(dirname "$current_dir")
 
     if [ "$parent_dir" = "/" ] || [ "$parent_dir" = "$current_dir" ]; then
-      echo "Error: No .xcind.sh found. Are you inside an xcind-managed project?" >&2
+      echo "Error: No .xcind.sh found. Are you inside an xcind-managed application?" >&2
       return 1
     fi
 
@@ -214,7 +214,7 @@ __xcind-build-compose-opts() {
     XCIND_DOCKER_COMPOSE_OPTS+=("-f" "$compose_file")
   done < <(__xcind-resolve-files "$resolve_base" ${XCIND_COMPOSE_FILES[@]+"${XCIND_COMPOSE_FILES[@]}"})
 
-  # Set project directory so relative paths in compose files resolve correctly
+  # Set Docker Compose project directory so relative paths in compose files resolve correctly
   XCIND_DOCKER_COMPOSE_OPTS+=("--project-directory" "$app_root")
 }
 
@@ -268,12 +268,12 @@ __xcind-resolve-json() {
 
   # Build JSON with jq
   jq -n \
-    --arg project_root "$app_root" \
+    --arg app_root "$app_root" \
     --argjson compose_files "$(__to_json_array ${compose_files[@]+"${compose_files[@]}"})" \
     --argjson env_files "$(__to_json_array ${env_files[@]+"${env_files[@]}"})" \
     --argjson bake_files "$(__to_json_array ${bake_files[@]+"${bake_files[@]}"})" \
     '{
-            projectRoot: $project_root,
+            appRoot: $app_root,
             composeFiles: $compose_files,
             envFiles: $env_files,
             bakeFiles: $bake_files

@@ -80,22 +80,22 @@ assert_eq "hcl file" \
 echo ""
 echo "=== Test: __xcind-app-root ==="
 
-# Set up a mock project
-MOCK_PROJECT=$(mktemp -d)
-mkdir -p "$MOCK_PROJECT/src/deep/nested"
-echo '# test config' >"$MOCK_PROJECT/.xcind.sh"
+# Set up a mock application
+MOCK_APP=$(mktemp -d)
+mkdir -p "$MOCK_APP/src/deep/nested"
+echo '# test config' >"$MOCK_APP/.xcind.sh"
 
-# Test: find from project root
-result=$(__xcind-app-root "$MOCK_PROJECT")
-assert_eq "finds root from root" "$MOCK_PROJECT" "$result"
+# Test: find from application root
+result=$(__xcind-app-root "$MOCK_APP")
+assert_eq "finds root from root" "$MOCK_APP" "$result"
 
 # Test: find from nested dir
-result=$(__xcind-app-root "$MOCK_PROJECT/src/deep/nested")
-assert_eq "finds root from nested" "$MOCK_PROJECT" "$result"
+result=$(__xcind-app-root "$MOCK_APP/src/deep/nested")
+assert_eq "finds root from nested" "$MOCK_APP" "$result"
 
 # Test: explicit XCIND_APP_ROOT overrides detection
 # shellcheck disable=SC2034
-XCIND_APP_ROOT="/explicit/path" result=$(__xcind-app-root "$MOCK_PROJECT/src")
+XCIND_APP_ROOT="/explicit/path" result=$(__xcind-app-root "$MOCK_APP/src")
 assert_eq "XCIND_APP_ROOT override" "/explicit/path" "$result"
 unset XCIND_APP_ROOT
 
@@ -104,32 +104,32 @@ EMPTY_DIR=$(mktemp -d)
 result=$(__xcind-app-root "$EMPTY_DIR" 2>/dev/null) && status=0 || status=$?
 assert_eq "fails without .xcind.sh" "1" "$status"
 
-rm -rf "$MOCK_PROJECT" "$EMPTY_DIR"
+rm -rf "$MOCK_APP" "$EMPTY_DIR"
 
 # ======================================================================
 echo ""
 echo "=== Test: __xcind-resolve-files ==="
 
-# Set up a mock project with files
-MOCK_PROJECT=$(mktemp -d)
-mkdir -p "$MOCK_PROJECT/docker"
+# Set up a mock application with files
+MOCK_APP=$(mktemp -d)
+mkdir -p "$MOCK_APP/docker"
 
 # Create some compose files
-touch "$MOCK_PROJECT/docker/compose.yaml"
-touch "$MOCK_PROJECT/docker/compose.override.yaml"
-touch "$MOCK_PROJECT/docker/compose.common.yaml"
-touch "$MOCK_PROJECT/docker/compose.dev.yaml"
-touch "$MOCK_PROJECT/docker/compose.dev.override.yaml"
+touch "$MOCK_APP/docker/compose.yaml"
+touch "$MOCK_APP/docker/compose.override.yaml"
+touch "$MOCK_APP/docker/compose.common.yaml"
+touch "$MOCK_APP/docker/compose.dev.yaml"
+touch "$MOCK_APP/docker/compose.dev.override.yaml"
 # compose.traefik.yaml does NOT exist (should be skipped)
 # compose.common.override.yaml does NOT exist (should be skipped)
 
 # Create env files
-touch "$MOCK_PROJECT/.env"
-touch "$MOCK_PROJECT/.env.local"
+touch "$MOCK_APP/.env"
+touch "$MOCK_APP/.env.local"
 # .env.override does NOT exist
 
 resolved=$(
-  __xcind-resolve-files "$MOCK_PROJECT/docker" \
+  __xcind-resolve-files "$MOCK_APP/docker" \
     "compose.yaml" \
     "compose.common.yaml" \
     "compose.dev.yaml" \
@@ -158,10 +158,10 @@ assert_not_contains "skips compose.traefik.yaml (doesn't exist)" \
   "compose.traefik" "$resolved"
 
 # Test env file resolution
-env_resolved=$(__xcind-resolve-files "$MOCK_PROJECT" ".env" ".env.local")
+env_resolved=$(__xcind-resolve-files "$MOCK_APP" ".env" ".env.local")
 
-assert_contains "includes .env" "$MOCK_PROJECT/.env" "$env_resolved"
-assert_contains "includes .env.local" "$MOCK_PROJECT/.env.local" "$env_resolved"
+assert_contains "includes .env" "$MOCK_APP/.env" "$env_resolved"
+assert_contains "includes .env.local" "$MOCK_APP/.env.local" "$env_resolved"
 assert_not_contains "skips .env.override (doesn't exist)" \
   ".env.override" "$env_resolved"
 
@@ -171,7 +171,7 @@ echo "=== Test: Variable expansion in file patterns ==="
 
 export APP_ENV="dev"
 var_resolved=$(
-  __xcind-resolve-files "$MOCK_PROJECT/docker" \
+  __xcind-resolve-files "$MOCK_APP/docker" \
     'compose.${APP_ENV}.yaml'
 )
 
@@ -184,7 +184,7 @@ assert_contains "derives override for expanded pattern" \
 # Test with a different APP_ENV value where file doesn't exist
 export APP_ENV="prod"
 prod_resolved=$(
-  __xcind-resolve-files "$MOCK_PROJECT/docker" \
+  __xcind-resolve-files "$MOCK_APP/docker" \
     'compose.${APP_ENV}.yaml'
 )
 
@@ -197,14 +197,14 @@ unset APP_ENV
 echo ""
 echo "=== Test: __xcind-load-config defaults ==="
 
-# Set up a project with standard Docker Compose files and a minimal .xcind.sh
-DEFAULT_PROJECT=$(mktemp -d)
-echo '# empty config — rely on defaults' >"$DEFAULT_PROJECT/.xcind.sh"
-touch "$DEFAULT_PROJECT/compose.yaml"
-touch "$DEFAULT_PROJECT/docker-compose.yml"
-touch "$DEFAULT_PROJECT/.env"
+# Set up an application with standard Docker Compose files and a minimal .xcind.sh
+DEFAULT_APP=$(mktemp -d)
+echo '# empty config — rely on defaults' >"$DEFAULT_APP/.xcind.sh"
+touch "$DEFAULT_APP/compose.yaml"
+touch "$DEFAULT_APP/docker-compose.yml"
+touch "$DEFAULT_APP/.env"
 
-__xcind-load-config "$DEFAULT_PROJECT"
+__xcind-load-config "$DEFAULT_APP"
 
 assert_eq "default XCIND_COMPOSE_FILES count" "4" "${#XCIND_COMPOSE_FILES[@]}"
 assert_eq "default XCIND_COMPOSE_FILES[0]" "compose.yaml" "${XCIND_COMPOSE_FILES[0]}"
@@ -217,7 +217,7 @@ assert_eq "default XCIND_COMPOSE_DIR is empty" "" "$XCIND_COMPOSE_DIR"
 assert_eq "default XCIND_BAKE_FILES count" "0" "${#XCIND_BAKE_FILES[@]}"
 
 # Build compose opts and verify only existing files are included
-__xcind-build-compose-opts "$DEFAULT_PROJECT"
+__xcind-build-compose-opts "$DEFAULT_APP"
 default_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
 
 assert_contains "default opts include compose.yaml" "compose.yaml" "$default_opts"
@@ -225,7 +225,7 @@ assert_contains "default opts include docker-compose.yml" "docker-compose.yml" "
 assert_not_contains "default opts skip docker-compose.yaml (doesn't exist)" "docker-compose.yaml" "$default_opts"
 assert_contains "default opts include .env" ".env" "$default_opts"
 
-rm -rf "$DEFAULT_PROJECT"
+rm -rf "$DEFAULT_APP"
 
 # ======================================================================
 echo ""
@@ -252,7 +252,7 @@ rm -rf "$OVERRIDE_PROJECT"
 echo ""
 echo "=== Test: __xcind-load-config + full resolution ==="
 
-cat >"$MOCK_PROJECT/.xcind.sh" <<'EOF'
+cat >"$MOCK_APP/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_DIR="docker"
 XCIND_COMPOSE_FILES=(
     "compose.yaml"
@@ -266,14 +266,14 @@ XCIND_ENV_FILES=(
 XCIND_BAKE_FILES=()
 EOF
 
-__xcind-load-config "$MOCK_PROJECT"
+__xcind-load-config "$MOCK_APP"
 
 assert_eq "loads XCIND_COMPOSE_DIR" "docker" "$XCIND_COMPOSE_DIR"
 assert_eq "loads 3 compose files" "3" "${#XCIND_COMPOSE_FILES[@]}"
 assert_eq "loads 2 env files" "2" "${#XCIND_ENV_FILES[@]}"
 
 # Test full compose opts build
-__xcind-build-compose-opts "$MOCK_PROJECT"
+__xcind-build-compose-opts "$MOCK_APP"
 opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
 
 assert_contains "opts include --env-file" "--env-file" "$opts"
@@ -286,10 +286,10 @@ echo ""
 echo "=== Test: JSON output ==="
 
 if command -v jq &>/dev/null; then
-  json=$(__xcind-resolve-json "$MOCK_PROJECT")
+  json=$(__xcind-resolve-json "$MOCK_APP")
 
-  json_root=$(echo "$json" | jq -r '.projectRoot')
-  assert_eq "JSON projectRoot" "$MOCK_PROJECT" "$json_root"
+  json_root=$(echo "$json" | jq -r '.appRoot')
+  assert_eq "JSON appRoot" "$MOCK_APP" "$json_root"
 
   json_compose_count=$(echo "$json" | jq '.composeFiles | length')
   # compose.yaml + compose.override.yaml + compose.common.yaml + compose.dev.yaml + compose.dev.override.yaml = 5
@@ -304,7 +304,7 @@ fi
 
 # ======================================================================
 # Cleanup
-rm -rf "$MOCK_PROJECT"
+rm -rf "$MOCK_APP"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

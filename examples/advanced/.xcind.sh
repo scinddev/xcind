@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2016
-# .xcind.sh — Xcind project configuration (advanced example)
+# .xcind.sh — Xcind application configuration (advanced example)
 #
 # This example demonstrates:
 #   - Variable expansion in file patterns

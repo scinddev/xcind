@@ -8,7 +8,7 @@
 #
 # The JSON output follows the contract expected by the xcind JetBrains plugin:
 # {
-#   "projectRoot": "/path/to/project",
+#   "appRoot": "/path/to/app",
 #   "composeFiles": [...],
 #   "envFiles": [...],
 #   "bakeFiles": [...]
@@ -66,7 +66,7 @@ esac
 # Detect app root
 app_root=$(__xcind-app-root) || exit 1
 
-# Load project config
+# Load application config
 __xcind-load-config "$app_root" || exit 1
 
 case "$MODE" in
