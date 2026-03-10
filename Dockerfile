@@ -1,7 +1,7 @@
 ARG BASHVER=latest
 FROM bash:${BASHVER}
 
-LABEL org.opencontainers.image.version="0.0.1"
+LABEL org.opencontainers.image.version="0.0.2"
 
 RUN apk add --no-cache coreutils jq docker-cli docker-cli-compose
 
