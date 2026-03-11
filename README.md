@@ -320,6 +320,10 @@ cp compose.override.dist compose.override.yaml
 docker compose run xcind
 ```
 
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
+
 ## File Structure
 
 ```
@@ -349,5 +353,6 @@ xcind/
 ├── install.sh                 # Install to a PREFIX
 ├── uninstall.sh               # Remove from a PREFIX
 ├── package.json               # npm package manifest
+├── LICENSE                    # MIT license
 └── README.md
 ```
