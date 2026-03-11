@@ -46,17 +46,27 @@ case "${1:-}" in
   MODE="files"
   shift
   ;;
+--dump-docker-wrapper)
+  MODE="dump-docker-wrapper"
+  shift
+  ;;
+--dump-docker-compose-wrapper)
+  MODE="dump-docker-compose-wrapper"
+  shift
+  ;;
 --version | -V)
   echo "xcind-config ${XCIND_VERSION}"
   exit 0
   ;;
 --help | -h)
-  echo "Usage: xcind-config [--version|--preview|--files|--help]"
+  echo "Usage: xcind-config [--version|--preview|--files|--dump-docker-wrapper|--dump-docker-compose-wrapper|--help]"
   echo ""
-  echo "  (default)    Output resolved configuration as JSON"
-  echo "  --preview    Show the docker compose command that would be executed"
-  echo "  --files      List all resolved files, one per line"
-  echo "  --help       Show this help"
+  echo "  (default)                    Output resolved configuration as JSON"
+  echo "  --preview                    Show the docker compose command that would be executed"
+  echo "  --files                      List all resolved files, one per line"
+  echo "  --dump-docker-wrapper        Generate a POSIX docker wrapper script"
+  echo "  --dump-docker-compose-wrapper  Generate a POSIX docker-compose wrapper script"
+  echo "  --help                       Show this help"
   exit 0
   ;;
 esac
@@ -69,6 +79,19 @@ app_root=$(__xcind-app-root) || exit 1
 # Load application config
 __xcind-load-config "$app_root" || exit 1
 
+# Resolve the xcind bin directory as seen by the current shell.
+# This captures the user-facing path (e.g. ~/.nix-profile/bin) rather than
+# the symlink-resolved path, so the wrapper works even when the caller's
+# PATH does not include the Nix store or other non-standard locations.
+__xcind_bin_dir() {
+  local xcind_compose_path
+  if xcind_compose_path=$(command -v xcind-compose 2>/dev/null); then
+    dirname "$xcind_compose_path"
+  else
+    echo "$XCIND_ROOT/bin"
+  fi
+}
+
 case "$MODE" in
 json)
   __xcind-resolve-json "$app_root"
@@ -76,6 +99,14 @@ json)
 
 preview)
   __xcind-preview-command "$app_root" "$@"
+  ;;
+
+dump-docker-wrapper)
+  __xcind-dump-docker-wrapper "$app_root" "$(__xcind_bin_dir)"
+  ;;
+
+dump-docker-compose-wrapper)
+  __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)"
   ;;
 
 files)

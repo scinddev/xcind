@@ -303,6 +303,71 @@ else
 fi
 
 # ======================================================================
+echo ""
+echo "=== Test: __xcind-dump-docker-compose-wrapper ==="
+
+WRAPPER_APP=$(mktemp -d)
+echo '# test' >"$WRAPPER_APP/.xcind.sh"
+
+compose_wrapper=$(__xcind-dump-docker-compose-wrapper "$WRAPPER_APP" "/usr/local/bin")
+
+assert_contains "compose wrapper has shebang" \
+  "#!/bin/sh" "$compose_wrapper"
+
+assert_contains "compose wrapper has set -eu" \
+  "set -eu" "$compose_wrapper"
+
+assert_not_contains "compose wrapper has no pipefail (POSIX)" \
+  "pipefail" "$compose_wrapper"
+
+assert_contains "compose wrapper adds xcind bin to PATH" \
+  'PATH="$PATH:/usr/local/bin"' "$compose_wrapper"
+
+assert_contains "compose wrapper exports XCIND_APP_ROOT" \
+  "export XCIND_APP_ROOT=\"${WRAPPER_APP}\"" "$compose_wrapper"
+
+assert_contains "compose wrapper calls xcind-compose" \
+  'xcind-compose "$@"' "$compose_wrapper"
+
+assert_contains "compose wrapper falls back to docker compose" \
+  'docker compose "$@"' "$compose_wrapper"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-dump-docker-wrapper ==="
+
+docker_wrapper=$(__xcind-dump-docker-wrapper "$WRAPPER_APP" "/home/testuser/.nix-profile/bin")
+
+assert_contains "docker wrapper has shebang" \
+  "#!/bin/sh" "$docker_wrapper"
+
+assert_contains "docker wrapper has set -eu" \
+  "set -eu" "$docker_wrapper"
+
+assert_not_contains "docker wrapper has no pipefail (POSIX)" \
+  "pipefail" "$docker_wrapper"
+
+assert_contains "docker wrapper adds xcind bin to PATH" \
+  'PATH="$PATH:/home/testuser/.nix-profile/bin"' "$docker_wrapper"
+
+assert_contains "docker wrapper exports XCIND_APP_ROOT" \
+  "export XCIND_APP_ROOT=\"${WRAPPER_APP}\"" "$docker_wrapper"
+
+assert_contains "docker wrapper checks for compose subcommand" \
+  '[ "$1" = "compose" ]' "$docker_wrapper"
+
+assert_contains "docker wrapper calls xcind-compose for compose" \
+  'xcind-compose "$@"' "$docker_wrapper"
+
+assert_contains "docker wrapper falls back to docker compose" \
+  'docker compose "$@"' "$docker_wrapper"
+
+assert_contains "docker wrapper passes non-compose to docker" \
+  'docker "$@"' "$docker_wrapper"
+
+rm -rf "$WRAPPER_APP"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 
