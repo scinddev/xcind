@@ -281,6 +281,52 @@ __xcind-resolve-json() {
 }
 
 # --------------------------------------------------------------------------
+# Docker Wrapper Generation
+# --------------------------------------------------------------------------
+
+# Generate a POSIX-compatible docker-compose wrapper script.
+# The wrapper tries xcind-compose first, falling back to docker compose.
+#
+# Usage:
+#   __xcind-dump-docker-compose-wrapper /path/to/app /path/to/xcind/bin
+__xcind-dump-docker-compose-wrapper() {
+  local app_root="$1"
+  local xcind_bin_dir="$2"
+
+  cat <<EOF
+#!/bin/sh
+set -eu
+PATH="\$PATH:${xcind_bin_dir}"
+export XCIND_APP_ROOT="${app_root}"
+xcind-compose "\$@" || docker compose "\$@"
+EOF
+}
+
+# Generate a POSIX-compatible docker wrapper script.
+# Intercepts "docker compose" and routes it through xcind-compose;
+# all other docker subcommands pass through to docker directly.
+#
+# Usage:
+#   __xcind-dump-docker-wrapper /path/to/app /path/to/xcind/bin
+__xcind-dump-docker-wrapper() {
+  local app_root="$1"
+  local xcind_bin_dir="$2"
+
+  cat <<EOF
+#!/bin/sh
+set -eu
+PATH="\$PATH:${xcind_bin_dir}"
+export XCIND_APP_ROOT="${app_root}"
+if [ \$# -gt 0 ] && [ "\$1" = "compose" ]; then
+    shift
+    xcind-compose "\$@" || docker compose "\$@"
+else
+    docker "\$@"
+fi
+EOF
+}
+
+# --------------------------------------------------------------------------
 # Debug / Dry-Run
 # --------------------------------------------------------------------------
 
