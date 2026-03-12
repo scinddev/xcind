@@ -298,7 +298,11 @@ __xcind-dump-docker-compose-wrapper() {
 set -eu
 PATH="\$PATH:${xcind_bin_dir}"
 export XCIND_APP_ROOT="${app_root}"
-xcind-compose "\$@" || docker compose "\$@"
+if command -v xcind-compose >/dev/null 2>&1; then
+    exec xcind-compose "\$@"
+else
+    exec docker compose "\$@"
+fi
 EOF
 }
 
@@ -319,9 +323,13 @@ PATH="\$PATH:${xcind_bin_dir}"
 export XCIND_APP_ROOT="${app_root}"
 if [ \$# -gt 0 ] && [ "\$1" = "compose" ]; then
     shift
-    xcind-compose "\$@" || docker compose "\$@"
+    if command -v xcind-compose >/dev/null 2>&1; then
+        exec xcind-compose "\$@"
+    else
+        exec docker compose "\$@"
+    fi
 else
-    docker "\$@"
+    exec docker "\$@"
 fi
 EOF
 }
