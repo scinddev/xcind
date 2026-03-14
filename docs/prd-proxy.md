@@ -50,41 +50,48 @@ A new project-local directory at the app root (sibling to `.xcind.sh`), used for
 
 ### 4.2 Cache directory — `.xcind/cache/<sha>/`
 
-Stores intermediate data that speeds up repeated runs but can be safely deleted at any time. Examples:
+Stores intermediate data that speeds up repeated runs but can be safely deleted at any time. Contains:
 
-- Parsed service metadata extracted from compose files
-- Hash manifests used for change detection
+| Artifact | Filename | Contents |
+|----------|----------|----------|
+| Resolved config metadata | `config.json` | JSON matching `xcind-config` format: `{ appRoot, composeFiles, envFiles, bakeFiles }` |
+| Resolved compose output | `resolved-config.yaml` | Output of `docker compose config` (fully merged, variable-expanded) |
 
 ### 4.3 Generated directory — `.xcind/generated/<sha>/`
 
-Stores compose files that xcind-proxy produces. The key artifact is:
+Stores compose files that xcind-proxy (and other hooks) produce. Key artifacts include:
 
 ```
-.xcind/generated/<sha>/compose.proxy.yaml
+.xcind/generated/<sha>/compose.proxy.yaml        # Generated proxy compose file
+.xcind/generated/<sha>/.hook-output-<hook_name>   # Persisted stdout from each hook
 ```
 
-This file is **appended** to the list of `-f` flags when `xcind-compose` runs, so Docker Compose merges it with the user's own files.
+Generated compose files are **appended** to the list of compose flags when `xcind-compose` runs, so Docker Compose merges them with the user's own files.
+
+On cache hit, the pipeline reads all `.hook-output-*` files and replays their contents (appending to `XCIND_DOCKER_COMPOSE_OPTS`) instead of re-running hooks.
 
 ### 4.4 Hook System
 
 A mechanism that allows commands (like `xcind-proxy`) to participate in the configuration resolution pipeline.
 
-#### Hook point: `post-resolve`
+#### Hook point: `post-resolve-generate`
 
-**When:** After `__xcind-build-compose-opts` has resolved all compose and env files, but **before** the final `docker compose` invocation.
+**When:** After the resolution pipeline has computed the SHA, populated the cache, and exported pipeline env vars — but **before** the final `docker compose` invocation. **Only called on cache miss** (i.e., when `$XCIND_GENERATED_DIR` does not yet exist). On cache hit, the pipeline replays persisted hook output instead of re-running hooks.
 
 **Contract:** A hook is a bash function (or external script) that:
 
-1. Receives the app root and the list of resolved compose files as arguments.
-2. May inspect the resolved configuration (parse compose files, read labels, etc.).
-3. May produce additional compose files (written to `.xcind/generated/<sha>/`).
-4. Prints zero or more additional `-f <path>` flags to stdout.
-5. Returns exit code 0 on success, non-zero to abort.
+1. Receives `$app_root` as its sole positional argument.
+2. Accesses pipeline-computed data via environment variables: `XCIND_SHA`, `XCIND_CACHE_DIR`, `XCIND_GENERATED_DIR`.
+3. Reads pre-computed artifacts from `$XCIND_CACHE_DIR/` (e.g., `resolved-config.yaml`, `config.json`).
+4. May produce additional files in `$XCIND_GENERATED_DIR/`.
+5. Prints zero or more additional Docker Compose flags (e.g., `-f <path>`, `--env-file <path>`) to stdout.
+6. Returns exit code 0 on success, non-zero to abort.
+7. **Only called on cache miss** — stdout is persisted to `$XCIND_GENERATED_DIR/.hook-output-<hook_name>` and replayed on subsequent cache-hit runs.
 
-**Registration:** Hooks are registered in `.xcind.sh` via a new configuration variable:
+**Registration:** Hooks are registered in `.xcind.sh` via a configuration variable:
 
 ```bash
-XCIND_HOOKS_POST_RESOLVE=("xcind-proxy-hook")
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
 ```
 
 Each entry names a function or command available on `$PATH`. xcind's library invokes them in order after resolution completes.
@@ -92,14 +99,24 @@ Each entry names a function or command available on `$PATH`. xcind's library inv
 #### Hook execution flow
 
 ```
-1. __xcind-load-config
-2. __xcind-resolve-files  →  resolved compose files & env files
-3. __xcind-build-compose-opts  →  XCIND_DOCKER_COMPOSE_OPTS populated
-4. ── post-resolve hooks ──
-   for each hook in XCIND_HOOKS_POST_RESOLVE:
-     output=$(hook "$app_root" "${resolved_compose_files[@]}")
-     append $output to XCIND_DOCKER_COMPOSE_OPTS
-5. exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
+1. __xcind-load-config           → source .xcind.sh
+2. __xcind-resolve-files         → resolved compose files & env files
+3. __xcind-build-compose-opts    → XCIND_DOCKER_COMPOSE_OPTS populated
+4. __xcind-compute-sha           → SHA from resolved file paths + content hashes
+5. export XCIND_SHA, XCIND_CACHE_DIR, XCIND_GENERATED_DIR
+6. __xcind-populate-cache        → docker compose config → cache dir
+                                   config.json + resolved-config.yaml
+7. ── post-resolve-generate hooks (CACHE MISS ONLY) ──
+   if $XCIND_GENERATED_DIR does not exist:
+     mkdir -p "$XCIND_GENERATED_DIR"
+     for each hook in XCIND_HOOKS_POST_RESOLVE_GENERATE:
+       output=$(hook "$app_root")
+       echo "$output" > "$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+       append $output to XCIND_DOCKER_COMPOSE_OPTS
+   else (CACHE HIT):
+     for each .hook-output-* in $XCIND_GENERATED_DIR:
+       read and append to XCIND_DOCKER_COMPOSE_OPTS
+8. exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
 ```
 
 ---
@@ -156,15 +173,16 @@ Options:
 `xcind-proxy` ships a hook function, `xcind-proxy-hook`, that users register in `.xcind.sh`:
 
 ```bash
-XCIND_HOOKS_POST_RESOLVE=("xcind-proxy-hook")
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
 ```
 
-When invoked as a hook, `xcind-proxy-hook`:
+When invoked as a hook (cache miss only), `xcind-proxy-hook`:
 
-1. Computes the SHA of the resolved compose files.
-2. Checks if `.xcind/generated/<sha>/compose.proxy.yaml` is up-to-date.
-3. If stale or missing, regenerates it (same logic as `xcind-proxy --generate`).
-4. Prints `-f <path-to-generated-file>` to stdout.
+1. Reads `$XCIND_CACHE_DIR/resolved-config.yaml` to discover services, their exposed ports, and proxy labels.
+2. Generates `compose.proxy.yaml` in `$XCIND_GENERATED_DIR/`.
+3. Prints `-f $XCIND_GENERATED_DIR/compose.proxy.yaml` to stdout.
+
+No SHA check is needed within the hook — it is only called on cache miss by the pipeline. On cache hit, the pipeline replays the hook's persisted output automatically.
 
 This means `xcind-compose up` automatically includes the proxy with zero extra steps once the hook is registered.
 
@@ -183,6 +201,8 @@ This ensures:
 - Changing the content of any compose file invalidates the cache.
 - Identical configurations across runs reuse the same directory.
 
+The SHA is computed by the resolution pipeline (step 4 in the execution flow) and exported as `XCIND_SHA` for use by hooks and other tooling.
+
 ---
 
 ## 7. Configuration in `.xcind.sh`
@@ -191,7 +211,7 @@ New optional variables:
 
 ```bash
 # Hook registration (array of function/command names)
-XCIND_HOOKS_POST_RESOLVE=()
+XCIND_HOOKS_POST_RESOLVE_GENERATE=()
 
 # Proxy-specific settings (only relevant when xcind-proxy is in use)
 XCIND_PROXY_IMAGE="traefik:v3"          # Proxy engine image
@@ -249,7 +269,7 @@ XCIND_PROXY_DEFAULT_DOMAIN="localhost"  # Default domain suffix
 ## 10. Success Criteria
 
 - [ ] `xcind-proxy --generate` produces a valid compose file that `docker compose config` accepts when combined with the user's files.
-- [ ] The `post-resolve` hook integrates transparently — `xcind-compose up` starts the proxy alongside application services.
+- [ ] The `post-resolve-generate` hook integrates transparently — `xcind-compose up` starts the proxy alongside application services.
 - [ ] SHA-based caching avoids regeneration when inputs haven't changed.
 - [ ] Existing xcind workflows (no proxy, no hooks) are completely unaffected.
 - [ ] Test coverage for hook execution, SHA computation, proxy generation, and cache invalidation.
