@@ -351,3 +351,28 @@ __xcind-preview-command() {
   echo "# Working directory: $app_root"
   echo "docker compose ${XCIND_DOCKER_COMPOSE_OPTS[*]} $*"
 }
+
+# --------------------------------------------------------------------------
+# Template Rendering
+# --------------------------------------------------------------------------
+
+# Render a template string by replacing {key} placeholders with values.
+# Remaining key/value pairs are passed as positional arguments after the template.
+#
+# Usage:
+#   __xcind-render-template "{service}-{app}.{domain}" \
+#     service "web" \
+#     app "myapp" \
+#     domain "localhost"
+#   # prints: web-myapp.localhost
+#
+# Returns 0 on success.
+__xcind-render-template() {
+  local result="$1"
+  shift
+  while [[ $# -ge 2 ]]; do
+    result="${result//\{$1\}/$2}"
+    shift 2
+  done
+  echo "$result"
+}
