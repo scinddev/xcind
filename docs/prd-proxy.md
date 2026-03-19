@@ -125,6 +125,28 @@ Each entry names a function or command available on `$PATH`. xcind's library inv
 8. exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
 ```
 
+### 4.5 Template Rendering
+
+`xcind-lib.bash` provides a general-purpose template rendering function, `__xcind-render-template`, that replaces `{key}` placeholders in a string with provided values.
+
+**Signature:**
+
+```bash
+__xcind-render-template <template> [key value]...
+```
+
+**Example:**
+
+```bash
+__xcind-render-template "{service}-{app}.{domain}" \
+  service "web" \
+  app "myapp" \
+  domain "localhost"
+# → web-myapp.localhost
+```
+
+This function is used by `xcind-proxy-hook` for hostname and router name generation (see Sections 8 and 12), and is available for any future template-driven output in the xcind pipeline.
+
 ---
 
 ## 5. `xcind-proxy` Command
@@ -298,24 +320,36 @@ XCIND_PROXY_DASHBOARD_PORT="8080"
 
 ### Pattern
 
-Hostnames follow a fixed pattern based on whether a workspace is specified:
+Hostnames and router names are generated using `__xcind-render-template` (see Section 4.5) with the following template strings:
 
-| Workspace? | Pattern | Example |
-|------------|---------|---------|
-| No | `{service}-{app}.{domain}` | `web-myapp.localhost` |
-| Yes | `{service}-{app}-{workspace}.{domain}` | `web-myapp-dev.localhost` |
+| Component | Workspace? | Template | Example |
+|-----------|------------|----------|---------|
+| Hostname | No | `{service}-{app}.{domain}` | `web-myapp.localhost` |
+| Hostname | Yes | `{service}-{app}-{workspace}.{domain}` | `web-myapp-dev.localhost` |
+| Router name | No | `{service}-{app}` | `web-myapp` |
+| Router name | Yes | `{service}-{app}-{workspace}` | `web-myapp-dev` |
 
-Where:
+Template variables:
 - `{service}` = service name from `XCIND_PROXY_EXPORTS`
 - `{app}` = `XCIND_APP_NAME` (or `basename "$app_root"`)
 - `{workspace}` = `XCIND_WORKSPACE` (if set)
 - `{domain}` = `XCIND_PROXY_DOMAIN` (default: `localhost`)
 
-### Router Naming
+**Usage example:**
 
-Traefik router names follow the same pattern without the domain:
-- Without workspace: `{service}-{app}` (e.g., `web-myapp`)
-- With workspace: `{service}-{app}-{workspace}` (e.g., `web-myapp-dev`)
+```bash
+# Hostname generation
+__xcind-render-template "{service}-{app}.{domain}" \
+  service "$service_name" app "$app_name" domain "$domain"
+
+# With workspace
+__xcind-render-template "{service}-{app}-{workspace}.{domain}" \
+  service "$service_name" app "$app_name" workspace "$workspace" domain "$domain"
+
+# Router name (same pattern, no domain)
+__xcind-render-template "{service}-{app}" \
+  service "$service_name" app "$app_name"
+```
 
 ### Why `.localhost`
 
@@ -454,7 +488,7 @@ Step-by-step flow when `xcind-proxy-hook` is invoked during a cache miss:
    - a. Parse entry: split on `:` to get service name and optional port.
    - b. **Validate service** exists in resolved config. If not, error with list of available services.
    - c. **Resolve port**: If port specified, use it. If not, infer from resolved config (exactly one port → use it; zero or multiple → error).
-   - d. **Generate hostname**: `{service}-{app}.{domain}` or `{service}-{app}-{workspace}.{domain}`.
+   - d. **Generate hostname** via `__xcind-render-template`: use `{service}-{app}.{domain}` or `{service}-{app}-{workspace}.{domain}` template (see Section 4.5).
    - e. **Generate router name**: same as hostname minus domain.
 6. **Write `compose.proxy.yaml`** to `$XCIND_GENERATED_DIR/` containing:
    - Service entries with `networks: { xcind-proxy: {} }` and `labels` (Traefik routing + xcind context)
