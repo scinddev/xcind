@@ -32,7 +32,7 @@ Xcind already solves the "compose file discovery and resolution" problem. **xcin
 - Environment variable injection (`SCIND_*`-style service discovery vars)
 - Per-workspace internal networks (Scind's `{workspace}-internal` concept)
 - Assigned port type (direct host port binding with auto-increment)
-- Per-service hostname overrides (hostnames are auto-generated only)
+- Per-service hostname overrides (hostnames are auto-generated from export names only)
 
 ---
 
@@ -138,11 +138,11 @@ __xcind-render-template <template> [key value]...
 **Example:**
 
 ```bash
-__xcind-render-template "{service}-{app}.{domain}" \
-  service "web" \
+__xcind-render-template "{app}-{export}.{domain}" \
   app "myapp" \
+  export "web" \
   domain "localhost"
-# → web-myapp.localhost
+# → myapp-web.localhost
 ```
 
 This function is used by `xcind-proxy-hook` for hostname and router name generation (see Sections 8 and 12), and is available for any future template-driven output in the xcind pipeline.
@@ -165,8 +165,8 @@ Services opt-in to proxying via declarations in `.xcind.sh`:
 
 ```bash
 # Required: array of services to expose through the proxy
-# Format: "service" (port inferred) or "service:port" (explicit)
-XCIND_PROXY_EXPORTS=("web" "api:3000")
+# Format: "export_name" | "export_name:port" | "export_name=compose_service" | "export_name=compose_service:port"
+XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")
 
 # Optional: application name (defaults to basename of app root directory)
 XCIND_APP_NAME="myapp"
@@ -175,18 +175,29 @@ XCIND_APP_NAME="myapp"
 XCIND_WORKSPACE="dev"
 ```
 
-**Port inference:** When no port is specified (e.g., `"web"`), the hook reads `$XCIND_CACHE_DIR/resolved-config.yaml` and looks up the service's port configuration:
-- If the service has exactly **one** port mapping → use the container port (e.g., `"80:8080"` → `8080`)
-- If the service has **zero** ports → error: "Service 'web' has no port mappings. Specify port explicitly: web:8080"
-- If the service has **multiple** ports → error: "Service 'web' has multiple port mappings. Specify port explicitly: web:8080"
+**Entry format:** Each entry in `XCIND_PROXY_EXPORTS` has the form `export_name[=compose_service][:port]`:
 
-**Service validation:** Each service name in `XCIND_PROXY_EXPORTS` must exist in `resolved-config.yaml`. Missing services produce an error listing available services.
+| Entry | Export name | Compose service | Port |
+|-------|-------------|-----------------|------|
+| `"web"` | web | web | inferred |
+| `"api:3000"` | api | api | 3000 |
+| `"db=postgres"` | db | postgres | inferred |
+| `"db=postgres:5432"` | db | postgres | 5432 |
+
+When no `=` separator is present, the export name and compose service name are the same. The **export name** is used for hostname generation, router names, and export labels. The **compose service name** is used for YAML merge keys and service validation.
+
+**Port inference:** When no port is specified, the hook reads `$XCIND_CACHE_DIR/resolved-config.yaml` and looks up the compose service's port configuration:
+- If the service has exactly **one** port mapping → use the container port (e.g., `"80:8080"` → `8080`)
+- If the service has **zero** ports → error: "Service 'postgres' has no port mappings. Specify port explicitly: db=postgres:5432"
+- If the service has **multiple** ports → error: "Service 'postgres' has multiple port mappings. Specify port explicitly: db=postgres:5432"
+
+**Service validation:** The compose service name from each entry in `XCIND_PROXY_EXPORTS` must exist in `resolved-config.yaml`. Missing services produce an error listing available services.
 
 ### 5.3 Generated Compose File
 
 The generated `compose.proxy.yaml` adds network attachment and Traefik labels to existing services. **Traefik itself runs separately** (via `xcind-proxy up`), so this file does NOT define a proxy service.
 
-Example for `XCIND_PROXY_EXPORTS=("web" "api:3000")` with `XCIND_APP_NAME="myapp"`:
+Example for `XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")` with `XCIND_APP_NAME="myapp"`:
 
 ```yaml
 services:
@@ -195,29 +206,48 @@ services:
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.web-myapp.rule=Host(`web-myapp.localhost`)"
-      - "traefik.http.routers.web-myapp.entrypoints=web"
-      - "traefik.http.services.web-myapp.loadbalancer.server.port=80"
+      - "traefik.http.routers.myapp-web-http.rule=Host(`myapp-web.localhost`)"
+      - "traefik.http.routers.myapp-web-http.entrypoints=web"
+      - "traefik.http.services.myapp-web-http.loadbalancer.server.port=80"
       - "xcind.app.name=myapp"
       - "xcind.app.path=/path/to/myapp"
+      - "xcind.export.web.host=myapp-web.localhost"
+      - "xcind.export.web.url=http://myapp-web.localhost"
 
   api:
     networks:
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api-myapp.rule=Host(`api-myapp.localhost`)"
-      - "traefik.http.routers.api-myapp.entrypoints=web"
-      - "traefik.http.services.api-myapp.loadbalancer.server.port=3000"
+      - "traefik.http.routers.myapp-api-http.rule=Host(`myapp-api.localhost`)"
+      - "traefik.http.routers.myapp-api-http.entrypoints=web"
+      - "traefik.http.services.myapp-api-http.loadbalancer.server.port=3000"
       - "xcind.app.name=myapp"
       - "xcind.app.path=/path/to/myapp"
+      - "xcind.export.api.host=myapp-api.localhost"
+      - "xcind.export.api.url=http://myapp-api.localhost"
+
+  postgres:
+    networks:
+      xcind-proxy: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.myapp-db-http.rule=Host(`myapp-db.localhost`)"
+      - "traefik.http.routers.myapp-db-http.entrypoints=web"
+      - "traefik.http.services.myapp-db-http.loadbalancer.server.port=5432"
+      - "xcind.app.name=myapp"
+      - "xcind.app.path=/path/to/myapp"
+      - "xcind.export.db.host=myapp-db.localhost"
+      - "xcind.export.db.url=http://myapp-db.localhost"
 
 networks:
   xcind-proxy:
     external: true
 ```
 
-With `XCIND_WORKSPACE="dev"`, hostnames become `web-myapp-dev.localhost` and `api-myapp-dev.localhost`.
+Note that the `postgres` service uses its compose service name as the YAML key but the export name `db` in hostnames, router names, and export labels.
+
+With `XCIND_WORKSPACE="dev"`, hostnames become `dev-myapp-web.localhost`, `dev-myapp-api.localhost`, and `dev-myapp-db.localhost`.
 
 ### 5.4 CLI Interface
 
@@ -282,8 +312,8 @@ Proxy-related variables declared in `.xcind.sh`:
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
 
 # Service exports — which services to expose through the proxy
-# Format: "service" (port auto-inferred) or "service:port" (explicit)
-XCIND_PROXY_EXPORTS=("web" "api:3000")
+# Format: "export_name" | "export_name:port" | "export_name=compose_service" | "export_name=compose_service:port"
+XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")
 
 # Application name (optional, defaults to basename of app root)
 XCIND_APP_NAME="myapp"
@@ -324,31 +354,36 @@ Hostnames and router names are generated using `__xcind-render-template` (see Se
 
 | Component | Workspace? | Template | Example |
 |-----------|------------|----------|---------|
-| Hostname | No | `{service}-{app}.{domain}` | `web-myapp.localhost` |
-| Hostname | Yes | `{service}-{app}-{workspace}.{domain}` | `web-myapp-dev.localhost` |
-| Router name | No | `{service}-{app}` | `web-myapp` |
-| Router name | Yes | `{service}-{app}-{workspace}` | `web-myapp-dev` |
+| Hostname | No | `{app}-{export}.{domain}` | `myapp-web.localhost` |
+| Hostname | Yes | `{workspace}-{app}-{export}.{domain}` | `dev-myapp-web.localhost` |
+| Router name | No | `{app}-{export}-{protocol}` | `myapp-web-http` |
+| Router name | Yes | `{workspace}-{app}-{export}-{protocol}` | `dev-myapp-web-http` |
 
 Template variables:
-- `{service}` = service name from `XCIND_PROXY_EXPORTS`
+- `{export}` = export name from `XCIND_PROXY_EXPORTS` (the key, or left side of `=`)
 - `{app}` = `XCIND_APP_NAME` (or `basename "$app_root"`)
 - `{workspace}` = `XCIND_WORKSPACE` (if set)
 - `{domain}` = `XCIND_PROXY_DOMAIN` (default: `localhost`)
+- `{protocol}` = protocol suffix (always `http` for v1)
 
 **Usage example:**
 
 ```bash
 # Hostname generation
-__xcind-render-template "{service}-{app}.{domain}" \
-  service "$service_name" app "$app_name" domain "$domain"
+__xcind-render-template "{app}-{export}.{domain}" \
+  app "$app_name" export "$export_name" domain "$domain"
 
 # With workspace
-__xcind-render-template "{service}-{app}-{workspace}.{domain}" \
-  service "$service_name" app "$app_name" workspace "$workspace" domain "$domain"
+__xcind-render-template "{workspace}-{app}-{export}.{domain}" \
+  workspace "$workspace" app "$app_name" export "$export_name" domain "$domain"
 
-# Router name (same pattern, no domain)
-__xcind-render-template "{service}-{app}" \
-  service "$service_name" app "$app_name"
+# Router name
+__xcind-render-template "{app}-{export}-{protocol}" \
+  app "$app_name" export "$export_name" protocol "http"
+
+# Router name with workspace
+__xcind-render-template "{workspace}-{app}-{export}-{protocol}" \
+  workspace "$workspace" app "$app_name" export "$export_name" protocol "http"
 ```
 
 ### Why `.localhost`
@@ -463,6 +498,10 @@ Labels added to every proxied service container for discovery and tooling:
 | `xcind.app.name` | `XCIND_APP_NAME` or dirname | `myapp` |
 | `xcind.app.path` | `$app_root` | `/Users/dev/myapp` |
 | `xcind.workspace.name` | `XCIND_WORKSPACE` (if set) | `dev` |
+| `xcind.export.{export_name}.host` | Generated hostname | `myapp-web.localhost` |
+| `xcind.export.{export_name}.url` | `http://{hostname}` | `http://myapp-web.localhost` |
+
+The `xcind.export.*` labels (aligned with Scind's `scind.export.*` convention) provide machine-readable service discovery, enabling tooling to find the hostname and URL for any exported service.
 
 These labels enable queries like:
 
@@ -472,6 +511,9 @@ docker ps --filter "label=xcind.app.name"
 
 # Find containers for a specific app
 docker ps --filter "label=xcind.app.name=myapp"
+
+# Find the URL for a specific export
+docker inspect --format '{{index .Config.Labels "xcind.export.web.url"}}' <container>
 ```
 
 ---
@@ -485,13 +527,13 @@ Step-by-step flow when `xcind-proxy-hook` is invoked during a cache miss:
 3. **Source global config** — `~/.config/xcind/proxy/config.sh` for `XCIND_PROXY_DOMAIN` (default: `localhost`).
 4. **Parse resolved config** — read `$XCIND_CACHE_DIR/resolved-config.yaml` using `yq` to get available services and their port mappings.
 5. **For each entry in `XCIND_PROXY_EXPORTS`:**
-   - a. Parse entry: split on `:` to get service name and optional port.
-   - b. **Validate service** exists in resolved config. If not, error with list of available services.
-   - c. **Resolve port**: If port specified, use it. If not, infer from resolved config (exactly one port → use it; zero or multiple → error).
-   - d. **Generate hostname** via `__xcind-render-template`: use `{service}-{app}.{domain}` or `{service}-{app}-{workspace}.{domain}` template (see Section 4.5).
-   - e. **Generate router name**: same as hostname minus domain.
+   - a. **Parse entry**: split on `=` to get export name and optional compose service; split the right side on `:` to get compose service name and optional port. If no `=`, export name = compose service name.
+   - b. **Validate compose service** exists in resolved config. If not, error with list of available services.
+   - c. **Resolve port**: If port specified, use it. If not, infer from resolved config using the compose service name (exactly one port → use it; zero or multiple → error).
+   - d. **Generate hostname** via `__xcind-render-template` using the export name: use `{app}-{export}.{domain}` or `{workspace}-{app}-{export}.{domain}` template (see Section 8).
+   - e. **Generate router name** via `__xcind-render-template` using the export name: use `{app}-{export}-{protocol}` or `{workspace}-{app}-{export}-{protocol}` template (see Section 8).
 6. **Write `compose.proxy.yaml`** to `$XCIND_GENERATED_DIR/` containing:
-   - Service entries with `networks: { xcind-proxy: {} }` and `labels` (Traefik routing + xcind context)
+   - Service entries keyed by **compose service name** with `networks: { xcind-proxy: {} }` and `labels` (Traefik routing using export name + xcind context + export labels)
    - Top-level `networks: { xcind-proxy: { external: true } }`
 7. **Print** `-f $XCIND_GENERATED_DIR/compose.proxy.yaml` to stdout.
 
