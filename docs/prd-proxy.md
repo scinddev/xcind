@@ -22,17 +22,18 @@ Xcind already solves the "compose file discovery and resolution" problem. **xcin
 4. Keep xcind-proxy optional — existing `xcind-compose` workflows must continue to work without it.
 5. Provide proxy infrastructure lifecycle management (`xcind-proxy init|up|down|status`) so the shared Traefik instance can be managed independently of any project.
 6. Use `.localhost` as the default domain for zero-configuration DNS resolution (RFC 6761 — browsers and OS resolve `*.localhost` to `127.0.0.1` without any setup).
+7. Lightweight workspace discovery from directory structure, enabling consistent naming across co-located projects without manual workspace declaration.
 
 ## 3. Non-Goals (for v1)
 
 - TLS certificate management (ACME, mkcert, etc.) — HTTP only
-- Multi-project proxy orchestration (single `.xcind.sh` root at a time)
+- Full multi-project orchestration (starting/stopping all workspace apps together)
 - GUI or web dashboard for proxy status
 - Support for proxy engines other than Traefik (future work)
 - Environment variable injection (`SCIND_*`-style service discovery vars)
 - Per-workspace internal networks (Scind's `{workspace}-internal` concept)
 - Assigned port type (direct host port binding with auto-increment)
-- Per-service hostname overrides (hostnames are auto-generated from export names only)
+- Per-service hostname overrides (URL templates are overridable but individual per-service hostname strings are not)
 
 ---
 
@@ -105,24 +106,42 @@ Each entry names a function or command available on `$PATH`. xcind's library inv
 #### Hook execution flow
 
 ```
-1. __xcind-load-config           → source .xcind.sh
-2. __xcind-resolve-files         → resolved compose files & env files
-3. __xcind-build-compose-opts    → XCIND_DOCKER_COMPOSE_OPTS populated
-4. __xcind-compute-sha           → SHA from resolved file paths + content hashes
-5. export XCIND_SHA, XCIND_CACHE_DIR, XCIND_GENERATED_DIR
-6. __xcind-populate-cache        → docker compose config → cache dir
+1. __xcind-app-root              → locate XCIND_APP_ROOT
+2. __xcind-discover-workspace    → workspace discovery (see Section 4.6)
+   if dirname(XCIND_APP_ROOT)/.xcind.sh exists:
+     XCIND_WORKSPACE_ROOT = dirname(XCIND_APP_ROOT)
+     XCIND_WORKSPACE = basename(XCIND_WORKSPACE_ROOT)
+     XCIND_WORKSPACELESS = 0
+     source XCIND_WORKSPACE_ROOT/.xcind.sh
+   else:
+     XCIND_WORKSPACELESS = 1
+     XCIND_WORKSPACE_ROOT = ""
+     XCIND_WORKSPACE = ""
+3. __xcind-load-config           → source XCIND_APP_ROOT/.xcind.sh (overrides workspace)
+4. __xcind-late-bind-workspace   → late-bind self-declaration
+   if XCIND_WORKSPACELESS=1 AND XCIND_WORKSPACE != "":
+     XCIND_WORKSPACE_ROOT=${XCIND_WORKSPACE_ROOT:-$XCIND_APP_ROOT}
+     XCIND_WORKSPACELESS=0
+5. __xcind-resolve-app           → XCIND_APP=${XCIND_APP:-$(basename "$XCIND_APP_ROOT")}
+6. __xcind-resolve-url-templates → set XCIND_APP_URL_TEMPLATE and XCIND_ROUTER_TEMPLATE
+                                   (see Section 4.7)
+7. __xcind-resolve-files         → resolved compose files & env files
+8. __xcind-build-compose-opts    → XCIND_DOCKER_COMPOSE_OPTS populated
+9. __xcind-compute-sha           → SHA from resolved file paths + content hashes
+10. export XCIND_SHA, XCIND_CACHE_DIR, XCIND_GENERATED_DIR
+11. __xcind-populate-cache       → docker compose config → cache dir
                                    config.json + resolved-config.yaml
-7. ── post-resolve-generate hooks (CACHE MISS ONLY) ──
-   if $XCIND_GENERATED_DIR does not exist:
-     mkdir -p "$XCIND_GENERATED_DIR"
-     for each hook in XCIND_HOOKS_POST_RESOLVE_GENERATE:
-       output=$(hook "$app_root")
-       echo "$output" > "$XCIND_GENERATED_DIR/.hook-output-$hook_name"
-       append $output to XCIND_DOCKER_COMPOSE_OPTS
-   else (CACHE HIT):
-     for each .hook-output-* in $XCIND_GENERATED_DIR:
-       read and append to XCIND_DOCKER_COMPOSE_OPTS
-8. exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
+12. ── post-resolve-generate hooks (CACHE MISS ONLY) ──
+    if $XCIND_GENERATED_DIR does not exist:
+      mkdir -p "$XCIND_GENERATED_DIR"
+      for each hook in XCIND_HOOKS_POST_RESOLVE_GENERATE:
+        output=$(hook "$app_root")
+        echo "$output" > "$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+        append $output to XCIND_DOCKER_COMPOSE_OPTS
+    else (CACHE HIT):
+      for each .hook-output-* in $XCIND_GENERATED_DIR:
+        read and append to XCIND_DOCKER_COMPOSE_OPTS
+13. exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
 ```
 
 ### 4.5 Template Rendering
@@ -145,7 +164,91 @@ __xcind-render-template "{app}-{export}.{domain}" \
 # → myapp-web.localhost
 ```
 
-This function is used by `xcind-proxy-hook` for hostname and router name generation (see Sections 8 and 12), and is available for any future template-driven output in the xcind pipeline.
+This function is used by `xcind-proxy-hook` for both hostname/router name generation (see Sections 8 and 12) and for rendering YAML snippets in generated compose override files (see Section 12). It is available for any future template-driven output in the xcind pipeline, including other override file generators that follow the same hybrid pattern.
+
+### 4.6 Workspace Discovery
+
+Xcind supports lightweight workspace discovery from directory structure, using a two-level `.xcind.sh` hierarchy. A parent directory's `.xcind.sh` defines workspace-level config that applies to all apps within it.
+
+#### Discovery algorithm
+
+During step 2 of the hook execution flow, `__xcind-discover-workspace` checks whether a `.xcind.sh` file exists in the parent directory of `XCIND_APP_ROOT`:
+
+```bash
+parent="$(dirname "$XCIND_APP_ROOT")"
+if [[ -f "$parent/.xcind.sh" ]]; then
+  XCIND_WORKSPACE_ROOT="$parent"
+  XCIND_WORKSPACE="$(basename "$parent")"
+  XCIND_WORKSPACELESS=0
+  source "$parent/.xcind.sh"
+else
+  XCIND_WORKSPACELESS=1
+  XCIND_WORKSPACE_ROOT=""
+  XCIND_WORKSPACE=""
+fi
+```
+
+#### Sourcing order
+
+1. **Workspace `.xcind.sh`** — sourced first (if discovered)
+2. **App `.xcind.sh`** — sourced second, overrides any workspace-level settings
+
+This means an app can override workspace-level hook registrations, URL templates, or any other variable set by the workspace config.
+
+#### Late-bind self-declaration
+
+An app can self-declare `XCIND_WORKSPACE` in its own `.xcind.sh` without a parent workspace directory. Step 4 (`__xcind-late-bind-workspace`) detects this:
+
+- If no workspace was discovered (`XCIND_WORKSPACELESS=1`) but the app's `.xcind.sh` set `XCIND_WORKSPACE` to a non-empty value:
+  - `XCIND_WORKSPACE_ROOT` defaults to `XCIND_APP_ROOT` (unless already set)
+  - `XCIND_WORKSPACELESS` flips to `0`
+
+This enables standalone apps to opt into workspace-prefixed URLs without requiring a parent directory structure.
+
+#### Directory layout example
+
+```
+workspaces/dev/           ← XCIND_WORKSPACE_ROOT
+  .xcind.sh               ← workspace config (sourced first)
+  frontend/               ← XCIND_APP_ROOT
+    .xcind.sh             ← app config (sourced second, overrides workspace)
+    compose.yaml
+  backend/
+    .xcind.sh
+    compose.yaml
+```
+
+#### Comparison to Scind
+
+Scind uses separate file types (`workspace.yaml` + `application.yaml`) with a full workspace management system. Xcind's approach is lighter — it reuses the same `.xcind.sh` format at both levels, with discovery based purely on directory structure. This avoids new file formats while enabling the key benefit: consistent naming across co-located projects.
+
+### 4.7 URL Template System
+
+Hostnames and router names are generated from configurable URL templates. The pipeline resolves which template variant to use based on `XCIND_WORKSPACELESS`, so downstream code (hooks) only references the resolved templates.
+
+#### Source templates (user-configurable)
+
+These can be set in workspace or app `.xcind.sh` files:
+
+| Variable | Default |
+|----------|---------|
+| `XCIND_WORKSPACELESS_APP_URL_TEMPLATE` | `{app}-{export}.{domain}` |
+| `XCIND_WORKSPACE_APP_URL_TEMPLATE` | `{workspace}-{app}-{export}.{domain}` |
+| `XCIND_WORKSPACELESS_ROUTER_TEMPLATE` | `{app}-{export}-{protocol}` |
+| `XCIND_WORKSPACE_ROUTER_TEMPLATE` | `{workspace}-{app}-{export}-{protocol}` |
+
+#### Resolved templates (computed by pipeline)
+
+Step 6 (`__xcind-resolve-url-templates`) selects the appropriate variant:
+
+| Variable | Set from |
+|----------|----------|
+| `XCIND_APP_URL_TEMPLATE` | `XCIND_WORKSPACELESS_APP_URL_TEMPLATE` or `XCIND_WORKSPACE_APP_URL_TEMPLATE` based on `XCIND_WORKSPACELESS` |
+| `XCIND_ROUTER_TEMPLATE` | `XCIND_WORKSPACELESS_ROUTER_TEMPLATE` or `XCIND_WORKSPACE_ROUTER_TEMPLATE` based on `XCIND_WORKSPACELESS` |
+
+Downstream code (e.g., `xcind-proxy-hook`) only references `XCIND_APP_URL_TEMPLATE` and `XCIND_ROUTER_TEMPLATE` — no workspace-mode branching needed.
+
+Note: unused `{workspace}` placeholder is simply absent from workspaceless templates, so no special handling is needed in the rendering function.
 
 ---
 
@@ -169,11 +272,10 @@ Services opt-in to proxying via declarations in `.xcind.sh`:
 XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")
 
 # Optional: application name (defaults to basename of app root directory)
-XCIND_APP_NAME="myapp"
-
-# Optional: workspace qualifier (defaults to empty string)
-XCIND_WORKSPACE="dev"
+XCIND_APP="myapp"
 ```
+
+Note: `XCIND_WORKSPACE` is now discovered automatically from directory structure (see Section 4.6) rather than declared in the app `.xcind.sh`. Apps can still self-declare `XCIND_WORKSPACE` for late-bind scenarios where no parent workspace directory exists.
 
 **Entry format:** Each entry in `XCIND_PROXY_EXPORTS` has the form `export_name[=compose_service][:port]`:
 
@@ -197,7 +299,9 @@ When no `=` separator is present, the export name and compose service name are t
 
 The generated `compose.proxy.yaml` adds network attachment and Traefik labels to existing services. **Traefik itself runs separately** (via `xcind-proxy up`), so this file does NOT define a proxy service.
 
-Example for `XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")` with `XCIND_APP_NAME="myapp"`:
+The file is generated using a hybrid template approach: a per-service YAML snippet template is rendered via `__xcind-render-template` for each export entry, and the rendered snippets are concatenated with static YAML boilerplate (header and footer). See Section 12 for the template and algorithm details.
+
+Example output for `XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")` with `XCIND_APP="myapp"` (workspaceless mode):
 
 ```yaml
 services:
@@ -247,7 +351,12 @@ networks:
 
 Note that the `postgres` service uses its compose service name as the YAML key but the export name `db` in hostnames, router names, and export labels.
 
-With `XCIND_WORKSPACE="dev"`, hostnames become `dev-myapp-web.localhost`, `dev-myapp-api.localhost`, and `dev-myapp-db.localhost`.
+With workspace active (`XCIND_WORKSPACE="dev"`), hostnames and router names are generated from `XCIND_APP_URL_TEMPLATE` and `XCIND_ROUTER_TEMPLATE` (see Section 4.7). For example, with default workspace templates: `dev-myapp-web.localhost`, `dev-myapp-api.localhost`, etc. Additionally, `xcind.workspace.name` and `xcind.workspace.path` labels are included:
+
+```yaml
+      - "xcind.workspace.name=dev"
+      - "xcind.workspace.path=/path/to/workspaces/dev"
+```
 
 ### 5.4 CLI Interface
 
@@ -271,12 +380,14 @@ XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
 
 When invoked as a hook (cache miss only), `xcind-proxy-hook`:
 
-1. Sources `.xcind.sh` to read `XCIND_PROXY_EXPORTS`, `XCIND_APP_NAME`, and `XCIND_WORKSPACE`.
+1. Reads `XCIND_APP`, `XCIND_WORKSPACE`, `XCIND_APP_URL_TEMPLATE`, and `XCIND_ROUTER_TEMPLATE` from the environment (already set by the pipeline — see Section 4.4, steps 2–6).
 2. Sources global config (`~/.config/xcind/proxy/config.sh`) for `XCIND_PROXY_DOMAIN`.
 3. Reads `$XCIND_CACHE_DIR/resolved-config.yaml` to validate services and infer ports.
-4. For each export entry: validates service exists, infers port if needed, generates hostname and router name.
+4. For each export entry: validates service exists, infers port if needed, renders hostname and router name using `XCIND_APP_URL_TEMPLATE` and `XCIND_ROUTER_TEMPLATE`.
 5. Writes `compose.proxy.yaml` to `$XCIND_GENERATED_DIR/`.
 6. Prints `-f $XCIND_GENERATED_DIR/compose.proxy.yaml` to stdout.
+
+The hook no longer re-sources `.xcind.sh` or selects template variants itself — the pipeline handles workspace discovery, app name resolution, and URL template resolution before hooks run.
 
 No SHA check is needed within the hook — it is only called on cache miss by the pipeline. On cache hit, the pipeline replays the hook's persisted output automatically.
 
@@ -297,30 +408,64 @@ This ensures:
 - Changing the content of any compose file invalidates the cache.
 - Identical configurations across runs reuse the same directory.
 
-The SHA is computed by the resolution pipeline (step 4 in the execution flow) and exported as `XCIND_SHA` for use by hooks and other tooling.
+The SHA is computed by the resolution pipeline (step 9 in the execution flow) and exported as `XCIND_SHA` for use by hooks and other tooling.
 
 ---
 
 ## 7. Configuration
 
-### 7.1 Project Configuration (`.xcind.sh`)
+### 7.1 Project Configuration
 
-Proxy-related variables declared in `.xcind.sh`:
+#### 7.1a Workspace Configuration (workspace `.xcind.sh`)
+
+Workspace-level settings apply to all apps within the workspace directory. Apps can override any of these in their own `.xcind.sh`.
 
 ```bash
-# Hook registration (array of function/command names)
+# Hook registration (applies to all apps in this workspace)
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
 
+# URL template overrides (optional — defaults shown in Section 4.7)
+XCIND_WORKSPACE_APP_URL_TEMPLATE="{workspace}-{app}-{export}.{domain}"
+XCIND_WORKSPACE_ROUTER_TEMPLATE="{workspace}-{app}-{export}-{protocol}"
+```
+
+#### 7.1b App Configuration (app `.xcind.sh`)
+
+Per-app settings. Values here override workspace-level settings.
+
+```bash
 # Service exports — which services to expose through the proxy
-# Format: "export_name" | "export_name:port" | "export_name=compose_service" | "export_name=compose_service:port"
-XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")
+XCIND_PROXY_EXPORTS=("web" "api:3000")
 
 # Application name (optional, defaults to basename of app root)
-XCIND_APP_NAME="myapp"
+XCIND_APP="myapp"
 
-# Workspace qualifier (optional, defaults to empty)
-XCIND_WORKSPACE="dev"
+# Late-bind workspace self-declaration (optional — only needed when
+# no parent workspace directory exists)
+# XCIND_WORKSPACE="dev"
 ```
+
+#### 7.1c Full Variable Reference
+
+| Variable | Set By | Default | Description |
+|----------|--------|---------|-------------|
+| `XCIND_APP` | user | `basename "$XCIND_APP_ROOT"` | Application name used in hostnames and labels |
+| `XCIND_WORKSPACE` | computed/user | `basename "$XCIND_WORKSPACE_ROOT"` or `""` | Workspace name; auto-discovered or self-declared |
+| `XCIND_WORKSPACE_ROOT` | computed | `dirname "$XCIND_APP_ROOT"` (if workspace found) | Path to workspace root directory |
+| `XCIND_WORKSPACELESS` | computed | `1` (no workspace) or `0` | Whether workspace mode is active |
+| `XCIND_APP_ROOT` | computed | — | Path to app root directory (where app `.xcind.sh` lives) |
+| `XCIND_PROXY_EXPORTS` | user | `()` | Array of service export declarations |
+| `XCIND_PROXY_DOMAIN` | user (global) | `localhost` | Domain suffix for generated hostnames |
+| `XCIND_WORKSPACELESS_APP_URL_TEMPLATE` | user | `{app}-{export}.{domain}` | Hostname template (no workspace) |
+| `XCIND_WORKSPACE_APP_URL_TEMPLATE` | user | `{workspace}-{app}-{export}.{domain}` | Hostname template (with workspace) |
+| `XCIND_WORKSPACELESS_ROUTER_TEMPLATE` | user | `{app}-{export}-{protocol}` | Router name template (no workspace) |
+| `XCIND_WORKSPACE_ROUTER_TEMPLATE` | user | `{workspace}-{app}-{export}-{protocol}` | Router name template (with workspace) |
+| `XCIND_APP_URL_TEMPLATE` | computed | — | Resolved hostname template (from workspaceless or workspace variant) |
+| `XCIND_ROUTER_TEMPLATE` | computed | — | Resolved router name template (from workspaceless or workspace variant) |
+| `XCIND_HOOKS_POST_RESOLVE_GENERATE` | user | `()` | Array of hook function/command names |
+| `XCIND_SHA` | computed | — | SHA of resolved configuration inputs |
+| `XCIND_CACHE_DIR` | computed | — | Path to cache directory for current SHA |
+| `XCIND_GENERATED_DIR` | computed | — | Path to generated directory for current SHA |
 
 ### 7.2 Global Configuration (`~/.config/xcind/proxy/config.sh`)
 
@@ -350,41 +495,37 @@ XCIND_PROXY_DASHBOARD_PORT="8080"
 
 ### Pattern
 
-Hostnames and router names are generated using `__xcind-render-template` (see Section 4.5) with the following template strings:
+Hostnames and router names are generated using `__xcind-render-template` (see Section 4.5) with the resolved templates from the pipeline (see Section 4.7):
 
-| Component | Workspace? | Template | Example |
-|-----------|------------|----------|---------|
-| Hostname | No | `{app}-{export}.{domain}` | `myapp-web.localhost` |
-| Hostname | Yes | `{workspace}-{app}-{export}.{domain}` | `dev-myapp-web.localhost` |
-| Router name | No | `{app}-{export}-{protocol}` | `myapp-web-http` |
-| Router name | Yes | `{workspace}-{app}-{export}-{protocol}` | `dev-myapp-web-http` |
+```bash
+# Hostname generation — uses pre-resolved XCIND_APP_URL_TEMPLATE
+hostname=$(__xcind-render-template "$XCIND_APP_URL_TEMPLATE" \
+  workspace "$XCIND_WORKSPACE" app "$XCIND_APP" \
+  export "$export_name" domain "$XCIND_PROXY_DOMAIN")
+
+# Router name — uses pre-resolved XCIND_ROUTER_TEMPLATE
+router=$(__xcind-render-template "$XCIND_ROUTER_TEMPLATE" \
+  workspace "$XCIND_WORKSPACE" app "$XCIND_APP" \
+  export "$export_name" protocol "http")
+```
 
 Template variables:
 - `{export}` = export name from `XCIND_PROXY_EXPORTS` (the key, or left side of `=`)
-- `{app}` = `XCIND_APP_NAME` (or `basename "$app_root"`)
-- `{workspace}` = `XCIND_WORKSPACE` (if set)
+- `{app}` = `XCIND_APP` (or `basename "$XCIND_APP_ROOT"`)
+- `{workspace}` = `XCIND_WORKSPACE` (if set; absent from workspaceless templates)
 - `{domain}` = `XCIND_PROXY_DOMAIN` (default: `localhost`)
 - `{protocol}` = protocol suffix (always `http` for v1)
 
-**Usage example:**
+Note: unused `{workspace}` placeholder is simply absent from workspaceless templates, so no special handling is needed. The hook does not branch on workspace mode — the pipeline pre-resolves the correct template variant.
 
-```bash
-# Hostname generation
-__xcind-render-template "{app}-{export}.{domain}" \
-  app "$app_name" export "$export_name" domain "$domain"
+**Default templates and examples:**
 
-# With workspace
-__xcind-render-template "{workspace}-{app}-{export}.{domain}" \
-  workspace "$workspace" app "$app_name" export "$export_name" domain "$domain"
-
-# Router name
-__xcind-render-template "{app}-{export}-{protocol}" \
-  app "$app_name" export "$export_name" protocol "http"
-
-# Router name with workspace
-__xcind-render-template "{workspace}-{app}-{export}-{protocol}" \
-  workspace "$workspace" app "$app_name" export "$export_name" protocol "http"
-```
+| Mode | Template | Example |
+|------|----------|---------|
+| Workspaceless hostname | `{app}-{export}.{domain}` | `myapp-web.localhost` |
+| Workspace hostname | `{workspace}-{app}-{export}.{domain}` | `dev-myapp-web.localhost` |
+| Workspaceless router | `{app}-{export}-{protocol}` | `myapp-web-http` |
+| Workspace router | `{workspace}-{app}-{export}-{protocol}` | `dev-myapp-web-http` |
 
 ### Why `.localhost`
 
@@ -495,9 +636,10 @@ Labels added to every proxied service container for discovery and tooling:
 
 | Label | Source | Example |
 |-------|--------|---------|
-| `xcind.app.name` | `XCIND_APP_NAME` or dirname | `myapp` |
-| `xcind.app.path` | `$app_root` | `/Users/dev/myapp` |
+| `xcind.app.name` | `XCIND_APP` or dirname | `myapp` |
+| `xcind.app.path` | `$XCIND_APP_ROOT` | `/Users/dev/myapp` |
 | `xcind.workspace.name` | `XCIND_WORKSPACE` (if set) | `dev` |
+| `xcind.workspace.path` | `XCIND_WORKSPACE_ROOT` (if set) | `/Users/dev/workspaces/dev` |
 | `xcind.export.{export_name}.host` | Generated hostname | `myapp-web.localhost` |
 | `xcind.export.{export_name}.url` | `http://{hostname}` | `http://myapp-web.localhost` |
 
@@ -520,22 +662,88 @@ docker inspect --format '{{index .Config.Labels "xcind.export.web.url"}}' <conta
 
 ## 12. Override Generation Algorithm
 
-Step-by-step flow when `xcind-proxy-hook` is invoked during a cache miss:
+### 12.1 Hybrid Template Approach
+
+The generated `compose.proxy.yaml` is built using a hybrid template approach rather than a monolithic heredoc. A per-service YAML snippet is defined as a template string with `{key}` placeholders, rendered via `__xcind-render-template` for each export entry, and concatenated with static YAML boilerplate.
+
+This approach keeps template content readable and editable, avoids heredoc escaping issues, and establishes a consistent pattern for other compose override generators to follow.
+
+**Per-service template (without workspace):**
+
+```bash
+XCIND_PROXY_SERVICE_TEMPLATE='  {compose_service}:
+    networks:
+      xcind-proxy: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
+      - "traefik.http.routers.{router}.entrypoints=web"
+      - "traefik.http.services.{router}.loadbalancer.server.port={port}"
+      - "xcind.app.name={app}"
+      - "xcind.app.path={app_path}"
+      - "xcind.export.{export}.host={hostname}"
+      - "xcind.export.{export}.url=http://{hostname}"'
+```
+
+When workspace is active, the template includes additional workspace labels:
+
+```bash
+XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE='  {compose_service}:
+    networks:
+      xcind-proxy: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
+      - "traefik.http.routers.{router}.entrypoints=web"
+      - "traefik.http.services.{router}.loadbalancer.server.port={port}"
+      - "xcind.app.name={app}"
+      - "xcind.app.path={app_path}"
+      - "xcind.workspace.name={workspace}"
+      - "xcind.workspace.path={workspace_path}"
+      - "xcind.export.{export}.host={hostname}"
+      - "xcind.export.{export}.url=http://{hostname}"'
+```
+
+**Rendering per export entry:**
+
+```bash
+__xcind-render-template "$service_template" \
+  compose_service "$compose_svc" \
+  router "$router" \
+  hostname "$hostname" \
+  port "$port" \
+  app "$XCIND_APP" \
+  app_path "$app_root" \
+  workspace "$XCIND_WORKSPACE" \
+  workspace_path "$XCIND_WORKSPACE_ROOT" \
+  export "$export_name"
+```
+
+**Assembly:** The final file is built by writing `services:\n` as a header, appending each rendered service snippet (separated by blank lines), then appending the static network footer (`networks:\n  xcind-proxy:\n    external: true`).
+
+### 12.2 Step-by-Step Flow
+
+When `xcind-proxy-hook` is invoked during a cache miss:
 
 1. **Receive `$app_root`** as positional argument from the hook system.
-2. **Read `.xcind.sh`** — already sourced by pipeline. Extract `XCIND_PROXY_EXPORTS` array, `XCIND_APP_NAME` (default: `basename "$app_root"`), `XCIND_WORKSPACE` (default: empty).
+2. **Read pipeline env vars** — `XCIND_APP`, `XCIND_WORKSPACE`, `XCIND_WORKSPACE_ROOT`, `XCIND_WORKSPACELESS`, `XCIND_APP_URL_TEMPLATE`, `XCIND_ROUTER_TEMPLATE`, and `XCIND_PROXY_EXPORTS` are already set by the pipeline (steps 1–6).
 3. **Source global config** — `~/.config/xcind/proxy/config.sh` for `XCIND_PROXY_DOMAIN` (default: `localhost`).
-4. **Parse resolved config** — read `$XCIND_CACHE_DIR/resolved-config.yaml` using `yq` to get available services and their port mappings.
-5. **For each entry in `XCIND_PROXY_EXPORTS`:**
+4. **Select service template** — choose `XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE` or `XCIND_PROXY_SERVICE_TEMPLATE` based on `XCIND_WORKSPACELESS`.
+5. **Parse resolved config** — read `$XCIND_CACHE_DIR/resolved-config.yaml` using `yq` to get available services and their port mappings.
+6. **Initialize output** — start with `services:\n` header.
+7. **For each entry in `XCIND_PROXY_EXPORTS`:**
    - a. **Parse entry**: split on `=` to get export name and optional compose service; split the right side on `:` to get compose service name and optional port. If no `=`, export name = compose service name.
    - b. **Validate compose service** exists in resolved config. If not, error with list of available services.
    - c. **Resolve port**: If port specified, use it. If not, infer from resolved config using the compose service name (exactly one port → use it; zero or multiple → error).
-   - d. **Generate hostname** via `__xcind-render-template` using the export name: use `{app}-{export}.{domain}` or `{workspace}-{app}-{export}.{domain}` template (see Section 8).
-   - e. **Generate router name** via `__xcind-render-template` using the export name: use `{app}-{export}-{protocol}` or `{workspace}-{app}-{export}-{protocol}` template (see Section 8).
-6. **Write `compose.proxy.yaml`** to `$XCIND_GENERATED_DIR/` containing:
-   - Service entries keyed by **compose service name** with `networks: { xcind-proxy: {} }` and `labels` (Traefik routing using export name + xcind context + export labels)
-   - Top-level `networks: { xcind-proxy: { external: true } }`
-7. **Print** `-f $XCIND_GENERATED_DIR/compose.proxy.yaml` to stdout.
+   - d. **Generate hostname** via `__xcind-render-template` using `XCIND_APP_URL_TEMPLATE` (see Section 8).
+   - e. **Generate router name** via `__xcind-render-template` using `XCIND_ROUTER_TEMPLATE` (see Section 8).
+   - f. **Render service snippet** via `__xcind-render-template` using the selected service template with all resolved values.
+   - g. **Append** rendered snippet to output.
+8. **Append network footer** — `networks:\n  xcind-proxy:\n    external: true`.
+9. **Write `compose.proxy.yaml`** to `$XCIND_GENERATED_DIR/`.
+10. **Print** `-f $XCIND_GENERATED_DIR/compose.proxy.yaml` to stdout.
+
+Note: the hook no longer needs workspace-mode branching for template selection — `XCIND_APP_URL_TEMPLATE` and `XCIND_ROUTER_TEMPLATE` are pre-resolved by the pipeline. The only workspace-dependent choice within the hook is which service snippet template to use (with or without workspace labels).
 
 ---
 
@@ -556,9 +764,21 @@ Step-by-step flow when `xcind-proxy-hook` is invoked during a cache miss:
 ```
 
 ```
-<user project>/
-  .xcind.sh                # existing (+ hook registration + proxy exports)
-  .xcind/                  # NEW
+<workspace>/
+  .xcind.sh                # workspace config (sourced first)
+  <app>/
+    .xcind.sh              # app config (sourced second, overrides workspace)
+    .xcind/
+      cache/<sha>/
+      generated/<sha>/
+        compose.proxy.yaml
+    compose.yaml           # user's compose file(s)
+```
+
+```
+<standalone app>/
+  .xcind.sh                # app config (+ hook registration + proxy exports)
+  .xcind/
     cache/<sha>/
     generated/<sha>/
       compose.proxy.yaml
@@ -592,6 +812,10 @@ Step-by-step flow when `xcind-proxy-hook` is invoked during a cache miss:
 
 8. **Network-not-exists handling:** If a project's compose references `xcind-proxy` network but it doesn't exist (e.g., `xcind-proxy init` never ran), what's the failure mode? Should the hook check and provide a helpful error?
 
+9. ~~**Workspace SHA inclusion:** Should workspace `.xcind.sh` content be included in SHA computation?~~ **Resolved:** Yes, include workspace `.xcind.sh` content in SHA computation. Workspace config changes (e.g., template overrides) should invalidate all app caches.
+
+10. **DNS-safe names:** Should workspace/app names be validated as DNS-safe (lowercase alphanumeric + hyphens)?
+
 ---
 
 ## 15. Future Work
@@ -617,3 +841,9 @@ See [Research: Scind Proxy Architecture](research-scind-proxy.md) for the full S
 - [ ] SHA-based caching avoids regeneration when inputs haven't changed.
 - [ ] Existing xcind workflows (no proxy, no hooks) are completely unaffected.
 - [ ] Test coverage for hook execution, SHA computation, proxy generation, hostname generation, and cache invalidation.
+- [ ] Workspace `.xcind.sh` discovered and sourced before app `.xcind.sh`.
+- [ ] App `.xcind.sh` overrides workspace-level settings.
+- [ ] Late-bind self-declared workspace works without parent directory.
+- [ ] URL templates resolve correctly for both workspaceless and workspace modes.
+- [ ] Custom URL templates override defaults.
+- [ ] Workspace labels (`xcind.workspace.name`, `xcind.workspace.path`) appear when workspace is active.
