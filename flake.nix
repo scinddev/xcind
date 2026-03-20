@@ -21,7 +21,7 @@
         '';
         postInstall = ''
           wrapProgram "$out/bin/xcind-compose" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils ]}
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.yq ]}
           wrapProgram "$out/bin/xcind-config" \
             --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.jq ]}
         '';
@@ -78,6 +78,7 @@
 
             # -- Utilities --
             jq
+            yq
             curl
             git
             git-cliff

@@ -68,13 +68,21 @@ __xcind-app-root() {
 __xcind-load-config() {
   local app_root="$1"
 
-  # Defaults — can be overridden by .xcind.sh
+  # Defaults — only set when not already defined (e.g., by workspace .xcind.sh).
   # Mirror Docker Compose's default file discovery; only files that exist on
   # disk are used (see __xcind-resolve-files).
-  XCIND_COMPOSE_FILES=("compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml")
-  XCIND_ENV_FILES=(".env")
-  XCIND_BAKE_FILES=()
-  XCIND_COMPOSE_DIR=""
+  if [[ -z ${XCIND_COMPOSE_FILES+set} ]]; then
+    XCIND_COMPOSE_FILES=("compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml")
+  fi
+  if [[ -z ${XCIND_ENV_FILES+set} ]]; then
+    XCIND_ENV_FILES=(".env")
+  fi
+  if [[ -z ${XCIND_BAKE_FILES+set} ]]; then
+    XCIND_BAKE_FILES=()
+  fi
+  if [[ -z ${XCIND_COMPOSE_DIR+set} ]]; then
+    XCIND_COMPOSE_DIR=""
+  fi
 
   if [ ! -f "$app_root/.xcind.sh" ]; then
     echo "Error: No .xcind.sh found in $app_root" >&2
