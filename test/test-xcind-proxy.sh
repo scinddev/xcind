@@ -1,0 +1,399 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# test-xcind-proxy.sh — Verify xcind-proxy CLI and hook libraries
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+XCIND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
+source "$XCIND_ROOT/lib/xcind/xcind-proxy-lib.bash"
+source "$XCIND_ROOT/lib/xcind/xcind-workspace-lib.bash"
+
+PASS=0
+FAIL=0
+
+assert_eq() {
+  local label="$1" expected="$2" actual="$3"
+  if [ "$expected" = "$actual" ]; then
+    echo "  ✓ $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ $label"
+    echo "    expected: $expected"
+    echo "    actual:   $actual"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+assert_contains() {
+  local label="$1" needle="$2" haystack="$3"
+  if [[ $haystack == *"$needle"* ]]; then
+    echo "  ✓ $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ $label"
+    echo "    expected to contain: $needle"
+    echo "    actual: $haystack"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+assert_file_exists() {
+  local label="$1" path="$2"
+  if [ -f "$path" ]; then
+    echo "  ✓ $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ $label (file not found: $path)"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# ======================================================================
+echo "=== Test: xcind-proxy init (mock HOME) ==="
+
+# Use a temp dir as HOME to avoid touching real config
+REAL_HOME="$HOME"
+MOCK_HOME=$(mktemp -d)
+export HOME="$MOCK_HOME"
+
+# Mock docker command to avoid real Docker calls
+export PATH="$MOCK_HOME/bin:$PATH"
+mkdir -p "$MOCK_HOME/bin"
+cat >"$MOCK_HOME/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker — accept network create silently
+exit 0
+MOCKEOF
+chmod +x "$MOCK_HOME/bin/docker"
+
+"$XCIND_ROOT/bin/xcind-proxy" init
+
+PROXY_DIR="${MOCK_HOME}/.config/xcind/proxy"
+
+assert_file_exists "config.sh created" "$PROXY_DIR/config.sh"
+assert_file_exists "docker-compose.yaml created" "$PROXY_DIR/docker-compose.yaml"
+assert_file_exists "traefik.yaml created" "$PROXY_DIR/traefik.yaml"
+
+# Verify config.sh contents
+config_content=$(<"$PROXY_DIR/config.sh")
+assert_contains "config has XCIND_PROXY_DOMAIN" "XCIND_PROXY_DOMAIN" "$config_content"
+assert_contains "config has XCIND_PROXY_IMAGE" "XCIND_PROXY_IMAGE" "$config_content"
+assert_contains "config has XCIND_PROXY_HTTP_PORT" "XCIND_PROXY_HTTP_PORT" "$config_content"
+
+# Verify docker-compose.yaml contents
+compose_content=$(<"$PROXY_DIR/docker-compose.yaml")
+assert_contains "compose has traefik service" "traefik:" "$compose_content"
+assert_contains "compose has xcind-proxy network" "xcind-proxy:" "$compose_content"
+assert_contains "compose has external network" "external: true" "$compose_content"
+assert_contains "compose has docker socket volume" "/var/run/docker.sock" "$compose_content"
+
+# Verify traefik.yaml contents
+traefik_content=$(<"$PROXY_DIR/traefik.yaml")
+assert_contains "traefik has web entrypoint" "web:" "$traefik_content"
+assert_contains "traefik has docker provider" "docker:" "$traefik_content"
+assert_contains "traefik has exposedByDefault false" "exposedByDefault: false" "$traefik_content"
+
+# Test idempotency — config.sh should not be overwritten
+echo "# user customization" >>"$PROXY_DIR/config.sh"
+"$XCIND_ROOT/bin/xcind-proxy" init
+config_after=$(<"$PROXY_DIR/config.sh")
+assert_contains "config.sh preserved on re-init" "user customization" "$config_after"
+
+export HOME="$REAL_HOME"
+rm -rf "$MOCK_HOME"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy version ==="
+
+version_output=$("$XCIND_ROOT/bin/xcind-proxy" --version)
+assert_contains "version output has xcind-proxy" "xcind-proxy" "$version_output"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy help ==="
+
+help_output=$("$XCIND_ROOT/bin/xcind-proxy" --help)
+assert_contains "help mentions init" "init" "$help_output"
+assert_contains "help mentions up" "up" "$help_output"
+assert_contains "help mentions down" "down" "$help_output"
+assert_contains "help mentions status" "status" "$help_output"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy unknown subcommand ==="
+
+result=$("$XCIND_ROOT/bin/xcind-proxy" badcmd 2>&1) && status=0 || status=$?
+assert_eq "unknown subcommand exits 1" "1" "$status"
+assert_contains "unknown subcommand error message" "Unknown subcommand" "$result"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy no subcommand ==="
+
+result=$("$XCIND_ROOT/bin/xcind-proxy" 2>&1) && status=0 || status=$?
+assert_eq "no subcommand exits 1" "1" "$status"
+assert_contains "no subcommand error message" "No subcommand" "$result"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-proxy-parse-entry ==="
+
+# Format: "web" (export=service, no port)
+__xcind-proxy-parse-entry "web"
+assert_eq "parse 'web' export" "web" "$_export_name"
+assert_eq "parse 'web' service" "web" "$_compose_service"
+assert_eq "parse 'web' port" "" "$_port"
+
+# Format: "api:3000" (export=service, explicit port)
+__xcind-proxy-parse-entry "api:3000"
+assert_eq "parse 'api:3000' export" "api" "$_export_name"
+assert_eq "parse 'api:3000' service" "api" "$_compose_service"
+assert_eq "parse 'api:3000' port" "3000" "$_port"
+
+# Format: "db=postgres" (export!=service, no port)
+__xcind-proxy-parse-entry "db=postgres"
+assert_eq "parse 'db=postgres' export" "db" "$_export_name"
+assert_eq "parse 'db=postgres' service" "postgres" "$_compose_service"
+assert_eq "parse 'db=postgres' port" "" "$_port"
+
+# Format: "db=postgres:5432" (export!=service, explicit port)
+__xcind-proxy-parse-entry "db=postgres:5432"
+assert_eq "parse 'db=postgres:5432' export" "db" "$_export_name"
+assert_eq "parse 'db=postgres:5432' service" "postgres" "$_compose_service"
+assert_eq "parse 'db=postgres:5432' port" "5432" "$_port"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy-hook (YAML generation) ==="
+
+# These tests require yq
+if command -v yq &>/dev/null; then
+  HOOK_APP=$(mktemp -d)
+  echo '# hook test' >"$HOOK_APP/.xcind.sh"
+
+  # Set up pipeline env vars
+  export XCIND_APP="myapp"
+  export XCIND_WORKSPACE=""
+  export XCIND_WORKSPACE_ROOT=""
+  export XCIND_WORKSPACELESS=1
+  export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{app}-{export}-{protocol}'
+  export XCIND_PROXY_DOMAIN="localhost"
+  export XCIND_SHA="hooktest123"
+  export XCIND_CACHE_DIR="$HOOK_APP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HOOK_APP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  # Create a resolved-config.yaml with services
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+  api:
+    image: node
+    ports:
+      - target: 3000
+        published: "3001"
+  postgres:
+    image: postgres
+    ports:
+      - target: 5432
+        published: "5433"
+YAML
+
+  # Mock docker network inspect to pretend xcind-proxy exists
+  docker() {
+    if [ "${1:-}" = "network" ] && [ "${2:-}" = "inspect" ]; then
+      return 0
+    fi
+    if [ "${1:-}" = "network" ] && [ "${2:-}" = "create" ]; then
+      return 0
+    fi
+    command docker "$@"
+  }
+
+  # Test: basic workspaceless generation
+  XCIND_PROXY_EXPORTS=("web" "api:3000" "db=postgres:5432")
+  hook_output=$(xcind-proxy-hook "$HOOK_APP")
+
+  assert_contains "hook prints -f flag" "-f" "$hook_output"
+  assert_contains "hook output has compose.proxy.yaml" "compose.proxy.yaml" "$hook_output"
+  assert_file_exists "compose.proxy.yaml created" "$XCIND_GENERATED_DIR/compose.proxy.yaml"
+
+  proxy_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+  assert_contains "yaml has web service" "web:" "$proxy_yaml"
+  assert_contains "yaml has api service" "api:" "$proxy_yaml"
+  assert_contains "yaml has postgres service" "postgres:" "$proxy_yaml"
+  assert_contains "yaml has traefik.enable" "traefik.enable=true" "$proxy_yaml"
+  assert_contains "yaml has myapp-web.localhost hostname" "myapp-web.localhost" "$proxy_yaml"
+  assert_contains "yaml has myapp-api.localhost hostname" "myapp-api.localhost" "$proxy_yaml"
+  assert_contains "yaml has myapp-db.localhost hostname" "myapp-db.localhost" "$proxy_yaml"
+  assert_contains "yaml has myapp-web-http router" "myapp-web-http" "$proxy_yaml"
+  assert_contains "yaml has port 80" "server.port=80" "$proxy_yaml"
+  assert_contains "yaml has port 3000" "server.port=3000" "$proxy_yaml"
+  assert_contains "yaml has port 5432" "server.port=5432" "$proxy_yaml"
+  assert_contains "yaml has xcind.app.name label" "xcind.app.name=myapp" "$proxy_yaml"
+  assert_contains "yaml has xcind.export.web.host" "xcind.export.web.host=myapp-web.localhost" "$proxy_yaml"
+  assert_contains "yaml has xcind.export.db.host" "xcind.export.db.host=myapp-db.localhost" "$proxy_yaml"
+  assert_contains "yaml has xcind-proxy network" "xcind-proxy:" "$proxy_yaml"
+  assert_contains "yaml has external network" "external: true" "$proxy_yaml"
+
+  # Test: workspace mode
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACE="dev"
+  export XCIND_WORKSPACE_ROOT="/workspaces/dev"
+  export XCIND_WORKSPACELESS=0
+  export XCIND_APP_URL_TEMPLATE='{workspace}-{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{workspace}-{app}-{export}-{protocol}'
+
+  XCIND_PROXY_EXPORTS=("web")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+
+  proxy_yaml_ws=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+  assert_contains "workspace yaml has dev-myapp-web.localhost" "dev-myapp-web.localhost" "$proxy_yaml_ws"
+  assert_contains "workspace yaml has workspace.name label" "xcind.workspace.name=dev" "$proxy_yaml_ws"
+  assert_contains "workspace yaml has workspace.path label" "xcind.workspace.path=/workspaces/dev" "$proxy_yaml_ws"
+
+  # Test: port inference (single port)
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACELESS=1
+  export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{app}-{export}-{protocol}'
+
+  XCIND_PROXY_EXPORTS=("web")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+  proxy_yaml_infer=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+  assert_contains "inferred port 80 for web" "server.port=80" "$proxy_yaml_infer"
+
+  # Test: empty exports = no output
+  XCIND_PROXY_EXPORTS=()
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  empty_output=$(xcind-proxy-hook "$HOOK_APP")
+  assert_eq "empty exports = no output" "" "$empty_output"
+
+  # Test: multi-export grouping (two exports on same compose service)
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  nginx:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+      - target: 443
+        published: "8443"
+YAML
+
+  XCIND_PROXY_EXPORTS=("web=nginx:80" "admin=nginx:443")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+  grouped_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+
+  # Should have only one "nginx:" block, not two
+  nginx_count=$(echo "$grouped_yaml" | grep -c '  nginx:' || true)
+  assert_eq "grouped: single nginx block" "1" "$nginx_count"
+  assert_contains "grouped: web hostname" "myapp-web.localhost" "$grouped_yaml"
+  assert_contains "grouped: admin hostname" "myapp-admin.localhost" "$grouped_yaml"
+
+  # Test: service validation error
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  XCIND_PROXY_EXPORTS=("nonexistent")
+  result=$(xcind-proxy-hook "$HOOK_APP" 2>&1) && status=0 || status=$?
+  assert_eq "missing service exits non-zero" "1" "$status"
+  assert_contains "missing service error message" "not found" "$result"
+
+  unset -f docker
+  rm -rf "$HOOK_APP"
+else
+  echo "  (skipped proxy hook tests: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace-hook ==="
+
+if command -v yq &>/dev/null; then
+  WS_HOOK_APP=$(mktemp -d)
+  echo '# ws hook test' >"$WS_HOOK_APP/.xcind.sh"
+
+  export XCIND_APP="frontend"
+  export XCIND_WORKSPACE="dev"
+  export XCIND_WORKSPACE_ROOT="/workspaces/dev"
+  export XCIND_WORKSPACELESS=0
+  export XCIND_WORKSPACE_SERVICE_TEMPLATE='{app}-{service}'
+  export XCIND_SHA="wshooktest"
+  export XCIND_CACHE_DIR="$WS_HOOK_APP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$WS_HOOK_APP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+  worker:
+    image: node
+  postgres:
+    image: postgres
+YAML
+
+  # Mock docker
+  docker() {
+    if [ "${1:-}" = "network" ]; then
+      return 0
+    fi
+    command docker "$@"
+  }
+
+  ws_output=$(xcind-workspace-hook "$WS_HOOK_APP")
+
+  assert_contains "ws hook prints -f flag" "-f" "$ws_output"
+  assert_file_exists "compose.workspace.yaml created" "$XCIND_GENERATED_DIR/compose.workspace.yaml"
+
+  ws_yaml=$(<"$XCIND_GENERATED_DIR/compose.workspace.yaml")
+  assert_contains "ws yaml has web service" "web:" "$ws_yaml"
+  assert_contains "ws yaml has worker service" "worker:" "$ws_yaml"
+  assert_contains "ws yaml has postgres service" "postgres:" "$ws_yaml"
+  assert_contains "ws yaml has frontend-web alias" "frontend-web" "$ws_yaml"
+  assert_contains "ws yaml has frontend-worker alias" "frontend-worker" "$ws_yaml"
+  assert_contains "ws yaml has frontend-postgres alias" "frontend-postgres" "$ws_yaml"
+  assert_contains "ws yaml has dev-internal network" "dev-internal:" "$ws_yaml"
+  assert_contains "ws yaml has external network" "external: true" "$ws_yaml"
+
+  # Test: custom service template
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACE_SERVICE_TEMPLATE='{workspace}-{app}-{service}'
+  xcind-workspace-hook "$WS_HOOK_APP" >/dev/null
+  ws_yaml_custom=$(<"$XCIND_GENERATED_DIR/compose.workspace.yaml")
+  assert_contains "custom template: dev-frontend-web alias" "dev-frontend-web" "$ws_yaml_custom"
+
+  # Test: skip when workspaceless
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACELESS=1
+  skip_output=$(xcind-workspace-hook "$WS_HOOK_APP")
+  assert_eq "skip when workspaceless" "" "$skip_output"
+
+  unset -f docker
+  rm -rf "$WS_HOOK_APP"
+else
+  echo "  (skipped workspace hook tests: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Results: $PASS passed, $FAIL failed ==="
+
+if [ "$FAIL" -gt 0 ]; then
+  exit 1
+fi
