@@ -34,8 +34,13 @@ __xcind-app-root() {
 
   while true; do
     if [ -f "$current_dir/.xcind.sh" ]; then
-      echo "$current_dir"
-      return 0
+      # Check if this is a workspace root (not an app root)
+      local _xcind_is_workspace=""
+      _xcind_is_workspace=$(XCIND_IS_WORKSPACE="" && source "$current_dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+      if [ "$_xcind_is_workspace" != "1" ]; then
+        echo "$current_dir"
+        return 0
+      fi
     fi
 
     local parent_dir
@@ -383,4 +388,230 @@ __xcind-render-template() {
     shift 2
   done
   echo "$result"
+}
+
+# --------------------------------------------------------------------------
+# Workspace Discovery
+# --------------------------------------------------------------------------
+
+# Discover workspace by checking if the parent directory of XCIND_APP_ROOT
+# contains a .xcind.sh file. If found, source it and set workspace variables.
+#
+# Must be called after XCIND_APP_ROOT is set but before __xcind-load-config.
+#
+# Sets: XCIND_WORKSPACE_ROOT, XCIND_WORKSPACE, XCIND_WORKSPACELESS
+__xcind-discover-workspace() {
+  local app_root="$1"
+  local parent
+  parent="$(dirname "$app_root")"
+
+  if [[ -f "$parent/.xcind.sh" ]]; then
+    XCIND_WORKSPACE_ROOT="$parent"
+    XCIND_WORKSPACE="$(basename "$parent")"
+    XCIND_WORKSPACELESS=0
+    # shellcheck disable=SC1091
+    source "$parent/.xcind.sh"
+  else
+    XCIND_WORKSPACELESS=1
+    XCIND_WORKSPACE_ROOT=""
+    XCIND_WORKSPACE=""
+  fi
+}
+
+# Late-bind workspace self-declaration.
+# If no workspace was discovered but app .xcind.sh set XCIND_WORKSPACE,
+# flip to workspace mode.
+__xcind-late-bind-workspace() {
+  if [[ ${XCIND_WORKSPACELESS:-1} == "1" ]] && [[ -n ${XCIND_WORKSPACE:-} ]]; then
+    XCIND_WORKSPACE_ROOT="${XCIND_WORKSPACE_ROOT:-$XCIND_APP_ROOT}"
+    XCIND_WORKSPACELESS=0
+  fi
+}
+
+# Resolve the application name.
+# Defaults to basename of XCIND_APP_ROOT unless already set.
+__xcind-resolve-app() {
+  local app_root="$1"
+  XCIND_APP="${XCIND_APP:-$(basename "$app_root")}"
+}
+
+# --------------------------------------------------------------------------
+# URL Template Resolution
+# --------------------------------------------------------------------------
+
+# Select the correct URL template variants based on workspace mode.
+# Sets XCIND_APP_URL_TEMPLATE, XCIND_ROUTER_TEMPLATE.
+# Also defaults XCIND_WORKSPACE_SERVICE_TEMPLATE.
+__xcind-resolve-url-templates() {
+  # Defaults — assigned separately to avoid brace expansion in ${:-...}
+  local _default_wl_url='{app}-{export}.{domain}'
+  local _default_ws_url='{workspace}-{app}-{export}.{domain}'
+  local _default_wl_router='{app}-{export}-{protocol}'
+  local _default_ws_router='{workspace}-{app}-{export}-{protocol}'
+  local _default_svc='{app}-{service}'
+
+  local workspaceless_url="${XCIND_WORKSPACELESS_APP_URL_TEMPLATE:-$_default_wl_url}"
+  local workspace_url="${XCIND_WORKSPACE_APP_URL_TEMPLATE:-$_default_ws_url}"
+  local workspaceless_router="${XCIND_WORKSPACELESS_ROUTER_TEMPLATE:-$_default_wl_router}"
+  local workspace_router="${XCIND_WORKSPACE_ROUTER_TEMPLATE:-$_default_ws_router}"
+
+  # shellcheck disable=SC2034 # Used by hooks and exported by xcind-compose
+  if [[ ${XCIND_WORKSPACELESS:-1} == "1" ]]; then
+    XCIND_APP_URL_TEMPLATE="$workspaceless_url"
+    XCIND_ROUTER_TEMPLATE="$workspaceless_router"
+  else
+    XCIND_APP_URL_TEMPLATE="$workspace_url"
+    XCIND_ROUTER_TEMPLATE="$workspace_router"
+  fi
+
+  # shellcheck disable=SC2034 # Used by workspace hook
+  XCIND_WORKSPACE_SERVICE_TEMPLATE="${XCIND_WORKSPACE_SERVICE_TEMPLATE:-$_default_svc}"
+}
+
+# --------------------------------------------------------------------------
+# SHA Computation & Caching
+# --------------------------------------------------------------------------
+
+# Compute a SHA256 hash from resolved file paths, their content, and config files.
+# Outputs the SHA hex string to stdout.
+#
+# Usage:
+#   sha=$(__xcind-compute-sha /path/to/app/root)
+__xcind-compute-sha() {
+  local app_root="$1"
+  local sha_input=""
+
+  # Collect compose file paths from XCIND_DOCKER_COMPOSE_OPTS (-f flags)
+  local compose_files=()
+  local i=0
+  while [ "$i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
+    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$i]}" = "-f" ]; then
+      i=$((i + 1))
+      compose_files+=("${XCIND_DOCKER_COMPOSE_OPTS[$i]}")
+    fi
+    i=$((i + 1))
+  done
+
+  # Sort file paths for stability
+  local sorted_files
+  sorted_files=$(printf '%s\n' "${compose_files[@]}" | sort)
+
+  # Add sorted paths + content hashes
+  local file
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    sha_input+="$file"
+    if [ -f "$file" ]; then
+      sha_input+=$(shasum -a 256 "$file" | cut -d' ' -f1)
+    fi
+  done <<<"$sorted_files"
+
+  # Add app .xcind.sh content
+  if [ -f "$app_root/.xcind.sh" ]; then
+    sha_input+=$(shasum -a 256 "$app_root/.xcind.sh" | cut -d' ' -f1)
+  fi
+
+  # Add workspace .xcind.sh content (if workspace mode)
+  if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]] && [ -f "$XCIND_WORKSPACE_ROOT/.xcind.sh" ]; then
+    sha_input+=$(shasum -a 256 "$XCIND_WORKSPACE_ROOT/.xcind.sh" | cut -d' ' -f1)
+  fi
+
+  # Add global config if exists
+  local global_config="${HOME}/.config/xcind/proxy/config.sh"
+  if [ -f "$global_config" ]; then
+    sha_input+=$(shasum -a 256 "$global_config" | cut -d' ' -f1)
+  fi
+
+  printf '%s' "$sha_input" | shasum -a 256 | cut -d' ' -f1
+}
+
+# Populate the cache directory with resolved config artifacts.
+# Runs docker compose config and writes config.json + resolved-config.yaml.
+#
+# Usage:
+#   __xcind-populate-cache /path/to/app/root
+__xcind-populate-cache() {
+  local app_root="$1"
+
+  mkdir -p "$XCIND_CACHE_DIR"
+
+  # Write resolved-config.yaml via docker compose config
+  docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$XCIND_CACHE_DIR/resolved-config.yaml"
+
+  # Write config.json (matching xcind-config format)
+  if command -v jq &>/dev/null; then
+    __xcind-resolve-json "$app_root" >"$XCIND_CACHE_DIR/config.json"
+  fi
+}
+
+# --------------------------------------------------------------------------
+# Hook Execution
+# --------------------------------------------------------------------------
+
+# Run post-resolve-generate hooks with cache hit/miss logic.
+# On cache miss: runs hooks, persists output, appends to XCIND_DOCKER_COMPOSE_OPTS.
+# On cache hit: replays persisted output, validates referenced files.
+#
+# Usage:
+#   __xcind-run-hooks /path/to/app/root
+__xcind-run-hooks() {
+  local app_root="$1"
+
+  if [ -d "$XCIND_GENERATED_DIR" ]; then
+    # Cache hit — replay persisted hook output
+    local hook_output_file
+    for hook_output_file in "$XCIND_GENERATED_DIR"/.hook-output-*; do
+      [ -f "$hook_output_file" ] || continue
+
+      # Read persisted output
+      local output
+      output=$(<"$hook_output_file")
+      [ -z "$output" ] && continue
+
+      # Verify referenced files exist
+      local cache_valid=true
+      local word
+      local prev=""
+      for word in $output; do
+        if [ "$prev" = "-f" ] && [ ! -f "$word" ]; then
+          cache_valid=false
+          break
+        fi
+        prev="$word"
+      done
+
+      if [ "$cache_valid" = false ]; then
+        # Treat as cache miss — remove generated dir and re-run
+        rm -rf "$XCIND_GENERATED_DIR"
+        __xcind-run-hooks "$app_root"
+        return $?
+      fi
+
+      # Append to compose opts
+      # shellcheck disable=SC2206
+      XCIND_DOCKER_COMPOSE_OPTS+=($output)
+    done
+  else
+    # Cache miss — run hooks and persist output
+    mkdir -p "$XCIND_GENERATED_DIR"
+
+    local hook_name
+    for hook_name in "${XCIND_HOOKS_POST_RESOLVE_GENERATE[@]}"; do
+      local output
+      output=$("$hook_name" "$app_root") || {
+        local rc=$?
+        echo "Error: Hook '$hook_name' failed with exit code $rc" >&2
+        return $rc
+      }
+
+      # Persist hook output
+      echo "$output" >"$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+
+      # Append to compose opts
+      if [ -n "$output" ]; then
+        # shellcheck disable=SC2206
+        XCIND_DOCKER_COMPOSE_OPTS+=($output)
+      fi
+    done
+  fi
 }

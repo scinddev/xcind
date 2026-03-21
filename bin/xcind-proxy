@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# xcind-proxy — Manage shared Traefik proxy infrastructure
+#
+# Usage:
+#   xcind-proxy init      Create proxy infrastructure files
+#   xcind-proxy up        Start the shared Traefik proxy
+#   xcind-proxy down      Stop the shared Traefik proxy
+#   xcind-proxy status    Show proxy state
+
+set -euo pipefail
+
+# Resolve the real path of this script, following symlinks
+__xcind_resolve_link() {
+  local target="$1"
+  while [ -L "$target" ]; do
+    local dir
+    dir=$(cd "$(dirname "$target")" && pwd)
+    target=$(readlink "$target")
+    [[ $target != /* ]] && target="$dir/$target"
+  done
+  echo "$(cd "$(dirname "$target")" && pwd)/$(basename "$target")"
+}
+
+XCIND_ROOT="$(cd "$(dirname "$(__xcind_resolve_link "${BASH_SOURCE[0]}")")" && cd .. && pwd)"
+
+# Source the shared library
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
+
+PROXY_DIR="${HOME}/.config/xcind/proxy"
+PROXY_COMPOSE="${PROXY_DIR}/docker-compose.yaml"
+PROXY_NETWORK="xcind-proxy"
+
+if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
+  echo "xcind-proxy ${XCIND_VERSION}"
+  exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Subcommands
+# --------------------------------------------------------------------------
+
+__xcind-proxy-init() {
+  mkdir -p "$PROXY_DIR"
+
+  # Write config.sh only if it doesn't exist (never overwrite user config)
+  if [ ! -f "$PROXY_DIR/config.sh" ]; then
+    cat >"$PROXY_DIR/config.sh" <<'EOF'
+# xcind-proxy global configuration
+# Domain suffix for generated hostnames (.localhost = zero DNS config, RFC 6761)
+XCIND_PROXY_DOMAIN="localhost"
+
+# Traefik Docker image
+XCIND_PROXY_IMAGE="traefik:v3"
+
+# Host port for HTTP traffic
+XCIND_PROXY_HTTP_PORT="80"
+
+# Enable Traefik dashboard
+XCIND_PROXY_DASHBOARD="false"
+
+# Dashboard port (only used if dashboard is enabled)
+XCIND_PROXY_DASHBOARD_PORT="8080"
+EOF
+  fi
+
+  # Source config for variable expansion
+  # shellcheck disable=SC1091
+  source "$PROXY_DIR/config.sh"
+
+  # Write docker-compose.yaml (always regenerated)
+  local dashboard_command=""
+  local dashboard_port=""
+  if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
+    dashboard_command='
+      - "--api.dashboard=true"'
+    dashboard_port="
+      - \"${XCIND_PROXY_DASHBOARD_PORT:-8080}:8080\""
+  fi
+
+  cat >"$PROXY_COMPOSE" <<EOF
+name: xcind-proxy
+
+services:
+  traefik:
+    image: ${XCIND_PROXY_IMAGE:-traefik:v3}
+    command:
+      - "--configFile=/etc/traefik/traefik.yaml"${dashboard_command}
+    ports:
+      - "${XCIND_PROXY_HTTP_PORT:-80}:80"${dashboard_port}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yaml:/etc/traefik/traefik.yaml:ro
+    networks:
+      - xcind-proxy
+    restart: unless-stopped
+    labels:
+      - "xcind.managed=true"
+      - "xcind.component=proxy"
+
+networks:
+  xcind-proxy:
+    external: true
+EOF
+
+  # Write traefik.yaml (always regenerated)
+  local dashboard_config=""
+  if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
+    dashboard_config="
+api:
+  dashboard: true
+  insecure: true"
+  fi
+
+  cat >"$PROXY_DIR/traefik.yaml" <<EOF
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: xcind-proxy
+
+log:
+  level: INFO${dashboard_config}
+EOF
+
+  # Create Docker network if it doesn't exist
+  docker network create "$PROXY_NETWORK" 2>/dev/null || true
+
+  echo "Proxy infrastructure initialized at $PROXY_DIR"
+}
+
+__xcind-proxy-up() {
+  # Ensure init has been run
+  if [ ! -f "$PROXY_COMPOSE" ]; then
+    __xcind-proxy-init
+  fi
+
+  # Ensure network exists
+  docker network create "$PROXY_NETWORK" 2>/dev/null || true
+
+  docker compose -f "$PROXY_COMPOSE" up -d
+}
+
+__xcind-proxy-down() {
+  if [ ! -f "$PROXY_COMPOSE" ]; then
+    echo "Proxy not initialized. Run 'xcind-proxy init' first." >&2
+    exit 1
+  fi
+
+  docker compose -f "$PROXY_COMPOSE" down
+}
+
+__xcind-proxy-status() {
+  if [ ! -f "$PROXY_COMPOSE" ]; then
+    echo "Status: not initialized"
+    echo "Run 'xcind-proxy init' to set up proxy infrastructure."
+    return 0
+  fi
+
+  # Source config for display
+  # shellcheck disable=SC1091
+  source "$PROXY_DIR/config.sh"
+
+  # Check if running
+  local running
+  running=$(docker compose -f "$PROXY_COMPOSE" ps --format json 2>/dev/null | head -1) || true
+
+  if [ -n "$running" ]; then
+    echo "Status: running"
+  else
+    echo "Status: stopped"
+  fi
+
+  echo "Image: ${XCIND_PROXY_IMAGE:-traefik:v3}"
+  echo "HTTP port: ${XCIND_PROXY_HTTP_PORT:-80}"
+
+  if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
+    echo "Dashboard: http://localhost:${XCIND_PROXY_DASHBOARD_PORT:-8080}"
+  fi
+
+  # Check network
+  if docker network inspect "$PROXY_NETWORK" &>/dev/null; then
+    echo "Network: $PROXY_NETWORK (exists)"
+  else
+    echo "Network: $PROXY_NETWORK (missing)"
+  fi
+}
+
+# --------------------------------------------------------------------------
+# Dispatch
+# --------------------------------------------------------------------------
+
+case "${1:-}" in
+init) __xcind-proxy-init ;;
+up) __xcind-proxy-up ;;
+down) __xcind-proxy-down ;;
+status) __xcind-proxy-status ;;
+--help | -h)
+  echo "Usage: xcind-proxy <subcommand>"
+  echo ""
+  echo "Subcommands:"
+  echo "  init       Create proxy infrastructure files in ~/.config/xcind/proxy/"
+  echo "  up         Start the shared Traefik proxy"
+  echo "  down       Stop the shared Traefik proxy"
+  echo "  status     Show proxy state (running/stopped, port, URL)"
+  echo ""
+  echo "Options:"
+  echo "  --version  Show version"
+  echo "  --help     Show this help"
+  exit 0
+  ;;
+"")
+  echo "Error: No subcommand specified. Run 'xcind-proxy --help' for usage." >&2
+  exit 1
+  ;;
+*)
+  echo "Error: Unknown subcommand '$1'. Run 'xcind-proxy --help' for usage." >&2
+  exit 1
+  ;;
+esac
