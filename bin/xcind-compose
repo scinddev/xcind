@@ -42,14 +42,46 @@ fi
 
 # --- Main ---
 
-# Detect app root
+# Step 1: Detect app root
 app_root=$(__xcind-app-root) || exit 1
+export XCIND_APP_ROOT="$app_root"
 
-# Load application config
+# Step 2: Discover workspace
+__xcind-discover-workspace "$app_root"
+
+# Step 3: Load application config (overrides workspace settings)
 __xcind-load-config "$app_root" || exit 1
 
-# Build compose options
+# Step 4: Late-bind workspace self-declaration
+__xcind-late-bind-workspace
+
+# Step 5: Resolve app name
+__xcind-resolve-app "$app_root"
+
+# Step 6: Resolve URL templates
+__xcind-resolve-url-templates
+
+# Step 7-8: Resolve files and build compose options
 __xcind-build-compose-opts "$app_root"
 
-# Execute docker compose with resolved options + passthrough args
+# Steps 9-12: Only run when hooks are registered
+if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]] 2>/dev/null; then
+  # Step 9: Compute SHA
+  XCIND_SHA=$(__xcind-compute-sha "$app_root")
+
+  # Step 10: Export pipeline vars
+  export XCIND_SHA
+  export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
+  export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+  export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
+
+  # Step 11: Populate cache
+  __xcind-populate-cache "$app_root"
+
+  # Step 12: Run hooks (cache hit = replay, cache miss = execute)
+  __xcind-run-hooks "$app_root"
+fi
+
+# Step 13: Execute docker compose with resolved options + passthrough args
 exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"

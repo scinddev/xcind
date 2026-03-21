@@ -368,6 +368,205 @@ assert_contains "docker wrapper passes non-compose to docker" \
 rm -rf "$WRAPPER_APP"
 
 # ======================================================================
+echo ""
+echo "=== Test: __xcind-discover-workspace ==="
+
+# Set up workspace layout: workspace/app/
+WS_ROOT=$(mktemp -d)
+mkdir -p "$WS_ROOT/myworkspace/myapp"
+echo 'XCIND_IS_WORKSPACE=1' >"$WS_ROOT/myworkspace/.xcind.sh"
+echo '# app config' >"$WS_ROOT/myworkspace/myapp/.xcind.sh"
+
+# Test: workspace discovered from parent .xcind.sh
+unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+__xcind-discover-workspace "$WS_ROOT/myworkspace/myapp"
+assert_eq "workspace discovered - XCIND_WORKSPACE" "myworkspace" "${XCIND_WORKSPACE:-}"
+assert_eq "workspace discovered - XCIND_WORKSPACE_ROOT" "$WS_ROOT/myworkspace" "${XCIND_WORKSPACE_ROOT:-}"
+assert_eq "workspace discovered - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
+
+# Test: no workspace when parent has no .xcind.sh
+STANDALONE_APP=$(mktemp -d)
+echo '# standalone app' >"$STANDALONE_APP/.xcind.sh"
+unset XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+__xcind-discover-workspace "$STANDALONE_APP"
+assert_eq "no workspace - XCIND_WORKSPACELESS" "1" "${XCIND_WORKSPACELESS:-}"
+assert_eq "no workspace - XCIND_WORKSPACE empty" "" "${XCIND_WORKSPACE:-}"
+assert_eq "no workspace - XCIND_WORKSPACE_ROOT empty" "" "${XCIND_WORKSPACE_ROOT:-}"
+
+# Test: __xcind-app-root skips XCIND_IS_WORKSPACE=1 dirs
+unset XCIND_APP_ROOT XCIND_IS_WORKSPACE
+result=$(__xcind-app-root "$WS_ROOT/myworkspace/myapp")
+assert_eq "app-root skips workspace dir" "$WS_ROOT/myworkspace/myapp" "$result"
+
+# Test: __xcind-app-root from within workspace root fails (no app .xcind.sh above)
+unset XCIND_APP_ROOT XCIND_IS_WORKSPACE
+result=$(__xcind-app-root "$WS_ROOT/myworkspace" 2>/dev/null) && status=0 || status=$?
+assert_eq "app-root from workspace root fails" "1" "$status"
+
+rm -rf "$WS_ROOT" "$STANDALONE_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-late-bind-workspace ==="
+
+# Test: late-bind when app sets XCIND_WORKSPACE
+unset XCIND_WORKSPACE_ROOT
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE="myws"
+XCIND_APP_ROOT="/tmp/test-app"
+__xcind-late-bind-workspace
+assert_eq "late-bind flips XCIND_WORKSPACELESS" "0" "$XCIND_WORKSPACELESS"
+assert_eq "late-bind sets XCIND_WORKSPACE_ROOT" "/tmp/test-app" "$XCIND_WORKSPACE_ROOT"
+
+# Test: no late-bind when already in workspace mode
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="already"
+XCIND_WORKSPACE_ROOT="/already/set"
+__xcind-late-bind-workspace
+assert_eq "no late-bind when already workspace" "/already/set" "$XCIND_WORKSPACE_ROOT"
+
+# Test: no late-bind when XCIND_WORKSPACE empty
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+__xcind-late-bind-workspace
+assert_eq "no late-bind when workspace empty" "1" "$XCIND_WORKSPACELESS"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-resolve-app ==="
+
+unset XCIND_APP
+__xcind-resolve-app "/path/to/myapp"
+assert_eq "resolve-app defaults to basename" "myapp" "$XCIND_APP"
+
+XCIND_APP="custom-name"
+__xcind-resolve-app "/path/to/myapp"
+assert_eq "resolve-app preserves explicit" "custom-name" "$XCIND_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-resolve-url-templates ==="
+
+# Workspaceless mode
+unset XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
+unset XCIND_WORKSPACELESS_APP_URL_TEMPLATE XCIND_WORKSPACE_APP_URL_TEMPLATE
+unset XCIND_WORKSPACELESS_ROUTER_TEMPLATE XCIND_WORKSPACE_ROUTER_TEMPLATE
+XCIND_WORKSPACELESS=1
+__xcind-resolve-url-templates
+assert_eq "workspaceless URL template" "{app}-{export}.{domain}" "$XCIND_APP_URL_TEMPLATE"
+assert_eq "workspaceless router template" "{app}-{export}-{protocol}" "$XCIND_ROUTER_TEMPLATE"
+assert_eq "default service template" "{app}-{service}" "$XCIND_WORKSPACE_SERVICE_TEMPLATE"
+
+# Workspace mode
+unset XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
+XCIND_WORKSPACELESS=0
+__xcind-resolve-url-templates
+assert_eq "workspace URL template" "{workspace}-{app}-{export}.{domain}" "$XCIND_APP_URL_TEMPLATE"
+assert_eq "workspace router template" "{workspace}-{app}-{export}-{protocol}" "$XCIND_ROUTER_TEMPLATE"
+
+# Custom templates
+unset XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACELESS_APP_URL_TEMPLATE="{export}.{app}.{domain}"
+__xcind-resolve-url-templates
+assert_eq "custom workspaceless URL template" "{export}.{app}.{domain}" "$XCIND_APP_URL_TEMPLATE"
+unset XCIND_WORKSPACELESS_APP_URL_TEMPLATE
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-compute-sha ==="
+
+SHA_APP=$(mktemp -d)
+echo '# sha test config' >"$SHA_APP/.xcind.sh"
+mkdir -p "$SHA_APP/docker"
+echo 'version: "3"' >"$SHA_APP/docker/compose.yaml"
+touch "$SHA_APP/.env"
+
+# Build opts so SHA has compose files to hash
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES
+__xcind-load-config "$SHA_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_COMPOSE_DIR="docker"
+__xcind-build-compose-opts "$SHA_APP"
+
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE_ROOT=""
+sha1=$(__xcind-compute-sha "$SHA_APP")
+
+# Same inputs = same SHA
+sha2=$(__xcind-compute-sha "$SHA_APP")
+assert_eq "SHA stable on no change" "$sha1" "$sha2"
+
+# Change content = different SHA
+echo 'version: "3.8"' >"$SHA_APP/docker/compose.yaml"
+sha3=$(__xcind-compute-sha "$SHA_APP")
+if [ "$sha1" != "$sha3" ]; then
+  echo "  ✓ SHA invalidates on content change"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ SHA invalidates on content change"
+  FAIL=$((FAIL + 1))
+fi
+
+rm -rf "$SHA_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-run-hooks (stub) ==="
+
+HOOK_APP=$(mktemp -d)
+echo '# hook test' >"$HOOK_APP/.xcind.sh"
+touch "$HOOK_APP/compose.yaml"
+
+# Set up pipeline vars
+export XCIND_SHA="testhash123"
+export XCIND_CACHE_DIR="$HOOK_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$HOOK_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+# Create a stub hook function
+stub_hook() {
+  echo "-f $XCIND_GENERATED_DIR/compose.stub.yaml"
+  touch "$XCIND_GENERATED_DIR/compose.stub.yaml"
+}
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("stub_hook")
+
+# Build base opts
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES
+__xcind-load-config "$HOOK_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$HOOK_APP"
+
+# Cache miss — should run hook
+__xcind-run-hooks "$HOOK_APP"
+opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "hook output appended (cache miss)" "compose.stub.yaml" "$opts"
+
+# Verify hook output persisted
+assert_eq "hook output file exists" "true" "$([ -f "$XCIND_GENERATED_DIR/.hook-output-stub_hook" ] && echo true || echo false)"
+
+# Cache hit — replay without re-running hook
+__xcind-build-compose-opts "$HOOK_APP"
+__xcind-run-hooks "$HOOK_APP"
+opts2="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "hook output replayed (cache hit)" "compose.stub.yaml" "$opts2"
+
+rm -rf "$HOOK_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-render-template (hostname generation) ==="
+
+hostname=$(__xcind-render-template "{app}-{export}.{domain}" app "myapp" export "web" domain "localhost")
+assert_eq "workspaceless hostname" "myapp-web.localhost" "$hostname"
+
+hostname_ws=$(__xcind-render-template "{workspace}-{app}-{export}.{domain}" workspace "dev" app "myapp" export "web" domain "localhost")
+assert_eq "workspace hostname" "dev-myapp-web.localhost" "$hostname_ws"
+
+router=$(__xcind-render-template "{app}-{export}-{protocol}" app "myapp" export "api" protocol "http")
+assert_eq "router name" "myapp-api-http" "$router"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 
