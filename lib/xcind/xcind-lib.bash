@@ -11,6 +11,20 @@
 export XCIND_VERSION="0.0.3"
 
 # --------------------------------------------------------------------------
+# Portable SHA-256 helper
+# --------------------------------------------------------------------------
+
+# Cross-platform SHA-256 wrapper.
+# Uses sha256sum (Linux coreutils/busybox) or shasum (macOS stock Perl).
+__xcind-sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@"
+  else
+    shasum -a 256 "$@"
+  fi
+}
+
+# --------------------------------------------------------------------------
 # App Root Detection
 # --------------------------------------------------------------------------
 
@@ -36,6 +50,7 @@ __xcind-app-root() {
     if [ -f "$current_dir/.xcind.sh" ]; then
       # Check if this is a workspace root (not an app root)
       local _xcind_is_workspace=""
+      # shellcheck disable=SC1091
       _xcind_is_workspace=$(XCIND_IS_WORKSPACE="" && source "$current_dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
       if [ "$_xcind_is_workspace" != "1" ]; then
         echo "$current_dir"
@@ -502,27 +517,27 @@ __xcind-compute-sha() {
     [ -z "$file" ] && continue
     sha_input+="$file"
     if [ -f "$file" ]; then
-      sha_input+=$(shasum -a 256 "$file" | cut -d' ' -f1)
+      sha_input+=$(__xcind-sha256 "$file" | cut -d' ' -f1)
     fi
   done <<<"$sorted_files"
 
   # Add app .xcind.sh content
   if [ -f "$app_root/.xcind.sh" ]; then
-    sha_input+=$(shasum -a 256 "$app_root/.xcind.sh" | cut -d' ' -f1)
+    sha_input+=$(__xcind-sha256 "$app_root/.xcind.sh" | cut -d' ' -f1)
   fi
 
   # Add workspace .xcind.sh content (if workspace mode)
   if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]] && [ -f "$XCIND_WORKSPACE_ROOT/.xcind.sh" ]; then
-    sha_input+=$(shasum -a 256 "$XCIND_WORKSPACE_ROOT/.xcind.sh" | cut -d' ' -f1)
+    sha_input+=$(__xcind-sha256 "$XCIND_WORKSPACE_ROOT/.xcind.sh" | cut -d' ' -f1)
   fi
 
   # Add global config if exists
   local global_config="${HOME}/.config/xcind/proxy/config.sh"
   if [ -f "$global_config" ]; then
-    sha_input+=$(shasum -a 256 "$global_config" | cut -d' ' -f1)
+    sha_input+=$(__xcind-sha256 "$global_config" | cut -d' ' -f1)
   fi
 
-  printf '%s' "$sha_input" | shasum -a 256 | cut -d' ' -f1
+  printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
 # Populate the cache directory with resolved config artifacts.
