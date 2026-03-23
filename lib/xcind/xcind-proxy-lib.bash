@@ -12,6 +12,7 @@
 # shellcheck disable=SC2016 # Template placeholders, not shell expansions
 XCIND_PROXY_SERVICE_TEMPLATE='  {compose_service}:
     networks:
+      default: {}
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
@@ -27,6 +28,7 @@ XCIND_PROXY_SERVICE_TEMPLATE='  {compose_service}:
 # shellcheck disable=SC2016
 XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE='  {compose_service}:
     networks:
+      default: {}
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"

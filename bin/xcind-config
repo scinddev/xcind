@@ -73,11 +73,46 @@ esac
 
 # --- Main ---
 
-# Detect app root
+# Step 1: Detect app root
 app_root=$(__xcind-app-root) || exit 1
+export XCIND_APP_ROOT="$app_root"
 
-# Load application config
+# Step 2: Discover workspace
+__xcind-discover-workspace "$app_root"
+
+# Step 3: Load application config (overrides workspace settings)
 __xcind-load-config "$app_root" || exit 1
+
+# Step 4: Late-bind workspace self-declaration
+__xcind-late-bind-workspace
+
+# Step 5: Resolve app name
+__xcind-resolve-app "$app_root"
+
+# Step 6: Resolve URL templates
+__xcind-resolve-url-templates
+
+# Step 7-8: Resolve files and build compose options
+__xcind-build-compose-opts "$app_root"
+
+# Steps 9-12: Only run when hooks are registered
+if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
+  # Step 9: Compute SHA
+  XCIND_SHA=$(__xcind-compute-sha "$app_root")
+
+  # Step 10: Export pipeline vars
+  export XCIND_SHA
+  export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
+  export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+  export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
+
+  # Step 11: Populate cache
+  __xcind-populate-cache "$app_root"
+
+  # Step 12: Run hooks (cache hit = replay, cache miss = execute)
+  __xcind-run-hooks "$app_root"
+fi
 
 # Resolve the xcind bin directory as seen by the current shell.
 # This captures the user-facing path (e.g. ~/.nix-profile/bin) rather than
@@ -117,7 +152,31 @@ files)
   __xcind-resolve-files "$app_root" "${XCIND_ENV_FILES[@]}"
 
   echo "# Compose files:"
-  __xcind-resolve-files "$local_resolve_base" "${XCIND_COMPOSE_FILES[@]}"
+  _base_compose_files=()
+  while IFS= read -r _cf; do
+    _base_compose_files+=("$_cf")
+    echo "$_cf"
+  done < <(__xcind-resolve-files "$local_resolve_base" "${XCIND_COMPOSE_FILES[@]}")
+
+  # Include hook-generated compose files
+  _i=0
+  while [ "$_i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
+    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$_i]}" = "-f" ]; then
+      _i=$((_i + 1))
+      _f="${XCIND_DOCKER_COMPOSE_OPTS[$_i]}"
+      _dup=false
+      for _cf in "${_base_compose_files[@]+"${_base_compose_files[@]}"}"; do
+        if [ "$_cf" = "$_f" ]; then
+          _dup=true
+          break
+        fi
+      done
+      if [ "$_dup" = false ]; then
+        echo "$_f"
+      fi
+    fi
+    _i=$((_i + 1))
+  done
 
   if [ ${#XCIND_BAKE_FILES[@]} -gt 0 ]; then
     echo "# Bake files:"

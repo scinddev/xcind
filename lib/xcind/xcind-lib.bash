@@ -285,6 +285,28 @@ __xcind-resolve-json() {
     compose_files+=("$compose_file")
   done < <(__xcind-resolve-files "$resolve_base" ${XCIND_COMPOSE_FILES[@]+"${XCIND_COMPOSE_FILES[@]}"})
 
+  # Include hook-generated compose files from XCIND_DOCKER_COMPOSE_OPTS
+  local _i=0
+  while [ "$_i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
+    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$_i]}" = "-f" ]; then
+      _i=$((_i + 1))
+      local _f="${XCIND_DOCKER_COMPOSE_OPTS[$_i]}"
+      # Only add files not already in the list (hook-generated overlays)
+      local _already=false
+      local _c
+      for _c in "${compose_files[@]+"${compose_files[@]}"}"; do
+        if [ "$_c" = "$_f" ]; then
+          _already=true
+          break
+        fi
+      done
+      if [ "$_already" = false ]; then
+        compose_files+=("$_f")
+      fi
+    fi
+    _i=$((_i + 1))
+  done
+
   local bake_files=()
   local bake_file
   while IFS= read -r bake_file; do
@@ -380,7 +402,10 @@ __xcind-preview-command() {
   local app_root="$1"
   shift
 
-  __xcind-build-compose-opts "$app_root"
+  # Use already-populated opts if available (e.g., from xcind-config pipeline)
+  if [[ ${#XCIND_DOCKER_COMPOSE_OPTS[@]} -eq 0 ]]; then
+    __xcind-build-compose-opts "$app_root"
+  fi
 
   echo "# Working directory: $app_root"
   echo "docker compose ${XCIND_DOCKER_COMPOSE_OPTS[*]} $*"
