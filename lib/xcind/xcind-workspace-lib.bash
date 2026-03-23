@@ -11,6 +11,7 @@
 # Per-service snippet template for workspace networking
 XCIND_WORKSPACE_SERVICE_SNIPPET='  {service}:
     networks:
+      default: {}
       {network}:
         aliases:
           - {alias}'
