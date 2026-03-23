@@ -45,7 +45,7 @@ __xcind-proxy-ensure-network() {
     return 0
   fi
 
-  if ! docker network create "$PROXY_NETWORK"; then
+  if ! docker network create "$PROXY_NETWORK" >/dev/null; then
     echo "Error: Failed to create Docker network '$PROXY_NETWORK'." >&2
     echo "Check that Docker is running and you have permission to create networks." >&2
     return 1
