@@ -37,6 +37,22 @@ if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
 fi
 
 # --------------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------------
+
+__xcind-proxy-ensure-network() {
+  if docker network inspect "$PROXY_NETWORK" &>/dev/null; then
+    return 0
+  fi
+
+  if ! docker network create "$PROXY_NETWORK"; then
+    echo "Error: Failed to create Docker network '$PROXY_NETWORK'." >&2
+    echo "Check that Docker is running and you have permission to create networks." >&2
+    return 1
+  fi
+}
+
+# --------------------------------------------------------------------------
 # Subcommands
 # --------------------------------------------------------------------------
 
@@ -127,19 +143,30 @@ log:
 EOF
 
   # Create Docker network if it doesn't exist
-  docker network create "$PROXY_NETWORK" 2>/dev/null || true
+  __xcind-proxy-ensure-network
 
   echo "Proxy infrastructure initialized at $PROXY_DIR"
 }
 
 __xcind-proxy-up() {
+  local force=false
+  if [[ ${1:-} == "--force" ]]; then
+    force=true
+  fi
+
   # Ensure init has been run
   if [ ! -f "$PROXY_COMPOSE" ]; then
     __xcind-proxy-init
   fi
 
+  if [ "$force" = true ]; then
+    # Tear down existing containers so the network can be recreated
+    docker compose -f "$PROXY_COMPOSE" down 2>/dev/null || true
+    docker network rm "$PROXY_NETWORK" 2>/dev/null || true
+  fi
+
   # Ensure network exists
-  docker network create "$PROXY_NETWORK" 2>/dev/null || true
+  __xcind-proxy-ensure-network
 
   docker compose -f "$PROXY_COMPOSE" up -d
 }
@@ -195,17 +222,17 @@ __xcind-proxy-status() {
 
 case "${1:-}" in
 init) __xcind-proxy-init ;;
-up) __xcind-proxy-up ;;
+up) __xcind-proxy-up "${2:-}" ;;
 down) __xcind-proxy-down ;;
 status) __xcind-proxy-status ;;
 --help | -h)
   echo "Usage: xcind-proxy <subcommand>"
   echo ""
   echo "Subcommands:"
-  echo "  init       Create proxy infrastructure files in ~/.config/xcind/proxy/"
-  echo "  up         Start the shared Traefik proxy"
-  echo "  down       Stop the shared Traefik proxy"
-  echo "  status     Show proxy state (running/stopped, port, URL)"
+  echo "  init          Create proxy infrastructure files in ~/.config/xcind/proxy/"
+  echo "  up [--force]  Start the shared Traefik proxy (--force recreates network)"
+  echo "  down          Stop the shared Traefik proxy"
+  echo "  status        Show proxy state (running/stopped, port, URL)"
   echo ""
   echo "Options:"
   echo "  --version  Show version"
