@@ -8,7 +8,10 @@ echo "Uninstalling xcind from $PREFIX ..."
 
 rm -f "$PREFIX/bin/xcind-compose"
 rm -f "$PREFIX/bin/xcind-config"
+rm -f "$PREFIX/bin/xcind-proxy"
 rm -f "$PREFIX/lib/xcind/xcind-lib.bash"
+rm -f "$PREFIX/lib/xcind/xcind-proxy-lib.bash"
+rm -f "$PREFIX/lib/xcind/xcind-workspace-lib.bash"
 
 # Remove the directory if empty
 rmdir "$PREFIX/lib/xcind" 2>/dev/null || true
