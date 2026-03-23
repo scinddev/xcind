@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2034,SC2154,SC2329
 # test-xcind-proxy.sh — Verify xcind-proxy CLI and hook libraries
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XCIND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
-source "$XCIND_ROOT/lib/xcind/xcind-proxy-lib.bash"
-source "$XCIND_ROOT/lib/xcind/xcind-workspace-lib.bash"
 
 PASS=0
 FAIL=0

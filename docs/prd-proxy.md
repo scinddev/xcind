@@ -94,13 +94,9 @@ A mechanism that allows commands (like `xcind-proxy`) to participate in the conf
 6. Returns exit code 0 on success, non-zero to abort.
 7. **Only called on cache miss** — stdout is persisted to `$XCIND_GENERATED_DIR/.hook-output-<hook_name>` and replayed on subsequent cache-hit runs.
 
-**Registration:** Hooks are registered in `.xcind.sh` via a configuration variable:
+**Registration:** The built-in hooks (`xcind-proxy-hook` and `xcind-workspace-hook`) are auto-sourced and registered by default in `xcind-lib.bash`. Custom hooks can be added via `XCIND_HOOKS_POST_RESOLVE_GENERATE` in `.xcind.sh`. Setting the array to `()` disables all hook processing.
 
-```bash
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook" "xcind-workspace-hook")
-```
-
-Each entry names a bash function available in the current shell (sourced via `.xcind.sh` or a library it sources). xcind's pipeline invokes them in order after resolution completes. Hooks are independent — they can run in any order and produce separate overlay files. Docker Compose merges all overlays at invocation time.
+xcind's pipeline invokes hooks in order after resolution completes. Hooks are independent — they can run in any order and produce separate overlay files. Docker Compose merges all overlays at invocation time.
 
 #### Hook execution flow
 
@@ -442,11 +438,7 @@ Subcommands:
 
 ### 5.5 Integration as a Hook
 
-`xcind-proxy` ships a hook function, `xcind-proxy-hook`, that users register in `.xcind.sh`:
-
-```bash
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
-```
+`xcind-proxy` ships a hook function, `xcind-proxy-hook`, that is auto-sourced and registered by default in `xcind-lib.bash`. Apps enable proxy support by declaring `XCIND_PROXY_EXPORTS` in their `.xcind.sh`.
 
 When invoked as a hook (cache miss only), `xcind-proxy-hook`:
 
@@ -462,17 +454,11 @@ The hook no longer re-sources `.xcind.sh` or selects hostname/router template va
 
 No SHA check is needed within the hook — it is only called on cache miss by the pipeline. On cache hit, the pipeline replays the hook's persisted output automatically.
 
-This means `xcind-compose up` automatically includes the proxy with zero extra steps once the hook is registered.
+This means `xcind-compose up` automatically includes the proxy with zero extra steps — just declare `XCIND_PROXY_EXPORTS`.
 
 ### 5.6 Workspace Hook (`xcind-workspace-hook`)
 
-`xcind-workspace-hook` generates `compose.workspace.yaml` to attach all services to the workspace-internal Docker network with DNS aliases. Like `xcind-proxy-hook`, it is a user-registered hook.
-
-**Registration:**
-
-```bash
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook" "xcind-workspace-hook")
-```
+`xcind-workspace-hook` generates `compose.workspace.yaml` to attach all services to the workspace-internal Docker network with DNS aliases. Like `xcind-proxy-hook`, it is auto-sourced and registered by default in `xcind-lib.bash`.
 
 **Hook behavior:**
 
@@ -523,9 +509,6 @@ The SHA is computed by the resolution pipeline (step 9 in the execution flow) an
 Workspace-level settings apply to all apps within the workspace directory. Apps can override any of these in their own `.xcind.sh`.
 
 ```bash
-# Hook registration (applies to all apps in this workspace)
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
-
 # URL template overrides (optional — defaults shown in Section 4.7)
 XCIND_WORKSPACE_APP_URL_TEMPLATE="{workspace}-{app}-{export}.{domain}"
 XCIND_WORKSPACE_ROUTER_TEMPLATE="{workspace}-{app}-{export}-{protocol}"
@@ -565,7 +548,7 @@ XCIND_APP="myapp"
 | `XCIND_WORKSPACE_SERVICE_TEMPLATE` | user | `{app}-{service}` | Template for workspace network aliases |
 | `XCIND_APP_URL_TEMPLATE` | computed | — | Resolved hostname template (from workspaceless or workspace variant) |
 | `XCIND_ROUTER_TEMPLATE` | computed | — | Resolved router name template (from workspaceless or workspace variant) |
-| `XCIND_HOOKS_POST_RESOLVE_GENERATE` | user | `()` | Array of hook function/command names |
+| `XCIND_HOOKS_POST_RESOLVE_GENERATE` | built-in | `("xcind-proxy-hook" "xcind-workspace-hook")` | Array of hook function/command names |
 | `XCIND_SHA` | computed | — | SHA of resolved configuration inputs |
 | `XCIND_CACHE_DIR` | computed | — | Path to cache directory for current SHA |
 | `XCIND_GENERATED_DIR` | computed | — | Path to generated directory for current SHA |

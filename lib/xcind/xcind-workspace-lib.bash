@@ -4,9 +4,8 @@
 # Provides xcind-workspace-hook, a post-resolve-generate hook that generates
 # workspace network aliases for all compose services.
 #
-# Source this file in .xcind.sh to make the hook available:
-#   source "$(dirname "$(command -v xcind-compose)")/../lib/xcind/xcind-workspace-lib.bash"
-#   XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook" "xcind-workspace-hook")
+# This file is auto-sourced by xcind-lib.bash. The hook is registered by
+# default and activates automatically for apps inside a workspace.
 
 # Per-service snippet template for workspace networking
 XCIND_WORKSPACE_SERVICE_SNIPPET='  {service}:
