@@ -1,0 +1,10 @@
+services:
+  app:
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+
+  db:
+    ports:
+      - "${DB_PORT:-5432}:5432"
