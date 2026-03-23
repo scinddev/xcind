@@ -1,0 +1,6 @@
+services:
+  app:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.advanced-app.rule=Host(`advanced.localhost`)"
+      - "traefik.http.services.advanced-app.loadbalancer.server.port=3000"

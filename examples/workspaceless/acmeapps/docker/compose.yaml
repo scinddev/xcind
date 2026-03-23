@@ -1,0 +1,7 @@
+services:
+  app:
+    image: nginx:alpine
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ../src:/usr/share/nginx/html:ro

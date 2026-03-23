@@ -336,10 +336,11 @@ xcind/
 ├── test/
 │   └── test-xcind.sh          # Test suite
 ├── examples/
-│   ├── acmeapps/
-│   │   └── .xcind.sh          # Simple example
-│   └── advanced/
-│       └── .xcind.sh          # Variable expansion example
+│   ├── workspaceless/
+│   │   ├── acmeapps/          # Simple example (nginx, env files)
+│   │   └── advanced/          # Variable expansion, multi-compose, traefik
+│   └── workspaces/
+│       └── dev/               # Workspace with frontend + backend apps
 ├── contrib/
 │   ├── release                # Release helper script
 │   └── test-all               # Full test runner (Docker + unit)
