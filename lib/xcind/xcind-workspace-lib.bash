@@ -40,7 +40,7 @@ xcind-workspace-hook() {
   local network="${XCIND_WORKSPACE}-internal"
 
   # Ensure workspace network exists (lazy, idempotent)
-  docker network create "$network" 2>/dev/null || true
+  docker network create "$network" >/dev/null 2>&1 || true
 
   # Enumerate all compose services
   local services
