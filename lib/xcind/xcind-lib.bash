@@ -11,10 +11,16 @@
 export XCIND_VERSION="0.0.3"
 
 # --------------------------------------------------------------------------
-# Hook defaults
+# Built-in hooks
 # --------------------------------------------------------------------------
 
-XCIND_HOOKS_POST_RESOLVE_GENERATE=()
+__XCIND_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-proxy-lib.bash"
+# shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
+
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook" "xcind-workspace-hook")
 
 # --------------------------------------------------------------------------
 # Portable SHA-256 helper

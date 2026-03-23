@@ -120,14 +120,10 @@ XCIND_IS_WORKSPACE=1
 Array of hook function names to execute after file resolution. Hooks can generate
 additional compose files dynamically. See [Hooks](#hooks).
 
-**Default:** `()` (empty)
+**Default:** `("xcind-proxy-hook" "xcind-workspace-hook")`
 
-```bash
-XCIND_HOOKS_POST_RESOLVE_GENERATE=(
-    "xcind-proxy-hook"
-    "xcind-workspace-hook"
-)
-```
+Both built-in hooks are registered automatically. Override to `()` in your
+`.xcind.sh` to disable all hook processing.
 
 ### `XCIND_PROXY_EXPORTS`
 
@@ -255,26 +251,21 @@ dev/                          # workspace root
     └── compose.yaml
 ```
 
-The workspace `.xcind.sh` typically sources hook libraries and registers hooks:
+The workspace `.xcind.sh` marks the directory and sets workspace-level config:
 
 ```bash
 XCIND_IS_WORKSPACE=1
 XCIND_PROXY_DOMAIN="xcind.localhost"
-
-# Source hook libraries
-source "$(dirname "$(command -v xcind-compose)")/../lib/xcind/xcind-proxy-lib.bash"
-source "$(dirname "$(command -v xcind-compose)")/../lib/xcind/xcind-workspace-lib.bash"
-
-XCIND_HOOKS_POST_RESOLVE_GENERATE=(
-    "xcind-proxy-hook"
-    "xcind-workspace-hook"
-)
 ```
+
+The proxy and workspace hooks are built-in and registered by default — no manual
+sourcing or hook registration is needed.
 
 ## Hooks
 
 Hooks let xcind generate additional compose files dynamically after file
-resolution. They are registered via `XCIND_HOOKS_POST_RESOLVE_GENERATE`.
+resolution. The built-in proxy and workspace hooks are registered by default.
+Custom hooks can be added via `XCIND_HOOKS_POST_RESOLVE_GENERATE`.
 
 ### How hooks work
 

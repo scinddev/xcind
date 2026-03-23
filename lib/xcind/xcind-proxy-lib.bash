@@ -4,9 +4,8 @@
 # Provides xcind-proxy-hook, a post-resolve-generate hook that generates
 # Traefik proxy configuration from XCIND_PROXY_EXPORTS declarations.
 #
-# Source this file in .xcind.sh to make the hook available:
-#   source "$(dirname "$(command -v xcind-compose)")/../lib/xcind/xcind-proxy-lib.bash"
-#   XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook")
+# This file is auto-sourced by xcind-lib.bash. The hook is registered by
+# default — apps only need to declare XCIND_PROXY_EXPORTS to use it.
 
 # Per-service YAML snippet template (without workspace labels)
 # shellcheck disable=SC2016 # Template placeholders, not shell expansions
