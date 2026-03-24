@@ -47,6 +47,18 @@ assert_file_exists() {
   fi
 }
 
+assert_not_contains() {
+  local label="$1" needle="$2" haystack="$3"
+  if [[ $haystack != *"$needle"* ]]; then
+    echo "  ✓ $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ $label"
+    echo "    expected NOT to contain: $needle"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 # ======================================================================
 echo "=== Test: xcind-proxy init (mock HOME) ==="
 
@@ -301,6 +313,129 @@ YAML
   assert_eq "grouped: single nginx block" "1" "$nginx_count"
   assert_contains "grouped: web hostname" "myapp-web.localhost" "$grouped_yaml"
   assert_contains "grouped: admin hostname" "myapp-admin.localhost" "$grouped_yaml"
+
+  # Test: apex URL — workspaceless, primary export gets apex
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACELESS=1
+  export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{app}-{export}-{protocol}'
+  export XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+  export XCIND_APEX_ROUTER_TEMPLATE='{app}-{protocol}'
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+  api:
+    image: node
+    ports:
+      - target: 3000
+        published: "3001"
+YAML
+
+  XCIND_PROXY_EXPORTS=("web" "api:3000")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+  apex_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+
+  assert_contains "apex: primary has apex hostname" "myapp.localhost" "$apex_yaml"
+  assert_contains "apex: primary has apex router rule" 'traefik.http.routers.myapp-http.rule=Host(`myapp.localhost`)' "$apex_yaml"
+  assert_contains "apex: primary has xcind.apex.host" "xcind.apex.host=myapp.localhost" "$apex_yaml"
+  assert_contains "apex: primary has xcind.apex.url" "xcind.apex.url=http://myapp.localhost" "$apex_yaml"
+  assert_contains "apex: primary still has export hostname" "myapp-web.localhost" "$apex_yaml"
+
+  # Extract api service block (from "  api:" to next service or end)
+  api_block=$(echo "$apex_yaml" | sed -n '/^  api:/,/^  [a-z]/p' | head -n -1)
+  assert_not_contains "apex: non-primary has no apex.host" "xcind.apex.host" "$api_block"
+  assert_not_contains "apex: non-primary has no apex.url" "xcind.apex.url" "$api_block"
+
+  # Test: apex disabled — empty template
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_APP_APEX_URL_TEMPLATE=""
+  export XCIND_APEX_ROUTER_TEMPLATE=""
+
+  XCIND_PROXY_EXPORTS=("web" "api:3000")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+  noapex_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+
+  assert_not_contains "apex disabled: no xcind.apex.host" "xcind.apex.host" "$noapex_yaml"
+  assert_not_contains "apex disabled: no xcind.apex.url" "xcind.apex.url" "$noapex_yaml"
+  assert_contains "apex disabled: still has export hostname" "myapp-web.localhost" "$noapex_yaml"
+
+  # Test: apex URL — workspace mode
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACE="dev"
+  export XCIND_WORKSPACE_ROOT="/workspaces/dev"
+  export XCIND_WORKSPACELESS=0
+  export XCIND_APP_URL_TEMPLATE='{workspace}-{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{workspace}-{app}-{export}-{protocol}'
+  export XCIND_APP_APEX_URL_TEMPLATE='{workspace}-{app}.{domain}'
+  export XCIND_APEX_ROUTER_TEMPLATE='{workspace}-{app}-{protocol}'
+
+  XCIND_PROXY_EXPORTS=("web")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+  ws_apex_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+
+  assert_contains "apex ws: has dev-myapp.localhost" "dev-myapp.localhost" "$ws_apex_yaml"
+  assert_contains "apex ws: has xcind.apex.host" "xcind.apex.host=dev-myapp.localhost" "$ws_apex_yaml"
+  assert_contains "apex ws: has workspace.name label" "xcind.workspace.name=dev" "$ws_apex_yaml"
+
+  # Test: grouped exports with apex — two exports on same compose service
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACELESS=1
+  export XCIND_WORKSPACE=""
+  export XCIND_WORKSPACE_ROOT=""
+  export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{app}-{export}-{protocol}'
+  export XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+  export XCIND_APEX_ROUTER_TEMPLATE='{app}-{protocol}'
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  nginx:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+      - target: 443
+        published: "8443"
+YAML
+
+  XCIND_PROXY_EXPORTS=("web=nginx:80" "admin=nginx:443")
+  xcind-proxy-hook "$HOOK_APP" >/dev/null
+  grouped_apex_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+
+  nginx_count=$(echo "$grouped_apex_yaml" | grep -c '  nginx:' || true)
+  assert_eq "apex grouped: single nginx block" "1" "$nginx_count"
+  assert_contains "apex grouped: has web hostname" "myapp-web.localhost" "$grouped_apex_yaml"
+  assert_contains "apex grouped: has admin hostname" "myapp-admin.localhost" "$grouped_apex_yaml"
+  assert_contains "apex grouped: has apex hostname" "xcind.apex.host=myapp.localhost" "$grouped_apex_yaml"
+
+  # Restore resolved-config for remaining tests
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+  api:
+    image: node
+    ports:
+      - target: 3000
+        published: "3001"
+  postgres:
+    image: postgres
+    ports:
+      - target: 5432
+        published: "5433"
+YAML
 
   # Test: service validation error
   rm -rf "$XCIND_GENERATED_DIR"

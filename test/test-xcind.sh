@@ -472,6 +472,40 @@ __xcind-resolve-url-templates
 assert_eq "custom workspaceless URL template" "{export}.{app}.{domain}" "$XCIND_APP_URL_TEMPLATE"
 unset XCIND_WORKSPACELESS_APP_URL_TEMPLATE
 
+# Apex template defaults — workspaceless
+unset XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+unset XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE
+unset XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE XCIND_WORKSPACE_APEX_ROUTER_TEMPLATE
+XCIND_WORKSPACELESS=1
+__xcind-resolve-url-templates
+assert_eq "workspaceless apex URL template" "{app}.{domain}" "$XCIND_APP_APEX_URL_TEMPLATE"
+assert_eq "workspaceless apex router template" "{app}-{protocol}" "$XCIND_APEX_ROUTER_TEMPLATE"
+
+# Apex template defaults — workspace
+unset XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+XCIND_WORKSPACELESS=0
+__xcind-resolve-url-templates
+assert_eq "workspace apex URL template" "{workspace}-{app}.{domain}" "$XCIND_APP_APEX_URL_TEMPLATE"
+assert_eq "workspace apex router template" "{workspace}-{app}-{protocol}" "$XCIND_APEX_ROUTER_TEMPLATE"
+
+# Apex custom template
+unset XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE="{app}.custom.{domain}"
+__xcind-resolve-url-templates
+assert_eq "custom apex URL template" "{app}.custom.{domain}" "$XCIND_APP_APEX_URL_TEMPLATE"
+unset XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE
+
+# Apex opt-out — empty string disables apex
+unset XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE=""
+XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE=""
+__xcind-resolve-url-templates
+assert_eq "apex URL opt-out (empty string)" "" "$XCIND_APP_APEX_URL_TEMPLATE"
+assert_eq "apex router opt-out (empty string)" "" "$XCIND_APEX_ROUTER_TEMPLATE"
+unset XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE
+
 # ======================================================================
 echo ""
 echo "=== Test: __xcind-compute-sha ==="
