@@ -49,6 +49,50 @@ XCIND_PROXY_LABELS_TEMPLATE='      - "traefik.http.routers.{router}.rule=Host(`{
       - "xcind.export.{export}.host={hostname}"
       - "xcind.export.{export}.url=http://{hostname}"'
 
+# Per-service YAML snippet template with apex URL (without workspace labels)
+# shellcheck disable=SC2016
+XCIND_PROXY_SERVICE_TEMPLATE_APEX='  {compose_service}:
+    networks:
+      default: {}
+      xcind-proxy: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
+      - "traefik.http.routers.{router}.entrypoints=web"
+      - "traefik.http.services.{router}.loadbalancer.server.port={port}"
+      - "traefik.http.routers.{apex_router}.rule=Host(`{apex_hostname}`)"
+      - "traefik.http.routers.{apex_router}.entrypoints=web"
+      - "traefik.http.services.{apex_router}.loadbalancer.server.port={port}"
+      - "xcind.app.name={app}"
+      - "xcind.app.path={app_path}"
+      - "xcind.export.{export}.host={hostname}"
+      - "xcind.export.{export}.url=http://{hostname}"
+      - "xcind.apex.host={apex_hostname}"
+      - "xcind.apex.url=http://{apex_hostname}"'
+
+# Per-service YAML snippet template with apex URL (with workspace labels)
+# shellcheck disable=SC2016
+XCIND_PROXY_SERVICE_TEMPLATE_APEX_WORKSPACE='  {compose_service}:
+    networks:
+      default: {}
+      xcind-proxy: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
+      - "traefik.http.routers.{router}.entrypoints=web"
+      - "traefik.http.services.{router}.loadbalancer.server.port={port}"
+      - "traefik.http.routers.{apex_router}.rule=Host(`{apex_hostname}`)"
+      - "traefik.http.routers.{apex_router}.entrypoints=web"
+      - "traefik.http.services.{apex_router}.loadbalancer.server.port={port}"
+      - "xcind.app.name={app}"
+      - "xcind.app.path={app_path}"
+      - "xcind.workspace.name={workspace}"
+      - "xcind.workspace.path={workspace_path}"
+      - "xcind.export.{export}.host={hostname}"
+      - "xcind.export.{export}.url=http://{hostname}"
+      - "xcind.apex.host={apex_hostname}"
+      - "xcind.apex.url=http://{apex_hostname}"'
+
 # --------------------------------------------------------------------------
 # Export Entry Parsing
 # --------------------------------------------------------------------------
@@ -187,10 +231,17 @@ xcind-proxy-hook() {
 
   # Select service template based on workspace mode
   local service_template
+  local apex_service_template=""
   if [[ ${XCIND_WORKSPACELESS:-1} == "1" ]]; then
     service_template="$XCIND_PROXY_SERVICE_TEMPLATE"
+    if [[ -n ${XCIND_APP_APEX_URL_TEMPLATE:-} ]]; then
+      apex_service_template="$XCIND_PROXY_SERVICE_TEMPLATE_APEX"
+    fi
   else
     service_template="$XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE"
+    if [[ -n ${XCIND_APP_APEX_URL_TEMPLATE:-} ]]; then
+      apex_service_template="$XCIND_PROXY_SERVICE_TEMPLATE_APEX_WORKSPACE"
+    fi
   fi
 
   # Parse all export entries and group by compose service
@@ -199,6 +250,8 @@ xcind-proxy-hook() {
   local -a ports=()
   local -a hostnames=()
   local -a routers=()
+  local apex_hostname=""
+  local apex_router=""
 
   local entry
   for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
@@ -224,6 +277,16 @@ xcind-proxy-hook() {
     router=$(__xcind-render-template "$XCIND_ROUTER_TEMPLATE" \
       workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
       export "$_export_name" protocol "http")
+
+    # Generate apex hostname and router for primary export only
+    if [[ ${#export_names[@]} -eq 0 && -n $apex_service_template ]]; then
+      apex_hostname=$(__xcind-render-template "$XCIND_APP_APEX_URL_TEMPLATE" \
+        workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
+        domain "$XCIND_PROXY_DOMAIN")
+      apex_router=$(__xcind-render-template "$XCIND_APEX_ROUTER_TEMPLATE" \
+        workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
+        protocol "http")
+    fi
 
     export_names+=("$_export_name")
     compose_services+=("$_compose_service")
@@ -264,8 +327,13 @@ xcind-proxy-hook() {
     while [ "$j" -lt "${#export_names[@]}" ]; do
       if [ "${compose_services[$j]}" = "$svc" ]; then
         if [ "$first" = true ]; then
+          # Use apex template for primary export (index 0), base template otherwise
+          local effective_template="$service_template"
+          if [[ $j -eq 0 && -n $apex_service_template ]]; then
+            effective_template="$apex_service_template"
+          fi
           # Render full service block for first export
-          service_block=$(__xcind-render-template "$service_template" \
+          service_block=$(__xcind-render-template "$effective_template" \
             compose_service "$svc" \
             router "${routers[$j]}" \
             hostname "${hostnames[$j]}" \
@@ -274,7 +342,9 @@ xcind-proxy-hook() {
             app_path "$app_root" \
             workspace "${XCIND_WORKSPACE:-}" \
             workspace_path "${XCIND_WORKSPACE_ROOT:-}" \
-            export "${export_names[$j]}")
+            export "${export_names[$j]}" \
+            apex_router "$apex_router" \
+            apex_hostname "$apex_hostname")
           first=false
         else
           # Append additional labels for subsequent exports

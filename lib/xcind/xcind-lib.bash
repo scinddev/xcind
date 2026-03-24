@@ -502,18 +502,34 @@ __xcind-resolve-url-templates() {
   local _default_ws_router='{workspace}-{app}-{export}-{protocol}'
   local _default_svc='{app}-{service}'
 
+  # Apex defaults — shorter app-level hostnames without {export}
+  local _default_wl_apex_url='{app}.{domain}'
+  local _default_ws_apex_url='{workspace}-{app}.{domain}'
+  local _default_wl_apex_router='{app}-{protocol}'
+  local _default_ws_apex_router='{workspace}-{app}-{protocol}'
+
   local workspaceless_url="${XCIND_WORKSPACELESS_APP_URL_TEMPLATE:-$_default_wl_url}"
   local workspace_url="${XCIND_WORKSPACE_APP_URL_TEMPLATE:-$_default_ws_url}"
   local workspaceless_router="${XCIND_WORKSPACELESS_ROUTER_TEMPLATE:-$_default_wl_router}"
   local workspace_router="${XCIND_WORKSPACE_ROUTER_TEMPLATE:-$_default_ws_router}"
 
+  # Apex: use ${VAR-default} (no colon) so explicit empty string disables apex
+  local workspaceless_apex_url="${XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE-$_default_wl_apex_url}"
+  local workspace_apex_url="${XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE-$_default_ws_apex_url}"
+  local workspaceless_apex_router="${XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE-$_default_wl_apex_router}"
+  local workspace_apex_router="${XCIND_WORKSPACE_APEX_ROUTER_TEMPLATE-$_default_ws_apex_router}"
+
   # shellcheck disable=SC2034 # Used by hooks and exported by xcind-compose
   if [[ ${XCIND_WORKSPACELESS:-1} == "1" ]]; then
     XCIND_APP_URL_TEMPLATE="$workspaceless_url"
     XCIND_ROUTER_TEMPLATE="$workspaceless_router"
+    XCIND_APP_APEX_URL_TEMPLATE="$workspaceless_apex_url"
+    XCIND_APEX_ROUTER_TEMPLATE="$workspaceless_apex_router"
   else
     XCIND_APP_URL_TEMPLATE="$workspace_url"
     XCIND_ROUTER_TEMPLATE="$workspace_router"
+    XCIND_APP_APEX_URL_TEMPLATE="$workspace_apex_url"
+    XCIND_APEX_ROUTER_TEMPLATE="$workspace_apex_router"
   fi
 
   # shellcheck disable=SC2034 # Used by workspace hook
