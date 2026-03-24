@@ -15,6 +15,7 @@ XCIND_PROXY_SERVICE_TEMPLATE='  {compose_service}:
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=xcind-proxy"
       - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
       - "traefik.http.routers.{router}.entrypoints=web"
       - "traefik.http.services.{router}.loadbalancer.server.port={port}"
@@ -31,6 +32,7 @@ XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE='  {compose_service}:
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=xcind-proxy"
       - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
       - "traefik.http.routers.{router}.entrypoints=web"
       - "traefik.http.services.{router}.loadbalancer.server.port={port}"
@@ -57,6 +59,7 @@ XCIND_PROXY_SERVICE_TEMPLATE_APEX='  {compose_service}:
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=xcind-proxy"
       - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
       - "traefik.http.routers.{router}.entrypoints=web"
       - "traefik.http.services.{router}.loadbalancer.server.port={port}"
@@ -78,6 +81,7 @@ XCIND_PROXY_SERVICE_TEMPLATE_APEX_WORKSPACE='  {compose_service}:
       xcind-proxy: {}
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=xcind-proxy"
       - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
       - "traefik.http.routers.{router}.entrypoints=web"
       - "traefik.http.services.{router}.loadbalancer.server.port={port}"

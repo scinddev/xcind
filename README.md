@@ -138,7 +138,7 @@ Format: `export_name[=compose_service][:port]`
 XCIND_PROXY_EXPORTS=(
     "api=app:3000"          # export "api" from service "app" on port 3000
     "web:8080"              # export "web" from service "web" on port 8080
-    "app"                   # export "app" from service "app", port auto-detected
+    "app"                   # export "app" from service "app", port from compose config
 )
 ```
 
@@ -327,7 +327,7 @@ Each entry in `XCIND_PROXY_EXPORTS` maps an export name to a compose service:
 XCIND_PROXY_EXPORTS=(
     "api=app:3000"    # export "api" → service "app", port 3000
     "web:8080"        # export "web" → service "web", port 8080
-    "app"             # export "app" → service "app", port auto-detected
+    "app"             # export "app" → service "app", port from compose config
 )
 ```
 
