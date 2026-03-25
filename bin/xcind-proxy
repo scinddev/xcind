@@ -235,7 +235,10 @@ init) __xcind-proxy-init ;;
 up) __xcind-proxy-up "${2:-}" ;;
 down) __xcind-proxy-down ;;
 status) __xcind-proxy-status ;;
-logs) shift; __xcind-proxy-logs "$@" ;;
+logs)
+  shift
+  __xcind-proxy-logs "$@"
+  ;;
 --help | -h)
   echo "Usage: xcind-proxy <subcommand>"
   echo ""
