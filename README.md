@@ -581,9 +581,7 @@ xcind/
 │   ├── release                # Release helper script
 │   └── test-all               # Full test runner (Docker + unit)
 ├── docs/
-│   ├── releasing.md           # Release process documentation
-│   ├── prd-proxy.md           # Proxy feature PRD
-│   └── research-scind-proxy.md  # Proxy research notes
+│   └── releasing.md           # Release process documentation
 ├── compose.yaml               # Default Docker Compose configuration
 ├── compose.override.dist      # Compose override template
 ├── Dockerfile                 # Container image build
@@ -592,6 +590,8 @@ xcind/
 ├── install.sh                 # Install to a PREFIX
 ├── uninstall.sh               # Remove from a PREFIX
 ├── package.json               # npm package manifest
+├── cliff.toml                 # Changelog generation config (git-cliff)
+├── CHANGELOG.md               # Release changelog
 ├── LICENSE                    # MIT license
 └── README.md
 ```
