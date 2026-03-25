@@ -21,9 +21,11 @@
         '';
         postInstall = ''
           wrapProgram "$out/bin/xcind-compose" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils ]}
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.yq ]}
           wrapProgram "$out/bin/xcind-config" \
             --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.jq ]}
+          wrapProgram "$out/bin/xcind-proxy" \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.docker ]}
         '';
         meta = with pkgs.lib; {
           description = "Docker Compose environment manager";
@@ -78,6 +80,7 @@
 
             # -- Utilities --
             jq
+            yq
             curl
             git
             git-cliff

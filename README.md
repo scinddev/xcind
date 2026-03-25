@@ -105,6 +105,70 @@ use. Currently tracked in `xcind-config` JSON output but not passed to `docker c
 XCIND_BAKE_FILES=("docker-bake.hcl")
 ```
 
+### `XCIND_IS_WORKSPACE`
+
+Set to `1` in a workspace root's `.xcind.sh` to mark the directory as a workspace.
+When xcind discovers an app inside this directory, it sources the workspace
+`.xcind.sh` first to set up workspace-level settings. See [Workspace Mode](#workspace-mode).
+
+```bash
+XCIND_IS_WORKSPACE=1
+```
+
+### `XCIND_HOOKS_POST_RESOLVE_GENERATE`
+
+Array of hook function names to execute after file resolution. Hooks can generate
+additional compose files dynamically. See [Hooks](#hooks).
+
+**Default:** `("xcind-proxy-hook" "xcind-workspace-hook")`
+
+Both built-in hooks are registered automatically. Override to `()` in your
+`.xcind.sh` to disable all hook processing.
+
+### `XCIND_PROXY_EXPORTS`
+
+Array of service export declarations for the proxy hook. Each entry maps an
+export name to a compose service and port. See [Proxy](#proxy).
+
+**Default:** `()` (empty)
+
+Format: `export_name[=compose_service][:port]`
+
+```bash
+XCIND_PROXY_EXPORTS=(
+    "api=app:3000"          # export "api" from service "app" on port 3000
+    "web:8080"              # export "web" from service "web" on port 8080
+    "app"                   # export "app" from service "app", port from compose config
+)
+```
+
+### `XCIND_PROXY_DOMAIN`
+
+Domain suffix for generated proxy hostnames. Can be set in the workspace
+`.xcind.sh` or in the global proxy config.
+
+**Default:** `"localhost"` (RFC 6761 — `.localhost` requires zero DNS configuration)
+
+```bash
+XCIND_PROXY_DOMAIN="xcind.localhost"
+```
+
+### URL Template Variables
+
+These control how hostnames, router names, and network aliases are generated.
+Defaults are provided for both workspaceless and workspace modes.
+
+| Variable | Default | Used when |
+| --- | --- | --- |
+| `XCIND_WORKSPACELESS_APP_URL_TEMPLATE` | `{app}-{export}.{domain}` | No workspace |
+| `XCIND_WORKSPACE_APP_URL_TEMPLATE` | `{workspace}-{app}-{export}.{domain}` | In workspace |
+| `XCIND_WORKSPACELESS_ROUTER_TEMPLATE` | `{app}-{export}-{protocol}` | No workspace |
+| `XCIND_WORKSPACE_ROUTER_TEMPLATE` | `{workspace}-{app}-{export}-{protocol}` | In workspace |
+| `XCIND_WORKSPACE_SERVICE_TEMPLATE` | `{app}-{service}` | Workspace networking |
+
+Placeholders (`{app}`, `{workspace}`, `{export}`, `{domain}`, `{protocol}`, `{service}`)
+are replaced at runtime.
+
 ## Override Resolution
 
 For files with a recognized extension (`.yaml`, `.yml`, `.json`, `.hcl`, `.toml`),
@@ -141,6 +205,159 @@ XCIND_COMPOSE_FILES=(
 With `APP_ENV=dev`, xcind checks for `compose.dev.yaml` and `compose.dev.override.yaml`.
 With `APP_ENV=prod`, it checks for `compose.prod.yaml` and `compose.prod.override.yaml`.
 
+## Workspace Mode
+
+Xcind supports grouping multiple applications into a **workspace**. A workspace
+is a parent directory containing its own `.xcind.sh` with `XCIND_IS_WORKSPACE=1`.
+
+### How it works
+
+When xcind finds an app's `.xcind.sh`, it checks whether the **parent directory**
+also has a `.xcind.sh`. If that file sets `XCIND_IS_WORKSPACE=1`, xcind enters
+workspace mode:
+
+1. Sources the workspace `.xcind.sh` first (sets workspace-level hooks, domain, etc.)
+2. Then sources the app's `.xcind.sh` (overrides app-specific settings)
+
+### Workspace variables
+
+These are set automatically when workspace mode is active:
+
+| Variable | Value |
+| --- | --- |
+| `XCIND_WORKSPACE` | Basename of the workspace directory |
+| `XCIND_WORKSPACE_ROOT` | Absolute path to the workspace directory |
+| `XCIND_WORKSPACELESS` | `0` in workspace mode, `1` otherwise |
+
+### Self-declaration
+
+An app can also declare itself part of a workspace without a parent `.xcind.sh`
+by setting `XCIND_WORKSPACE` directly in its own `.xcind.sh`:
+
+```bash
+XCIND_WORKSPACE="myworkspace"
+```
+
+### Example layout
+
+```
+dev/                          # workspace root
+├── .xcind.sh                 # XCIND_IS_WORKSPACE=1, hooks, proxy domain
+├── frontend/                 # app
+│   ├── .xcind.sh             # app config + XCIND_PROXY_EXPORTS
+│   └── compose.yaml
+└── backend/                  # app
+    ├── .xcind.sh
+    └── compose.yaml
+```
+
+The workspace `.xcind.sh` marks the directory and sets workspace-level config:
+
+```bash
+XCIND_IS_WORKSPACE=1
+XCIND_PROXY_DOMAIN="xcind.localhost"
+```
+
+The proxy and workspace hooks are built-in and registered by default — no manual
+sourcing or hook registration is needed.
+
+## Hooks
+
+Hooks let xcind generate additional compose files dynamically after file
+resolution. The built-in proxy and workspace hooks are registered by default.
+Custom hooks can be added via `XCIND_HOOKS_POST_RESOLVE_GENERATE`.
+
+### How hooks work
+
+1. Each hook is a bash function that receives the app root as its argument
+2. The hook writes a generated compose file to `$XCIND_GENERATED_DIR`
+3. The hook prints compose flags (e.g., `-f /path/to/generated.yaml`) to stdout
+4. Xcind appends those flags to the `docker compose` invocation
+
+### Caching
+
+Hook output is cached using a SHA-256 hash computed from:
+- Compose file paths and content
+- App `.xcind.sh` content
+- Workspace `.xcind.sh` content (if in workspace mode)
+- Global proxy config (if present)
+
+On subsequent runs with the same hash, xcind replays the cached output instead
+of re-running hooks. The cache lives at `$XCIND_APP_ROOT/.xcind/generated/`.
+
+### Built-in hooks
+
+**`xcind-proxy-hook`** (from `lib/xcind/xcind-proxy-lib.bash`)
+
+Generates `compose.proxy.yaml` with Traefik labels and network configuration
+based on `XCIND_PROXY_EXPORTS`. Requires `yq` and an initialized proxy
+(`xcind-proxy init`).
+
+**`xcind-workspace-hook`** (from `lib/xcind/xcind-workspace-lib.bash`)
+
+Generates `compose.workspace.yaml` with network aliases so services across
+apps in the same workspace can reach each other. Creates a
+`{workspace}-internal` Docker network. Requires `yq`. Only active in
+workspace mode.
+
+## Proxy
+
+Xcind includes a shared Traefik reverse proxy for routing traffic to
+application services by hostname.
+
+### Setup
+
+```bash
+xcind-proxy init    # Create proxy infrastructure (~/.config/xcind/proxy/)
+xcind-proxy up      # Start the shared Traefik proxy
+```
+
+### How it works
+
+1. `xcind-proxy init` creates a Traefik configuration and Docker network (`xcind-proxy`)
+2. Apps declare exports via `XCIND_PROXY_EXPORTS` in their `.xcind.sh`
+3. The `xcind-proxy-hook` generates Traefik labels so each export gets a hostname
+4. Traffic to `{app}-{export}.{domain}` is routed to the correct container and port
+
+### Proxy exports
+
+Each entry in `XCIND_PROXY_EXPORTS` maps an export name to a compose service:
+
+```bash
+XCIND_PROXY_EXPORTS=(
+    "api=app:3000"    # export "api" → service "app", port 3000
+    "web:8080"        # export "web" → service "web", port 8080
+    "app"             # export "app" → service "app", port from compose config
+)
+```
+
+When the export name is omitted (`web:8080`), it defaults to the service name.
+When the port is omitted (`app`), it is inferred from the service's port mapping
+(requires exactly one port mapping).
+
+### Generated hostnames
+
+| Mode | Template | Example |
+| --- | --- | --- |
+| Workspaceless | `{app}-{export}.{domain}` | `myapp-api.localhost` |
+| Workspace | `{workspace}-{app}-{export}.{domain}` | `dev-backend-api.xcind.localhost` |
+
+### Global proxy configuration
+
+`xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` with these defaults:
+
+```bash
+XCIND_PROXY_DOMAIN="localhost"         # Domain suffix for hostnames
+XCIND_PROXY_IMAGE="traefik:v3"         # Traefik Docker image
+XCIND_PROXY_HTTP_PORT="80"             # Host port for HTTP traffic
+XCIND_PROXY_DASHBOARD="false"          # Enable Traefik dashboard
+XCIND_PROXY_DASHBOARD_PORT="8080"      # Dashboard port (if enabled)
+```
+
+Edit this file to customize the proxy. Run `xcind-proxy init` again to
+regenerate the Docker Compose and Traefik files (the config file is never
+overwritten).
+
 ## Commands
 
 ### `xcind-compose`
@@ -159,9 +376,24 @@ xcind-compose down --remove-orphans
 Dumps the resolved configuration. Useful for debugging and for the JetBrains plugin.
 
 ```bash
-xcind-config              # JSON output
-xcind-config --preview    # Show the docker compose command line
-xcind-config --files      # List resolved files
+xcind-config                          # JSON output
+xcind-config --preview                # Show the docker compose command line
+xcind-config --files                  # List resolved files
+xcind-config --dump-docker-wrapper    # Generate a POSIX docker wrapper script
+xcind-config --dump-docker-compose-wrapper  # Generate a POSIX docker-compose wrapper script
+xcind-config --version                # Show version
+```
+
+### `xcind-proxy`
+
+Manages the shared Traefik reverse proxy infrastructure.
+
+```bash
+xcind-proxy init      # Create proxy files in ~/.config/xcind/proxy/
+xcind-proxy up        # Start the proxy
+xcind-proxy down      # Stop the proxy
+xcind-proxy status    # Show proxy state (running/stopped, port, network)
+xcind-proxy --version # Show version
 ```
 
 ## Environment Variable Override
@@ -330,21 +562,28 @@ MIT — see [LICENSE](LICENSE) for details.
 xcind/
 ├── bin/
 │   ├── xcind-compose          # Main executable — wraps docker compose
-│   └── xcind-config           # Config dump — JSON, preview, file listing
+│   ├── xcind-config           # Config dump — JSON, preview, file listing
+│   └── xcind-proxy            # Manages shared Traefik proxy infrastructure
 ├── lib/xcind/
-│   └── xcind-lib.bash         # Shared library (sourced by other scripts)
+│   ├── xcind-lib.bash         # Shared library (sourced by other scripts)
+│   ├── xcind-proxy-lib.bash   # Proxy hook — generates compose.proxy.yaml
+│   └── xcind-workspace-lib.bash  # Workspace hook — generates compose.workspace.yaml
 ├── test/
-│   └── test-xcind.sh          # Test suite
+│   ├── test-xcind.sh          # Core test suite
+│   └── test-xcind-proxy.sh    # Proxy test suite
 ├── examples/
-│   ├── acmeapps/
-│   │   └── .xcind.sh          # Simple example
-│   └── advanced/
-│       └── .xcind.sh          # Variable expansion example
+│   ├── workspaceless/
+│   │   ├── acmeapps/          # Simple example (nginx, env files)
+│   │   └── advanced/          # Variable expansion, multi-compose, traefik
+│   └── workspaces/
+│       └── dev/               # Workspace with frontend + backend apps
 ├── contrib/
 │   ├── release                # Release helper script
 │   └── test-all               # Full test runner (Docker + unit)
 ├── docs/
-│   └── releasing.md           # Release process documentation
+│   ├── releasing.md           # Release process documentation
+│   ├── prd-proxy.md           # Proxy feature PRD
+│   └── research-scind-proxy.md  # Proxy research notes
 ├── compose.yaml               # Default Docker Compose configuration
 ├── compose.override.dist      # Compose override template
 ├── Dockerfile                 # Container image build
