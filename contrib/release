@@ -72,6 +72,17 @@ git -C "$PROJECT_ROOT" add \
   Dockerfile \
   flake.nix
 
+# Generate/update CHANGELOG.md from git history
+#
+# --tag "$new_version" tells git-cliff to treat unreleased commits as
+# belonging to this version (since the tag doesn't exist yet).
+# --output writes in-place.
+echo "Updating CHANGELOG.md..."
+git-cliff --output CHANGELOG.md --tag "v${NEW_VERSION}"
+
+# Stage it alongside the other version-bumped files
+git add CHANGELOG.md
+
 git -C "$PROJECT_ROOT" commit -m "release: v${NEW_VERSION}"
 git -C "$PROJECT_ROOT" tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION}"
 

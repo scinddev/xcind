@@ -80,6 +80,7 @@
             jq
             curl
             git
+            git-cliff
           ];
 
           shellHook = ''
