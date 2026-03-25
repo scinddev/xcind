@@ -552,6 +552,31 @@ cp compose.override.dist compose.override.yaml
 docker compose run xcind
 ```
 
+## Upgrading
+
+Xcind is stateless — there is no data to migrate between versions. To upgrade,
+use the same method you used to install:
+
+```bash
+# npm
+npm install -g @scinddev/xcind@latest
+
+# Install script — download the new release and re-run
+sudo ./install.sh            # or: ./install.sh ~/.local
+
+# Nix
+nix profile upgrade '.*xcind.*'
+
+# Docker
+docker pull ghcr.io/scinddev/xcind:latest
+```
+
+Check which version you're running at any time:
+
+```bash
+xcind-config --version
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
