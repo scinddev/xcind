@@ -6,6 +6,7 @@
 #   xcind-proxy up        Start the shared Traefik proxy
 #   xcind-proxy down      Stop the shared Traefik proxy
 #   xcind-proxy status    Show proxy state
+#   xcind-proxy logs      Show Traefik proxy logs
 
 set -euo pipefail
 
@@ -216,6 +217,15 @@ __xcind-proxy-status() {
   fi
 }
 
+__xcind-proxy-logs() {
+  if [ ! -f "$PROXY_COMPOSE" ]; then
+    echo "Proxy not initialized. Run 'xcind-proxy init' first." >&2
+    exit 1
+  fi
+
+  docker compose -f "$PROXY_COMPOSE" logs "$@"
+}
+
 # --------------------------------------------------------------------------
 # Dispatch
 # --------------------------------------------------------------------------
@@ -225,6 +235,7 @@ init) __xcind-proxy-init ;;
 up) __xcind-proxy-up "${2:-}" ;;
 down) __xcind-proxy-down ;;
 status) __xcind-proxy-status ;;
+logs) shift; __xcind-proxy-logs "$@" ;;
 --help | -h)
   echo "Usage: xcind-proxy <subcommand>"
   echo ""
@@ -233,6 +244,7 @@ status) __xcind-proxy-status ;;
   echo "  up [--force]  Start the shared Traefik proxy (--force recreates network)"
   echo "  down          Stop the shared Traefik proxy"
   echo "  status        Show proxy state (running/stopped, port, URL)"
+  echo "  logs [OPTS]   Show Traefik proxy logs (supports docker compose logs flags)"
   echo ""
   echo "Options:"
   echo "  --version  Show version"
