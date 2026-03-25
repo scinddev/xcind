@@ -384,6 +384,18 @@ assert_eq "workspace discovered - XCIND_WORKSPACE" "myworkspace" "${XCIND_WORKSP
 assert_eq "workspace discovered - XCIND_WORKSPACE_ROOT" "$WS_ROOT/myworkspace" "${XCIND_WORKSPACE_ROOT:-}"
 assert_eq "workspace discovered - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
 
+# Test: parent .xcind.sh without XCIND_IS_WORKSPACE=1 is not treated as workspace
+NON_WS_PARENT=$(mktemp -d)
+mkdir -p "$NON_WS_PARENT/someapp"
+echo '# non-workspace config' >"$NON_WS_PARENT/.xcind.sh"
+echo '# app config' >"$NON_WS_PARENT/someapp/.xcind.sh"
+unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+__xcind-discover-workspace "$NON_WS_PARENT/someapp"
+assert_eq "non-workspace parent - XCIND_WORKSPACELESS" "1" "${XCIND_WORKSPACELESS:-}"
+assert_eq "non-workspace parent - XCIND_WORKSPACE empty" "" "${XCIND_WORKSPACE:-}"
+assert_eq "non-workspace parent - XCIND_WORKSPACE_ROOT empty" "" "${XCIND_WORKSPACE_ROOT:-}"
+rm -rf "$NON_WS_PARENT"
+
 # Test: no workspace when parent has no .xcind.sh
 STANDALONE_APP=$(mktemp -d)
 echo '# standalone app' >"$STANDALONE_APP/.xcind.sh"

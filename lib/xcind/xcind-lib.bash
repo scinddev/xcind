@@ -458,11 +458,21 @@ __xcind-discover-workspace() {
   parent="$(dirname "$app_root")"
 
   if [[ -f "$parent/.xcind.sh" ]]; then
-    XCIND_WORKSPACE_ROOT="$parent"
-    XCIND_WORKSPACE="$(basename "$parent")"
-    XCIND_WORKSPACELESS=0
+    # Source in a subshell to check if it explicitly declares a workspace
+    local is_workspace
     # shellcheck disable=SC1091
-    source "$parent/.xcind.sh"
+    is_workspace="$(source "$parent/.xcind.sh" 2>/dev/null; echo "${XCIND_IS_WORKSPACE:-0}")"
+    if [[ "$is_workspace" == "1" ]]; then
+      XCIND_WORKSPACE_ROOT="$parent"
+      XCIND_WORKSPACE="$(basename "$parent")"
+      XCIND_WORKSPACELESS=0
+      # shellcheck disable=SC1091
+      source "$parent/.xcind.sh"
+    else
+      XCIND_WORKSPACELESS=1
+      XCIND_WORKSPACE_ROOT=""
+      XCIND_WORKSPACE=""
+    fi
   else
     XCIND_WORKSPACELESS=1
     XCIND_WORKSPACE_ROOT=""

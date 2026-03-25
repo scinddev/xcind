@@ -213,8 +213,8 @@ __xcind-proxy-validate-service() {
 xcind-proxy-hook() {
   local app_root="$1"
 
-  # Check if exports are defined
-  if [ ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ] 2>/dev/null; then
+  # Check if exports are defined (guard against unset under set -u)
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
     return 0
   fi
 
