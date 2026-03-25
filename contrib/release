@@ -79,10 +79,10 @@ git -C "$PROJECT_ROOT" add \
 #
 # --tag "$new_version" tells git-cliff to treat unreleased commits as
 # belonging to this version (since the tag doesn't exist yet).
-# --unreleased-only only processes commits since the last tag.
+# --unreleased only processes commits since the last tag.
 # --prepend inserts the new section at the top of the existing file.
 echo "Updating CHANGELOG.md..."
-git-cliff --unreleased-only --tag "v${NEW_VERSION}" --prepend CHANGELOG.md
+git-cliff --unreleased --tag "v${NEW_VERSION}" --prepend CHANGELOG.md
 
 # Stage it alongside the other version-bumped files
 git add CHANGELOG.md
