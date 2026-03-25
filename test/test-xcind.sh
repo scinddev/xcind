@@ -585,6 +585,55 @@ __xcind-run-hooks "$HOOK_APP"
 opts2="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
 assert_contains "hook output replayed (cache hit)" "compose.stub.yaml" "$opts2"
 
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-run-hooks ordering (cache hit preserves XCIND_HOOKS_POST_RESOLVE_GENERATE order) ==="
+
+ORDER_APP=$(mktemp -d)
+echo '# order test' >"$ORDER_APP/.xcind.sh"
+touch "$ORDER_APP/compose.yaml"
+
+export XCIND_SHA="orderhash456"
+export XCIND_CACHE_DIR="$ORDER_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$ORDER_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+hook_alpha() {
+  echo "-f $XCIND_GENERATED_DIR/compose.alpha.yaml"
+  touch "$XCIND_GENERATED_DIR/compose.alpha.yaml"
+}
+hook_beta() {
+  echo "-f $XCIND_GENERATED_DIR/compose.beta.yaml"
+  touch "$XCIND_GENERATED_DIR/compose.beta.yaml"
+}
+# Register beta before alpha to verify order is preserved (not lexicographic)
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("hook_beta" "hook_alpha")
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES
+__xcind-load-config "$ORDER_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ORDER_APP"
+
+# Cache miss — populate generated dir
+__xcind-run-hooks "$ORDER_APP"
+miss_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+
+# Determine positions of beta and alpha in cache-miss output
+beta_pos_miss=$(echo "$miss_opts" | tr ' ' '\n' | grep -n "compose.beta.yaml" | cut -d: -f1)
+alpha_pos_miss=$(echo "$miss_opts" | tr ' ' '\n' | grep -n "compose.alpha.yaml" | cut -d: -f1)
+assert_eq "cache miss: hook_beta before hook_alpha" "true" "$([ "$beta_pos_miss" -lt "$alpha_pos_miss" ] && echo true || echo false)"
+
+# Cache hit — replay
+__xcind-build-compose-opts "$ORDER_APP"
+__xcind-run-hooks "$ORDER_APP"
+hit_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+
+beta_pos_hit=$(echo "$hit_opts" | tr ' ' '\n' | grep -n "compose.beta.yaml" | cut -d: -f1)
+alpha_pos_hit=$(echo "$hit_opts" | tr ' ' '\n' | grep -n "compose.alpha.yaml" | cut -d: -f1)
+assert_eq "cache hit: hook_beta before hook_alpha (order preserved)" "true" "$([ "$beta_pos_hit" -lt "$alpha_pos_hit" ] && echo true || echo false)"
+
+rm -rf "$ORDER_APP"
+
 rm -rf "$HOOK_APP"
 
 # ======================================================================

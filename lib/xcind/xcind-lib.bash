@@ -626,9 +626,10 @@ __xcind-run-hooks() {
   local app_root="$1"
 
   if [ -d "$XCIND_GENERATED_DIR" ]; then
-    # Cache hit — replay persisted hook output
-    local hook_output_file
-    for hook_output_file in "$XCIND_GENERATED_DIR"/.hook-output-*; do
+    # Cache hit — replay persisted hook output in XCIND_HOOKS_POST_RESOLVE_GENERATE order
+    local hook_name
+    for hook_name in "${XCIND_HOOKS_POST_RESOLVE_GENERATE[@]}"; do
+      local hook_output_file="$XCIND_GENERATED_DIR/.hook-output-$hook_name"
       [ -f "$hook_output_file" ] || continue
 
       # Read persisted output
