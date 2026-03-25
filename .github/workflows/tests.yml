@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - copilot/update-actions-to-node-18
   pull_request:
     branches:
       - main
