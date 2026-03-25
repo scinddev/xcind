@@ -62,7 +62,7 @@ __xcind-app-root() {
     if [ -f "$current_dir/.xcind.sh" ]; then
       # Check if this is a workspace root (not an app root)
       local _xcind_is_workspace=""
-      # shellcheck disable=SC1091
+      # shellcheck disable=SC1091,SC2030,SC2031
       _xcind_is_workspace=$(XCIND_IS_WORKSPACE="" && source "$current_dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
       if [ "$_xcind_is_workspace" != "1" ]; then
         echo "$current_dir"
@@ -460,9 +460,12 @@ __xcind-discover-workspace() {
   if [[ -f "$parent/.xcind.sh" ]]; then
     # Source in a subshell to check if it explicitly declares a workspace
     local is_workspace
-    # shellcheck disable=SC1091
-    is_workspace="$(source "$parent/.xcind.sh" 2>/dev/null; echo "${XCIND_IS_WORKSPACE:-0}")"
-    if [[ "$is_workspace" == "1" ]]; then
+    # shellcheck disable=SC1091,SC2030,SC2031
+    is_workspace="$(
+      source "$parent/.xcind.sh" 2>/dev/null
+      echo "${XCIND_IS_WORKSPACE:-0}"
+    )"
+    if [[ $is_workspace == "1" ]]; then
       XCIND_WORKSPACE_ROOT="$parent"
       XCIND_WORKSPACE="$(basename "$parent")"
       XCIND_WORKSPACELESS=0
