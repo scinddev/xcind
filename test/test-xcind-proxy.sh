@@ -289,6 +289,13 @@ YAML
   empty_output=$(xcind-proxy-hook "$HOOK_APP")
   assert_eq "empty exports = no output" "" "$empty_output"
 
+  # Test: unset XCIND_PROXY_EXPORTS = no output (guard against set -u abort)
+  unset XCIND_PROXY_EXPORTS
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  unset_output=$(xcind-proxy-hook "$HOOK_APP")
+  assert_eq "unset exports = no output" "" "$unset_output"
+
   # Test: multi-export grouping (two exports on same compose service)
   rm -rf "$XCIND_GENERATED_DIR"
   mkdir -p "$XCIND_GENERATED_DIR"
