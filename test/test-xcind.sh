@@ -1001,6 +1001,103 @@ else
 fi
 
 # ======================================================================
+echo ""
+echo "=== Test: xcind-app-env-hook (no-op when XCIND_APP_ENV_FILES unset) ==="
+
+APPENV_NOOP=$(mktemp -d)
+export XCIND_SHA="appenvnoop"
+export XCIND_CACHE_DIR="$APPENV_NOOP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$APPENV_NOOP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+unset XCIND_APP_ENV_FILES
+hook_output=$(xcind-app-env-hook "$APPENV_NOOP")
+assert_eq "hook no-op when unset: no output" "" "$hook_output"
+assert_eq "hook no-op when unset: no file generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+XCIND_APP_ENV_FILES=()
+hook_output=$(xcind-app-env-hook "$APPENV_NOOP")
+assert_eq "hook no-op when empty array: no output" "" "$hook_output"
+assert_eq "hook no-op when empty array: no file generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+# XCIND_APP_ENV_FILES set to a non-existent file — resolves to nothing
+XCIND_APP_ENV_FILES=(".nonexistent-env-file-xcind-test")
+hook_output=$(xcind-app-env-hook "$APPENV_NOOP")
+assert_eq "hook no-op when no files resolve: no output" "" "$hook_output"
+assert_eq "hook no-op when no files resolve: no file generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+rm -rf "$APPENV_NOOP"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-app-env-hook generates compose.app-env.yaml ==="
+
+if command -v yq &>/dev/null; then
+  APPENV_APP=$(mktemp -d)
+  export XCIND_SHA="appenvhash"
+  export XCIND_CACHE_DIR="$APPENV_APP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$APPENV_APP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  # Create env files that will be resolved
+  echo "DB_URL=postgres://localhost/test" >"$APPENV_APP/.env"
+  echo "API_KEY=secret" >"$APPENV_APP/.env.local"
+
+  # Create a minimal resolved-config.yaml with two services
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+  worker:
+    image: alpine
+YAML
+
+  XCIND_APP_ENV_FILES=(".env" ".env.local")
+  hook_output=$(xcind-app-env-hook "$APPENV_APP")
+
+  # Verify -f flag is returned
+  assert_contains "hook returns -f flag" "-f $XCIND_GENERATED_DIR/compose.app-env.yaml" "$hook_output"
+
+  # Verify file was generated
+  assert_eq "compose.app-env.yaml was created" "true" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.app-env.yaml")"
+
+  # Verify both services are present
+  assert_contains "generated YAML has web service" "web:" "$generated"
+  assert_contains "generated YAML has worker service" "worker:" "$generated"
+
+  # Verify env_file entries use absolute paths
+  assert_contains "generated YAML has absolute .env path" "$APPENV_APP/.env" "$generated"
+  assert_contains "generated YAML has absolute .env.local path" "$APPENV_APP/.env.local" "$generated"
+
+  # Verify both services include both env files
+  web_env_count=$(yq -r '.services.web.env_file | length' "$XCIND_GENERATED_DIR/compose.app-env.yaml")
+  assert_eq "web service has 2 env_file entries" "2" "$web_env_count"
+
+  worker_env_count=$(yq -r '.services.worker.env_file | length' "$XCIND_GENERATED_DIR/compose.app-env.yaml")
+  assert_eq "worker service has 2 env_file entries" "2" "$worker_env_count"
+
+  # Verify single env file case
+  XCIND_APP_ENV_FILES=(".env")
+  rm -f "$XCIND_GENERATED_DIR/compose.app-env.yaml"
+  hook_output_single=$(xcind-app-env-hook "$APPENV_APP")
+
+  assert_contains "single env file: returns -f flag" "-f $XCIND_GENERATED_DIR/compose.app-env.yaml" "$hook_output_single"
+
+  single_env_count=$(yq -r '.services.web.env_file | length' "$XCIND_GENERATED_DIR/compose.app-env.yaml")
+  assert_eq "single env file: web has 1 env_file entry" "1" "$single_env_count"
+
+  rm -rf "$APPENV_APP"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 
