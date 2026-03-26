@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0] - 2026-03-26
+
+### Added
+
+- docs: add Upgrading section to README (#7) by @simensen in [#7](https://github.com/scinddev/xcind/pull/7)
+- fix: preserve changelog attribution by using --unreleased-only (#9) by @simensen in [#9](https://github.com/scinddev/xcind/pull/9)
+
+### Changed
+
+- docs: update File Structure section in README for accuracy (#6) by @Copilot in [#6](https://github.com/scinddev/xcind/pull/6)
+
+### Infrastructure
+
+- release: added git-cliff and CHANGELOG.md
+
+### Maintenance
+
+- Add xcind-proxy, workspace mode, and hook system (#3) by @simensen in [#3](https://github.com/scinddev/xcind/pull/3)
+- chore: update GitHub Actions to Node.js 24-compatible versions (#8) by @Copilot in [#8](https://github.com/scinddev/xcind/pull/8)
 ## [0.0.3] - 2026-03-12
 
 ### Added
