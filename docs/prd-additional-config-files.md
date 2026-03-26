@@ -169,13 +169,13 @@ No changes to `__xcind-derive-override` are needed.
 `__xcind-compute-sha` currently includes:
 
 - Compose file paths and content hashes
-- App `.xcind.sh` content hash
-- Workspace `.xcind.sh` content hash (if in workspace mode)
-- Global proxy config content hash (if exists)
+- App `.xcind.sh` content hash (no path)
+- Workspace `.xcind.sh` content hash (if in workspace mode; no path)
+- Global proxy config content hash (if exists; no path)
 
-**Change:** After additional config files are sourced, their resolved paths and content hashes must be appended to the SHA input. This includes both the base additional config and its override variant (if sourced).
+**Change:** After additional config files are sourced, their content hashes (only) must be appended to the SHA input, consistent with how app/workspace `.xcind.sh` files and global proxy config are currently handled. This includes both the base additional config and its override variant (if sourced).
 
-The additional config files should be tracked in a new array (e.g., `__XCIND_SOURCED_CONFIG_FILES`) populated during the sourcing step, so `__xcind-compute-sha` can iterate over them.
+The additional config files should be tracked in a new array (e.g., `__XCIND_SOURCED_CONFIG_FILES`) populated during the sourcing step, containing their resolved paths in source order. `__xcind-compute-sha` can then iterate over this array to locate each file and append its content hash to the SHA input.
 
 ---
 
