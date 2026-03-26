@@ -66,7 +66,7 @@ For each entry in `XCIND_ADDITIONAL_CONFIG_FILES`:
 1. **Variable expansion:** Apply the same `eval echo` mechanism used for compose/env file patterns. This supports both immediate expansion (double-quoted entries expand when `.xcind.sh` is sourced) and deferred expansion (single-quoted entries expand at resolution time).
 2. **Relative path resolution:** Relative paths are resolved against the directory of the config that declared them — workspace root for workspace-level declarations, app root for app-level declarations.
 3. **Existence check:** If the resolved file does not exist, skip it silently. Additional configs are optional by convention.
-4. **Override derivation:** For each resolved file that exists, derive the `.override` variant using the existing `__xcind-derive-override` logic. For `.sh` files (no recognized config extension), this appends `.override` — e.g., `.xcind.dev.sh` → `.xcind.dev.override.sh`. If the override file exists, source it immediately after the base additional config.
+4. **Override derivation:** For each resolved file that exists, derive the `.override` variant using `__xcind-derive-override`. Because `.sh` is a recognized config extension (see Section 4.6), `.override` is inserted before the extension — e.g., `.xcind.dev.sh` → `.xcind.dev.override.sh`. If the override file exists, source it immediately after the base additional config.
 5. **Sourcing:** Files are sourced in the current shell (same as `.xcind.sh`), so all variable assignments take effect in the calling context.
 
 ### 4.3 Sourcing Order
@@ -153,14 +153,18 @@ With this setup:
 
 ### 4.6 Override Derivation
 
-The existing `__xcind-derive-override` function handles `.sh` files via the catch-all case:
+The existing `__xcind-derive-override` function handles file overrides by inserting `.override` before the file extension for recognized config extensions (`.yaml`, `.yml`, `.json`, `.hcl`, `.toml`), and appending `.override` to the full filename for unrecognized extensions.
+
+To support `.sh` config files, `.sh` must be added as a recognized extension in `__xcind-derive-override`. With this change:
 
 ```
-.xcind.dev.sh → .xcind.dev.override.sh    (appends .override)
+.xcind.dev.sh → .xcind.dev.override.sh    (inserts .override before .sh)
 .xcind.local.sh → .xcind.local.override.sh
 ```
 
-No changes to `__xcind-derive-override` are needed.
+Without this change (current behavior), `.sh` would fall through to the catch-all case and produce `.xcind.dev.sh.override` — which is inconsistent with the intended naming convention.
+
+**Required change to `__xcind-derive-override`:** Add `*.sh` to the recognized-extension `case` branch alongside `.yaml`, `.yml`, `.json`, `.hcl`, and `.toml`.
 
 ---
 
@@ -243,7 +247,7 @@ __xcind-source-additional-configs <base_dir>
 
 | File | Change |
 |---|---|
-| `lib/xcind/xcind-lib.bash` | Add `__xcind-source-additional-configs` function; update `__xcind-load-config` to set default for `XCIND_ADDITIONAL_CONFIG_FILES`; update `__xcind-compute-sha` to include sourced config file hashes; update `__xcind-resolve-json` to include `configFiles` and `metadata` |
+| `lib/xcind/xcind-lib.bash` | Add `.sh` to recognized extensions in `__xcind-derive-override`; add `__xcind-source-additional-configs` function; update `__xcind-load-config` to set default for `XCIND_ADDITIONAL_CONFIG_FILES`; update `__xcind-compute-sha` to include sourced config file hashes; update `__xcind-resolve-json` to include `configFiles` and `metadata` |
 | `bin/xcind-compose` | Call `__xcind-source-additional-configs` at workspace and app stages (steps 3 and 5) |
 | `bin/xcind-config` | Call `__xcind-source-additional-configs` at workspace and app stages; output `configFiles` and `metadata` in JSON and `--files` modes |
 

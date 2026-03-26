@@ -155,7 +155,7 @@ __xcind-derive-override() {
   # For files with a recognized config extension, insert .override before it.
   # Otherwise, append .override to the full name.
   case "$base" in
-  *.yaml | *.yml | *.json | *.hcl | *.toml)
+  *.yaml | *.yml | *.json | *.hcl | *.toml | *.sh)
     local ext="${base##*.}"
     local stem="${base%.*}"
     result="${stem}.override.${ext}"

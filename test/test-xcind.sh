@@ -76,6 +76,10 @@ assert_eq "hcl file" \
   "docker-bake.override.hcl" \
   "$(__xcind-derive-override "docker-bake.hcl")"
 
+assert_eq "sh file" \
+  ".xcind.dev.override.sh" \
+  "$(__xcind-derive-override ".xcind.dev.sh")"
+
 # ======================================================================
 echo ""
 echo "=== Test: __xcind-app-root ==="
