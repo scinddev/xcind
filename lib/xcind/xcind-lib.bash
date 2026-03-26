@@ -115,6 +115,9 @@ __xcind-load-config() {
   if [[ -z ${XCIND_COMPOSE_DIR+set} ]]; then
     XCIND_COMPOSE_DIR=""
   fi
+  if [[ -z ${XCIND_ADDITIONAL_CONFIG_FILES+set} ]]; then
+    XCIND_ADDITIONAL_CONFIG_FILES=()
+  fi
 
   if [ ! -f "$app_root/.xcind.sh" ]; then
     echo "Error: No .xcind.sh found in $app_root" >&2
@@ -124,6 +127,63 @@ __xcind-load-config() {
   # Source in current shell so arrays are available
   # shellcheck disable=SC1091
   source "$app_root/.xcind.sh"
+  __XCIND_SOURCED_CONFIG_FILES+=("$app_root/.xcind.sh")
+}
+
+# --------------------------------------------------------------------------
+# Additional Config Sourcing
+# --------------------------------------------------------------------------
+
+# Source additional config files declared in XCIND_ADDITIONAL_CONFIG_FILES.
+# For each entry: expand variables, resolve relative to base_dir, source if
+# exists, then derive and source the .override variant if it exists.
+#
+# Usage:
+#   __xcind-source-additional-configs /path/to/base/dir
+__xcind-source-additional-configs() {
+  local base_dir="$1"
+
+  # Nothing to do if no additional configs declared or base_dir is empty
+  [[ -z $base_dir ]] && return 0
+  [[ ${#XCIND_ADDITIONAL_CONFIG_FILES[@]} -eq 0 ]] && return 0
+
+  local pattern expanded full_path override_path
+
+  for pattern in "${XCIND_ADDITIONAL_CONFIG_FILES[@]}"; do
+    # Expand variables in the pattern (e.g., ${APP_ENV})
+    expanded=$(eval echo "$pattern" 2>/dev/null) || continue
+    [ -z "$expanded" ] && continue
+
+    # Make relative paths absolute
+    if [[ $expanded != /* ]]; then
+      full_path="$base_dir/$expanded"
+    else
+      full_path="$expanded"
+    fi
+
+    # Source the file if it exists
+    if [ -f "$full_path" ]; then
+      # shellcheck disable=SC1090
+      source "$full_path"
+      __XCIND_SOURCED_CONFIG_FILES+=("$full_path")
+    fi
+
+    # Derive and source the override variant if it exists
+    local override_name
+    override_name=$(__xcind-derive-override "$expanded")
+
+    if [[ $override_name != /* ]]; then
+      override_path="$base_dir/$override_name"
+    else
+      override_path="$override_name"
+    fi
+
+    if [ -f "$override_path" ]; then
+      # shellcheck disable=SC1090
+      source "$override_path"
+      __XCIND_SOURCED_CONFIG_FILES+=("$override_path")
+    fi
+  done
 }
 
 # --------------------------------------------------------------------------
@@ -155,7 +215,7 @@ __xcind-derive-override() {
   # For files with a recognized config extension, insert .override before it.
   # Otherwise, append .override to the full name.
   case "$base" in
-  *.yaml | *.yml | *.json | *.hcl | *.toml)
+  *.yaml | *.yml | *.json | *.hcl | *.toml | *.sh)
     local ext="${base##*.}"
     local stem="${base%.*}"
     result="${stem}.override.${ext}"
@@ -328,14 +388,29 @@ __xcind-resolve-json() {
     fi
   }
 
+  # Metadata
+  local _ws_name="${XCIND_WORKSPACE:-}"
+  local _app_name="${XCIND_APP:-$(basename "$app_root")}"
+  local _workspaceless="${XCIND_WORKSPACELESS:-1}"
+
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
+    --argjson config_files "$(__to_json_array ${__XCIND_SOURCED_CONFIG_FILES[@]+"${__XCIND_SOURCED_CONFIG_FILES[@]}"})" \
     --argjson compose_files "$(__to_json_array ${compose_files[@]+"${compose_files[@]}"})" \
     --argjson env_files "$(__to_json_array ${env_files[@]+"${env_files[@]}"})" \
     --argjson bake_files "$(__to_json_array ${bake_files[@]+"${bake_files[@]}"})" \
+    --arg ws_name "$_ws_name" \
+    --arg app_name "$_app_name" \
+    --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
     '{
+            metadata: {
+                workspace: (if $ws_name == "" then null else $ws_name end),
+                app: $app_name,
+                workspaceless: $workspaceless
+            },
             appRoot: $app_root,
+            configFiles: $config_files,
             composeFiles: $compose_files,
             envFiles: $env_files,
             bakeFiles: $bake_files
@@ -471,6 +546,7 @@ __xcind-discover-workspace() {
       XCIND_WORKSPACELESS=0
       # shellcheck disable=SC1091
       source "$parent/.xcind.sh"
+      __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
     else
       XCIND_WORKSPACELESS=1
       XCIND_WORKSPACE_ROOT=""
@@ -596,6 +672,19 @@ __xcind-compute-sha() {
   if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]] && [ -f "$XCIND_WORKSPACE_ROOT/.xcind.sh" ]; then
     sha_input+=$(__xcind-sha256 "$XCIND_WORKSPACE_ROOT/.xcind.sh" | cut -d' ' -f1)
   fi
+
+  # Add additional config file content hashes
+  local _cfg
+  for _cfg in "${__XCIND_SOURCED_CONFIG_FILES[@]+"${__XCIND_SOURCED_CONFIG_FILES[@]}"}"; do
+    # Skip app and workspace .xcind.sh — already hashed above
+    [[ $_cfg == "$app_root/.xcind.sh" ]] && continue
+    if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]] && [[ $_cfg == "$XCIND_WORKSPACE_ROOT/.xcind.sh" ]]; then
+      continue
+    fi
+    if [ -f "$_cfg" ]; then
+      sha_input+=$(__xcind-sha256 "$_cfg" | cut -d' ' -f1)
+    fi
+  done
 
   # Add global config if exists
   local global_config="${HOME}/.config/xcind/proxy/config.sh"

@@ -77,30 +77,41 @@ esac
 app_root=$(__xcind-app-root) || exit 1
 export XCIND_APP_ROOT="$app_root"
 
+# Initialize config file tracking
+__XCIND_SOURCED_CONFIG_FILES=()
+
 # Step 2: Discover workspace
 __xcind-discover-workspace "$app_root"
 
-# Step 3: Load application config (overrides workspace settings)
+# Step 3: Source workspace additional configs
+if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]]; then
+  __xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+fi
+
+# Step 4: Load application config (overrides workspace settings)
 __xcind-load-config "$app_root" || exit 1
 
-# Step 4: Late-bind workspace self-declaration
+# Step 5: Source app additional configs
+__xcind-source-additional-configs "$app_root"
+
+# Step 6: Late-bind workspace self-declaration
 __xcind-late-bind-workspace
 
-# Step 5: Resolve app name
+# Step 7: Resolve app name
 __xcind-resolve-app "$app_root"
 
-# Step 6: Resolve URL templates
+# Step 8: Resolve URL templates
 __xcind-resolve-url-templates
 
-# Step 7-8: Resolve files and build compose options
+# Step 9-10: Resolve files and build compose options
 __xcind-build-compose-opts "$app_root"
 
-# Steps 9-12: Only run when hooks are registered
+# Steps 11-14: Only run when hooks are registered
 if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
-  # Step 9: Compute SHA
+  # Step 11: Compute SHA
   XCIND_SHA=$(__xcind-compute-sha "$app_root")
 
-  # Step 10: Export pipeline vars
+  # Step 12: Export pipeline vars
   export XCIND_SHA
   export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
@@ -108,10 +119,10 @@ if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
   export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
   export XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
 
-  # Step 11: Populate cache
+  # Step 13: Populate cache
   __xcind-populate-cache "$app_root"
 
-  # Step 12: Run hooks (cache hit = replay, cache miss = execute)
+  # Step 14: Run hooks (cache hit = replay, cache miss = execute)
   __xcind-run-hooks "$app_root"
 fi
 
@@ -148,6 +159,11 @@ dump-docker-compose-wrapper)
 files)
   local_compose_dir="${XCIND_COMPOSE_DIR:+$app_root/$XCIND_COMPOSE_DIR}"
   local_resolve_base="${local_compose_dir:-$app_root}"
+
+  if [ ${#__XCIND_SOURCED_CONFIG_FILES[@]} -gt 0 ]; then
+    echo "# Config files:"
+    printf '%s\n' "${__XCIND_SOURCED_CONFIG_FILES[@]}"
+  fi
 
   echo "# Env files:"
   __xcind-resolve-files "$app_root" "${XCIND_ENV_FILES[@]}"

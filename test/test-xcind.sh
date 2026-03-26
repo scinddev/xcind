@@ -76,6 +76,10 @@ assert_eq "hcl file" \
   "docker-bake.override.hcl" \
   "$(__xcind-derive-override "docker-bake.hcl")"
 
+assert_eq "sh file" \
+  ".xcind.dev.override.sh" \
+  "$(__xcind-derive-override ".xcind.dev.sh")"
+
 # ======================================================================
 echo ""
 echo "=== Test: __xcind-app-root ==="
@@ -660,6 +664,309 @@ assert_eq "workspace hostname" "dev-myapp-web.localhost" "$hostname_ws"
 
 router=$(__xcind-render-template "{app}-{export}-{protocol}" app "myapp" export "api" protocol "http")
 assert_eq "router name" "myapp-api-http" "$router"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-source-additional-configs ==="
+
+ADDCFG_APP=$(mktemp -d)
+__XCIND_SOURCED_CONFIG_FILES=()
+
+cat >"$ADDCFG_APP/.xcind.sh" <<'EOF'
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.dev.sh")
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("nginx")
+EOF
+
+cat >"$ADDCFG_APP/.xcind.dev.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml" "compose.dev.yaml")
+EOF
+
+cat >"$ADDCFG_APP/.xcind.dev.override.sh" <<'EOF'
+XCIND_PROXY_EXPORTS=("nginx" "mailhog")
+EOF
+
+# Load config then source additional configs
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+__xcind-load-config "$ADDCFG_APP"
+
+assert_eq "base config sets XCIND_PROXY_EXPORTS" "nginx" "${XCIND_PROXY_EXPORTS[0]}"
+assert_eq "base config XCIND_ADDITIONAL_CONFIG_FILES count" "1" "${#XCIND_ADDITIONAL_CONFIG_FILES[@]}"
+
+__xcind-source-additional-configs "$ADDCFG_APP"
+
+assert_eq "additional config overrides compose files count" "2" "${#XCIND_COMPOSE_FILES[@]}"
+assert_eq "additional config compose[0]" "compose.yaml" "${XCIND_COMPOSE_FILES[0]}"
+assert_eq "additional config compose[1]" "compose.dev.yaml" "${XCIND_COMPOSE_FILES[1]}"
+assert_eq "override adds mailhog" "mailhog" "${XCIND_PROXY_EXPORTS[1]}"
+
+# Check tracking array (app .xcind.sh + .xcind.dev.sh + .xcind.dev.override.sh = 3)
+assert_eq "sourced config files count" "3" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+assert_eq "sourced[0] is app .xcind.sh" "$ADDCFG_APP/.xcind.sh" "${__XCIND_SOURCED_CONFIG_FILES[0]}"
+assert_eq "sourced[1] is .xcind.dev.sh" "$ADDCFG_APP/.xcind.dev.sh" "${__XCIND_SOURCED_CONFIG_FILES[1]}"
+assert_eq "sourced[2] is .xcind.dev.override.sh" "$ADDCFG_APP/.xcind.dev.override.sh" "${__XCIND_SOURCED_CONFIG_FILES[2]}"
+
+rm -rf "$ADDCFG_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-source-additional-configs with variable expansion ==="
+
+VAREXP_APP=$(mktemp -d)
+__XCIND_SOURCED_CONFIG_FILES=()
+
+cat >"$VAREXP_APP/.xcind.sh" <<'XCEOF'
+XCIND_ADDITIONAL_CONFIG_FILES=('.xcind.${APP_ENV:-dev}.sh')
+XCEOF
+
+cat >"$VAREXP_APP/.xcind.staging.sh" <<'EOF'
+XCIND_STAGING_LOADED=1
+EOF
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+export APP_ENV="staging"
+__xcind-load-config "$VAREXP_APP"
+__xcind-source-additional-configs "$VAREXP_APP"
+
+assert_eq "variable expansion resolves staging" "1" "${XCIND_STAGING_LOADED:-0}"
+
+# Non-existent file is skipped silently
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_STAGING_LOADED
+__XCIND_SOURCED_CONFIG_FILES=()
+export APP_ENV="prod"
+__xcind-load-config "$VAREXP_APP"
+__xcind-source-additional-configs "$VAREXP_APP"
+
+assert_eq "missing additional config skipped" "0" "${XCIND_STAGING_LOADED:-0}"
+# Only app .xcind.sh was sourced (prod config doesn't exist)
+assert_eq "only base config sourced for missing" "1" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+
+unset APP_ENV XCIND_STAGING_LOADED
+rm -rf "$VAREXP_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-source-additional-configs with empty array ==="
+
+EMPTY_APP=$(mktemp -d)
+__XCIND_SOURCED_CONFIG_FILES=()
+echo '# no additional configs' >"$EMPTY_APP/.xcind.sh"
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+__xcind-load-config "$EMPTY_APP"
+__xcind-source-additional-configs "$EMPTY_APP"
+
+assert_eq "empty additional configs — default count" "0" "${#XCIND_ADDITIONAL_CONFIG_FILES[@]}"
+assert_eq "empty additional configs — only base sourced" "1" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+
+rm -rf "$EMPTY_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: Workspace additional configs with inheritance ==="
+
+WS_ADD_ROOT=$(mktemp -d)
+mkdir -p "$WS_ADD_ROOT/myworkspace/myapp"
+__XCIND_SOURCED_CONFIG_FILES=()
+
+cat >"$WS_ADD_ROOT/myworkspace/.xcind.sh" <<'EOF'
+XCIND_IS_WORKSPACE=1
+XCIND_PROXY_DOMAIN="xcind.localhost"
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.dev.sh")
+EOF
+
+cat >"$WS_ADD_ROOT/myworkspace/.xcind.dev.sh" <<'EOF'
+XCIND_PROXY_DOMAIN="dev.localhost"
+EOF
+
+cat >"$WS_ADD_ROOT/myworkspace/myapp/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("web")
+EOF
+
+cat >"$WS_ADD_ROOT/myworkspace/myapp/.xcind.dev.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml" "compose.dev.yaml")
+EOF
+
+# Simulate the pipeline
+unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+
+__xcind-discover-workspace "$WS_ADD_ROOT/myworkspace/myapp"
+assert_eq "workspace inherited - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
+
+# Source workspace additional configs
+__xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+assert_eq "workspace additional overrides proxy domain" "dev.localhost" "${XCIND_PROXY_DOMAIN:-}"
+
+# Load app config (inherits XCIND_ADDITIONAL_CONFIG_FILES from workspace)
+__xcind-load-config "$WS_ADD_ROOT/myworkspace/myapp"
+assert_eq "app inherits additional config pattern" "1" "${#XCIND_ADDITIONAL_CONFIG_FILES[@]}"
+
+# Source app additional configs (resolved relative to app root)
+__xcind-source-additional-configs "$WS_ADD_ROOT/myworkspace/myapp"
+assert_eq "app additional overrides compose files" "2" "${#XCIND_COMPOSE_FILES[@]}"
+assert_eq "app additional compose[1]" "compose.dev.yaml" "${XCIND_COMPOSE_FILES[1]}"
+
+# Verify full sourcing order in tracking array:
+# 1. workspace/.xcind.sh, 2. workspace/.xcind.dev.sh, 3. app/.xcind.sh, 4. app/.xcind.dev.sh
+assert_eq "full chain count" "4" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+assert_eq "chain[0] workspace .xcind.sh" "$WS_ADD_ROOT/myworkspace/.xcind.sh" "${__XCIND_SOURCED_CONFIG_FILES[0]}"
+assert_eq "chain[1] workspace .xcind.dev.sh" "$WS_ADD_ROOT/myworkspace/.xcind.dev.sh" "${__XCIND_SOURCED_CONFIG_FILES[1]}"
+assert_eq "chain[2] app .xcind.sh" "$WS_ADD_ROOT/myworkspace/myapp/.xcind.sh" "${__XCIND_SOURCED_CONFIG_FILES[2]}"
+assert_eq "chain[3] app .xcind.dev.sh" "$WS_ADD_ROOT/myworkspace/myapp/.xcind.dev.sh" "${__XCIND_SOURCED_CONFIG_FILES[3]}"
+
+rm -rf "$WS_ADD_ROOT"
+
+# ======================================================================
+echo ""
+echo "=== Test: App overrides workspace XCIND_ADDITIONAL_CONFIG_FILES ==="
+
+WS_OVR_ROOT=$(mktemp -d)
+mkdir -p "$WS_OVR_ROOT/myworkspace/myapp"
+__XCIND_SOURCED_CONFIG_FILES=()
+
+cat >"$WS_OVR_ROOT/myworkspace/.xcind.sh" <<'EOF'
+XCIND_IS_WORKSPACE=1
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.dev.sh")
+EOF
+
+cat >"$WS_OVR_ROOT/myworkspace/myapp/.xcind.sh" <<'EOF'
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.local.sh")
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+
+cat >"$WS_OVR_ROOT/myworkspace/myapp/.xcind.local.sh" <<'EOF'
+XCIND_LOCAL_LOADED=1
+EOF
+
+unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_LOCAL_LOADED
+
+__xcind-discover-workspace "$WS_OVR_ROOT/myworkspace/myapp"
+
+# Workspace additional configs (dev doesn't exist in workspace, skipped)
+__xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+
+# App config overrides XCIND_ADDITIONAL_CONFIG_FILES
+__xcind-load-config "$WS_OVR_ROOT/myworkspace/myapp"
+assert_eq "app overrides additional config pattern" ".xcind.local.sh" "${XCIND_ADDITIONAL_CONFIG_FILES[0]}"
+
+# App additional configs use the overridden pattern
+__xcind-source-additional-configs "$WS_OVR_ROOT/myworkspace/myapp"
+assert_eq "app sources .xcind.local.sh" "1" "${XCIND_LOCAL_LOADED:-0}"
+
+unset XCIND_LOCAL_LOADED
+rm -rf "$WS_OVR_ROOT"
+
+# ======================================================================
+echo ""
+echo "=== Test: SHA includes additional config hashes ==="
+
+SHA_ADD_APP=$(mktemp -d)
+__XCIND_SOURCED_CONFIG_FILES=()
+
+cat >"$SHA_ADD_APP/.xcind.sh" <<'EOF'
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.dev.sh")
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+echo 'version: "3"' >"$SHA_ADD_APP/compose.yaml"
+echo 'XCIND_DEV_VAR=original' >"$SHA_ADD_APP/.xcind.dev.sh"
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+__xcind-load-config "$SHA_ADD_APP"
+__xcind-source-additional-configs "$SHA_ADD_APP"
+__xcind-build-compose-opts "$SHA_ADD_APP"
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE_ROOT=""
+
+sha_before=$(__xcind-compute-sha "$SHA_ADD_APP")
+
+# Change additional config content
+echo 'XCIND_DEV_VAR=changed' >"$SHA_ADD_APP/.xcind.dev.sh"
+sha_after=$(__xcind-compute-sha "$SHA_ADD_APP")
+
+if [ "$sha_before" != "$sha_after" ]; then
+  echo "  ✓ SHA invalidates on additional config change"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ SHA invalidates on additional config change"
+  FAIL=$((FAIL + 1))
+fi
+
+rm -rf "$SHA_ADD_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: JSON output includes configFiles and metadata ==="
+
+if command -v jq &>/dev/null; then
+  JSON_APP=$(mktemp -d)
+  __XCIND_SOURCED_CONFIG_FILES=()
+
+  cat >"$JSON_APP/.xcind.sh" <<'EOF'
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.dev.sh")
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+  touch "$JSON_APP/compose.yaml"
+  echo '# dev config' >"$JSON_APP/.xcind.dev.sh"
+
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+  XCIND_WORKSPACELESS=1
+  XCIND_WORKSPACE=""
+  XCIND_APP="testapp"
+  XCIND_DOCKER_COMPOSE_OPTS=()
+
+  __xcind-load-config "$JSON_APP"
+  __xcind-source-additional-configs "$JSON_APP"
+  __xcind-build-compose-opts "$JSON_APP"
+
+  json=$(__xcind-resolve-json "$JSON_APP")
+
+  json_config_count=$(echo "$json" | jq '.configFiles | length')
+  assert_eq "JSON configFiles count" "2" "$json_config_count"
+
+  json_config_0=$(echo "$json" | jq -r '.configFiles[0]')
+  assert_eq "JSON configFiles[0] is .xcind.sh" "$JSON_APP/.xcind.sh" "$json_config_0"
+
+  json_config_1=$(echo "$json" | jq -r '.configFiles[1]')
+  assert_eq "JSON configFiles[1] is .xcind.dev.sh" "$JSON_APP/.xcind.dev.sh" "$json_config_1"
+
+  json_app=$(echo "$json" | jq -r '.metadata.app')
+  assert_eq "JSON metadata.app" "testapp" "$json_app"
+
+  json_workspaceless=$(echo "$json" | jq -r '.metadata.workspaceless')
+  assert_eq "JSON metadata.workspaceless" "true" "$json_workspaceless"
+
+  json_workspace=$(echo "$json" | jq -r '.metadata.workspace')
+  assert_eq "JSON metadata.workspace is null" "null" "$json_workspace"
+
+  rm -rf "$JSON_APP"
+
+  # Test workspace metadata
+  JSON_WS=$(mktemp -d)
+  __XCIND_SOURCED_CONFIG_FILES=("$JSON_WS/.xcind.sh")
+  XCIND_WORKSPACELESS=0
+  XCIND_WORKSPACE="myws"
+  XCIND_APP="myapp"
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_COMPOSE_FILES=()
+  XCIND_ENV_FILES=()
+  XCIND_BAKE_FILES=()
+  XCIND_COMPOSE_DIR=""
+
+  json_ws=$(__xcind-resolve-json "$JSON_WS")
+
+  json_ws_name=$(echo "$json_ws" | jq -r '.metadata.workspace')
+  assert_eq "JSON workspace metadata.workspace" "myws" "$json_ws_name"
+
+  json_ws_wl=$(echo "$json_ws" | jq -r '.metadata.workspaceless')
+  assert_eq "JSON workspace metadata.workspaceless" "false" "$json_ws_wl"
+
+  rm -rf "$JSON_WS"
+else
+  echo "  (skipped: jq not installed)"
+fi
 
 # ======================================================================
 # Cleanup
