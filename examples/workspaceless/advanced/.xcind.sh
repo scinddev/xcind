@@ -8,7 +8,7 @@
 #   - Bake file configuration (future use)
 
 # --- Environment Files ---
-XCIND_ENV_FILES=(
+XCIND_COMPOSE_ENV_FILES=(
   ".env"
   ".env.local"
   '.env.${APP_ENV}'

@@ -10,7 +10,7 @@
 
 Xcind applications are configured via a single `.xcind.sh` file at the app root. As projects grow, teams need environment-specific overrides (dev vs. staging vs. production), machine-local tweaks, and shared workspace-level defaults — all without cluttering the base config.
 
-Today, xcind supports environment-specific *compose* files and *env* files through array variables (`XCIND_COMPOSE_FILES`, `XCIND_ENV_FILES`) with variable expansion and automatic `.override` derivation. However, there is no equivalent mechanism for the `.xcind.sh` config files themselves. If a team wants different proxy exports, compose file lists, or workspace settings per environment, they must either:
+Today, xcind supports environment-specific *compose* files and *env* files through array variables (`XCIND_COMPOSE_FILES`, `XCIND_COMPOSE_ENV_FILES`) with variable expansion and automatic `.override` derivation. However, there is no equivalent mechanism for the `.xcind.sh` config files themselves. If a team wants different proxy exports, compose file lists, or workspace settings per environment, they must either:
 
 - Cram conditional logic into `.xcind.sh`, or
 - Maintain separate branches / symlinks
@@ -41,13 +41,13 @@ Neither scales well.
 
 ### 4.1 New Variable: `XCIND_ADDITIONAL_CONFIG_FILES`
 
-A new bash array variable that lists additional `.xcind.*.sh` scripts to source after the declaring config file. Unlike `XCIND_COMPOSE_FILES` or `XCIND_ENV_FILES` (which represent the *complete* list of files), this variable specifies only *additional* files — the base `.xcind.sh` is always sourced implicitly and should not be listed.
+A new bash array variable that lists additional `.xcind.*.sh` scripts to source after the declaring config file. Unlike `XCIND_COMPOSE_FILES` or `XCIND_COMPOSE_ENV_FILES` (which represent the *complete* list of files), this variable specifies only *additional* files — the base `.xcind.sh` is always sourced implicitly and should not be listed.
 
 **Example `.xcind.sh`:**
 
 ```bash
 XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.${APP_ENV:-dev}.sh")
-XCIND_ENV_FILES=(".env" ".env.${APP_ENV:-dev}" ".env.local")
+XCIND_COMPOSE_ENV_FILES=(".env" ".env.${APP_ENV:-dev}" ".env.local")
 XCIND_COMPOSE_FILES=("compose.yaml" "compose.${APP_ENV:-dev}.yaml")
 XCIND_PROXY_EXPORTS=("nginx")
 ```
@@ -57,7 +57,7 @@ With `APP_ENV=dev`, this causes xcind to look for and source (if they exist):
 1. `.xcind.dev.sh` — the additional config
 2. `.xcind.dev.override.sh` — its automatically derived override variant
 
-These files can override or extend any variable set by the base `.xcind.sh`, including `XCIND_COMPOSE_FILES`, `XCIND_ENV_FILES`, `XCIND_PROXY_EXPORTS`, etc.
+These files can override or extend any variable set by the base `.xcind.sh`, including `XCIND_COMPOSE_FILES`, `XCIND_COMPOSE_ENV_FILES`, `XCIND_PROXY_EXPORTS`, etc.
 
 ### 4.2 Resolution Rules
 
@@ -287,7 +287,7 @@ The current design applies additional config sourcing at both workspace and app 
 
 ```bash
 XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.${APP_ENV:-dev}.sh")
-XCIND_ENV_FILES=(".env" ".env.${APP_ENV:-dev}" ".env.local")
+XCIND_COMPOSE_ENV_FILES=(".env" ".env.${APP_ENV:-dev}" ".env.local")
 XCIND_COMPOSE_FILES=("compose.yaml" "compose.${APP_ENV:-dev}.yaml")
 XCIND_PROXY_EXPORTS=("nginx")
 
