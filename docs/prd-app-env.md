@@ -119,8 +119,8 @@ A new hook function, following the same pattern as `xcind-workspace-hook` and `x
 xcind-app-env-hook() {
   local app_root="$1"
 
-  # Skip when no app env files are configured
-  if [[ ${#XCIND_APP_ENV_FILES[@]} -eq 0 ]] 2>/dev/null; then
+  # Skip when no app env files are configured (guard against unset under set -u)
+  if [[ -z ${XCIND_APP_ENV_FILES+set} || ${#XCIND_APP_ENV_FILES[@]} -eq 0 ]]; then
     return 0
   fi
 
@@ -129,7 +129,7 @@ xcind-app-env-hook() {
   local f
   while IFS= read -r f; do
     resolved_files+=("$f")
-  done < <(__xcind-resolve-files "$app_root" "${XCIND_APP_ENV_FILES[@]}")
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_APP_ENV_FILES[@]+"${XCIND_APP_ENV_FILES[@]}"})
 
   # Skip if no files resolved
   if [[ ${#resolved_files[@]} -eq 0 ]]; then
@@ -217,27 +217,30 @@ The app-env hook runs **first** so that its generated compose file is loaded bef
 
 ### 4.5 SHA Computation Update
 
-The SHA computation (used for cache invalidation) must include app env file content so that changes to env files trigger hook re-execution. Add to the SHA inputs:
+The SHA computation (used for cache invalidation) must include both compose env file and app env file content so that changes to any env file trigger hook re-execution. Add to the SHA inputs:
 
-- Resolved `XCIND_APP_ENV_FILES` file paths
-- Content hashes of resolved app env files
+- Resolved `XCIND_COMPOSE_ENV_FILES` file paths and content hashes
+- Resolved `XCIND_APP_ENV_FILES` file paths and content hashes
+
+Compose env files affect `docker compose config` output (YAML interpolation), so changes to them can produce stale `resolved-config.yaml` — they must be included alongside compose file content. App env files affect the generated `compose.app-env.yaml` override, so their content must also be tracked.
 
 This mirrors how compose file content is already included in the SHA.
 
 ### 4.6 JSON Contract Update
 
-`__xcind-resolve-json` (used by `xcind-config` and the JetBrains plugin) adds two new fields:
+`__xcind-resolve-json` (used by `xcind-config` and the JetBrains plugin) adds two new fields. The existing `envFiles` key is renamed to `composeEnvFiles`, and a new `appEnvFiles` field is added:
 
 ```json
 {
-  "compose_env_files": ["/path/to/app/.env"],
-  "app_env_files": ["/path/to/app/.env", "/path/to/app/.env.local"],
-  "compose_files": ["..."],
-  ...
+  "appRoot": "/path/to/app",
+  "composeFiles": ["..."],
+  "composeEnvFiles": ["/path/to/app/.env"],
+  "appEnvFiles": ["/path/to/app/.env", "/path/to/app/.env.local"],
+  "bakeFiles": ["..."]
 }
 ```
 
-The existing `"env_files"` key is renamed to `"compose_env_files"` with a note in the changelog.
+The rename from `envFiles` → `composeEnvFiles` is a breaking contract change. Clients (including the JetBrains plugin) must be updated to read `composeEnvFiles` instead of `envFiles`.
 
 ---
 
@@ -249,7 +252,7 @@ The existing `"env_files"` key is renamed to `"compose_env_files"` with a note i
 |----------|--------|
 | `__xcind-load-config` | Rename default from `XCIND_ENV_FILES` to `XCIND_COMPOSE_ENV_FILES`. Add BC shim after sourcing `.xcind.sh`. Add default for `XCIND_APP_ENV_FILES=()`. |
 | `__xcind-build-compose-opts` | Change `XCIND_ENV_FILES` → `XCIND_COMPOSE_ENV_FILES` in the `--env-file` resolution loop. |
-| `__xcind-resolve-json` | Rename `env_files` key to `compose_env_files`. Add `app_env_files` key. |
+| `__xcind-resolve-json` | Rename `envFiles` key to `composeEnvFiles`. Add `appEnvFiles` key. |
 | Comment block (lines 89-96) | Update variable documentation to list `XCIND_COMPOSE_ENV_FILES` and `XCIND_APP_ENV_FILES`. |
 
 ### 5.2 `bin/xcind-config`
@@ -389,8 +392,8 @@ This is valid and useful. The same `.env` file serves double duty: its variables
 - [ ] `xcind-app-env-hook` generates `compose.app-env.yaml` with `env_file:` entries for all services.
 - [ ] Generated `env_file:` entries use absolute paths.
 - [ ] Hook is a no-op when `XCIND_APP_ENV_FILES` is empty or no files resolve.
-- [ ] SHA computation includes app env file paths and content.
-- [ ] `xcind-config` JSON output includes `compose_env_files` and `app_env_files` keys.
+- [ ] SHA computation includes compose env file and app env file paths and content.
+- [ ] `xcind-config` JSON output includes `composeEnvFiles` and `appEnvFiles` keys.
 - [ ] `xcind-config --preview` / `--files` shows both compose and app env files.
 - [ ] All existing tests pass with renamed variable.
 - [ ] New tests cover BC shim, app env file resolution, and hook generation.

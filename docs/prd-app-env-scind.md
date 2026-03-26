@@ -181,8 +181,7 @@ compose_env_files:            # Optional, list of strings
   - .env                      # Default: [".env"]
 
 app_env_files:                # Optional, list of strings
-  - .env                      # Default: [] (empty)
-  - .env.local
+                              # Default: [] (empty)
 ```
 
 Document:
