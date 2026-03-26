@@ -72,13 +72,17 @@ git -C "$PROJECT_ROOT" add \
   Dockerfile \
   flake.nix
 
-# Generate/update CHANGELOG.md from git history
+# Generate changelog for only the new (unreleased) commits and prepend
+# to the existing CHANGELOG.md.  This preserves previous entries exactly
+# as they were written (including attribution) instead of regenerating
+# the entire file.
 #
 # --tag "$new_version" tells git-cliff to treat unreleased commits as
 # belonging to this version (since the tag doesn't exist yet).
-# --output writes in-place.
+# --unreleased only processes commits since the last tag.
+# --prepend inserts the new section at the top of the existing file.
 echo "Updating CHANGELOG.md..."
-git-cliff --output CHANGELOG.md --tag "v${NEW_VERSION}"
+git-cliff --unreleased --tag "v${NEW_VERSION}" --prepend CHANGELOG.md
 
 # Stage it alongside the other version-bumped files
 git add CHANGELOG.md

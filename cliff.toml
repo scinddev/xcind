@@ -28,7 +28,7 @@ body = """
     {%- endfor %}
 {% endfor %}
 """
-footer = ""
+footer = "\n"
 trim = true
 
 [git]
@@ -57,3 +57,7 @@ commit_parsers = [
 filter_commits = false
 tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
+
+[remote.github]
+owner = "scinddev"
+repo = "xcind"
