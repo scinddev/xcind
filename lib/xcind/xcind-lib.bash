@@ -130,7 +130,10 @@ __xcind-load-config() {
   __XCIND_SOURCED_CONFIG_FILES+=("$app_root/.xcind.sh")
 
   # BC shim: migrate XCIND_ENV_FILES → XCIND_COMPOSE_ENV_FILES
-  if [[ -z ${XCIND_COMPOSE_ENV_FILES+set} ]] && [[ -n ${XCIND_ENV_FILES+set} ]]; then
+  if [[ -n ${XCIND_ENV_FILES+set} ]]; then
+    if [[ -n ${XCIND_COMPOSE_ENV_FILES+set} ]]; then
+      echo "xcind: warning: both XCIND_ENV_FILES (deprecated) and XCIND_COMPOSE_ENV_FILES are set; XCIND_ENV_FILES will take precedence" >&2
+    fi
     XCIND_COMPOSE_ENV_FILES=("${XCIND_ENV_FILES[@]}")
     echo "xcind: warning: XCIND_ENV_FILES is deprecated, use XCIND_COMPOSE_ENV_FILES instead" >&2
   fi
