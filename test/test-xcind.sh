@@ -763,6 +763,35 @@ rm -rf "$EMPTY_APP"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-source-additional-configs with unset variable ==="
+
+UNSET_APP=$(mktemp -d)
+__XCIND_SOURCED_CONFIG_FILES=()
+WS_UNSET_ROOT=$(mktemp -d)
+mkdir -p "$WS_UNSET_ROOT/myworkspace/myapp"
+
+# Workspace only sets XCIND_IS_WORKSPACE, no XCIND_ADDITIONAL_CONFIG_FILES
+echo 'XCIND_IS_WORKSPACE=1' >"$WS_UNSET_ROOT/myworkspace/.xcind.sh"
+# App .xcind.sh is empty (no XCIND_ADDITIONAL_CONFIG_FILES set)
+echo '# nothing' >"$WS_UNSET_ROOT/myworkspace/myapp/.xcind.sh"
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+XCIND_APP_ROOT=""
+app_root=$(__xcind-app-root "$WS_UNSET_ROOT/myworkspace/myapp")
+__xcind-discover-workspace "$app_root"
+
+# This should NOT fail with "unbound variable" when XCIND_ADDITIONAL_CONFIG_FILES is unset
+__xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+
+__xcind-load-config "$app_root"
+__xcind-source-additional-configs "$app_root"
+
+assert_eq "unset additional configs — no error" "0" "${#XCIND_ADDITIONAL_CONFIG_FILES[@]}"
+
+rm -rf "$WS_UNSET_ROOT"
+
+# ======================================================================
+echo ""
 echo "=== Test: Workspace additional configs with inheritance ==="
 
 WS_ADD_ROOT=$(mktemp -d)

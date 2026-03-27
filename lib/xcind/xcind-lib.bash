@@ -145,6 +145,7 @@ __xcind-source-additional-configs() {
 
   # Nothing to do if no additional configs declared or base_dir is empty
   [[ -z $base_dir ]] && return 0
+  [[ -z ${XCIND_ADDITIONAL_CONFIG_FILES+set} ]] && return 0
   [[ ${#XCIND_ADDITIONAL_CONFIG_FILES[@]} -eq 0 ]] && return 0
 
   local pattern expanded full_path override_path
