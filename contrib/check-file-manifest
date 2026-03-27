@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# contrib/check-file-manifest — Verify that every file in bin/ and lib/xcind/
+# is listed in all installation/packaging/CI manifests.
+#
+# Exit 0 if everything is consistent, 1 if any manifest is out of sync.
+# Designed to run as a pre-commit hook (local repo).
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# ---------------------------------------------------------------------------
+# 1. Discover the source-of-truth file sets
+# ---------------------------------------------------------------------------
+
+bin_files=()
+while IFS= read -r -d '' f; do
+  bin_files+=("${f#./}")
+done < <(find bin -maxdepth 1 -type f -print0 | sort -z)
+
+lib_files=()
+while IFS= read -r -d '' f; do
+  lib_files+=("${f#./}")
+done < <(find lib/xcind -maxdepth 1 -type f -name '*.bash' -print0 | sort -z)
+
+all_installed=("${bin_files[@]}" "${lib_files[@]}")
+
+# ---------------------------------------------------------------------------
+# 2. Helper: diff two sorted lists, report missing/extra items
+# ---------------------------------------------------------------------------
+
+errors=0
+
+check_list() {
+  local label="$1"
+  shift
+  local -a expected=("${all_installed[@]}")
+  local -a actual=("$@")
+
+  # Sort both
+  IFS=$'\n' expected_sorted=($(printf '%s\n' "${expected[@]}" | sort)); unset IFS
+  IFS=$'\n' actual_sorted=($(printf '%s\n' "${actual[@]}" | sort)); unset IFS
+
+  local missing=() extra=()
+
+  for f in "${expected_sorted[@]}"; do
+    local found=false
+    for a in "${actual_sorted[@]}"; do
+      if [ "$f" = "$a" ]; then found=true; break; fi
+    done
+    if [ "$found" = false ]; then
+      missing+=("$f")
+    fi
+  done
+
+  for a in "${actual_sorted[@]}"; do
+    local found=false
+    for f in "${expected_sorted[@]}"; do
+      if [ "$a" = "$f" ]; then found=true; break; fi
+    done
+    if [ "$found" = false ]; then
+      extra+=("$a")
+    fi
+  done
+
+  if [ ${#missing[@]} -gt 0 ] || [ ${#extra[@]} -gt 0 ]; then
+    echo "MISMATCH in $label:"
+    for f in "${missing[@]+"${missing[@]}"}"; do
+      echo "  - missing: $f"
+    done
+    for f in "${extra[@]+"${extra[@]}"}"; do
+      echo "  + extra:   $f"
+    done
+    errors=$((errors + 1))
+  fi
+}
+
+# Variant: check only bin files
+check_bin_list() {
+  local label="$1"
+  shift
+  local -a expected=("${bin_files[@]}")
+  local -a actual=("$@")
+
+  IFS=$'\n' expected_sorted=($(printf '%s\n' "${expected[@]}" | sort)); unset IFS
+  IFS=$'\n' actual_sorted=($(printf '%s\n' "${actual[@]}" | sort)); unset IFS
+
+  local missing=() extra=()
+
+  for f in "${expected_sorted[@]}"; do
+    local found=false
+    for a in "${actual_sorted[@]}"; do
+      if [ "$f" = "$a" ]; then found=true; break; fi
+    done
+    if [ "$found" = false ]; then missing+=("$f"); fi
+  done
+
+  for a in "${actual_sorted[@]}"; do
+    local found=false
+    for f in "${expected_sorted[@]}"; do
+      if [ "$a" = "$f" ]; then found=true; break; fi
+    done
+    if [ "$found" = false ]; then extra+=("$a"); fi
+  done
+
+  if [ ${#missing[@]} -gt 0 ] || [ ${#extra[@]} -gt 0 ]; then
+    echo "MISMATCH in $label:"
+    for f in "${missing[@]+"${missing[@]}"}"; do
+      echo "  - missing: $f"
+    done
+    for f in "${extra[@]+"${extra[@]}"}"; do
+      echo "  + extra:   $f"
+    done
+    errors=$((errors + 1))
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# 3. Parse each manifest and compare
+# ---------------------------------------------------------------------------
+
+# --- install.sh ---
+install_files=()
+while IFS= read -r line; do
+  # Lines like: install -m 755 "$XCIND_ROOT/bin/xcind-compose" "$PREFIX/bin/xcind-compose"
+  if [[ "$line" =~ \$XCIND_ROOT/(bin/[^\"]+)\" ]]; then
+    install_files+=("${BASH_REMATCH[1]}")
+  elif [[ "$line" =~ \$XCIND_ROOT/(lib/xcind/[^\"]+)\" ]]; then
+    install_files+=("${BASH_REMATCH[1]}")
+  fi
+done < install.sh
+check_list "install.sh" "${install_files[@]}"
+
+# --- uninstall.sh ---
+uninstall_files=()
+while IFS= read -r line; do
+  if [[ "$line" =~ \$PREFIX/(bin/[^\"]+)\" ]]; then
+    uninstall_files+=("${BASH_REMATCH[1]}")
+  elif [[ "$line" =~ \$PREFIX/(lib/xcind/[^\"]+)\" ]]; then
+    uninstall_files+=("${BASH_REMATCH[1]}")
+  fi
+done < uninstall.sh
+check_list "uninstall.sh" "${uninstall_files[@]}"
+
+# --- package.json "bin" field (bin/ executables only) ---
+pkg_bin_files=()
+while IFS= read -r val; do
+  pkg_bin_files+=("$val")
+done < <(
+  # Extract values from the "bin" object in package.json
+  python3 -c "
+import json, sys
+with open('package.json') as f:
+    data = json.load(f)
+for v in sorted(data.get('bin', {}).values()):
+    print(v)
+" 2>/dev/null || \
+  # Fallback: parse with grep if python3 is unavailable
+  grep -oP ':\s*"(bin/[^"]+)"' package.json | sed 's/.*"\(bin\/[^"]*\)".*/\1/' | sort
+)
+check_bin_list "package.json bin" "${pkg_bin_files[@]}"
+
+# --- flake.nix postInstall wrapProgram (bin/ executables only) ---
+flake_bin_files=()
+while IFS= read -r line; do
+  if [[ "$line" =~ wrapProgram.*/bin/([^\"[:space:]\\]+) ]]; then
+    flake_bin_files+=("bin/${BASH_REMATCH[1]}")
+  fi
+done < flake.nix
+check_bin_list "flake.nix wrapProgram" "${flake_bin_files[@]}"
+
+# --- contrib/test-all SHELLCHECK_FILES (all shell scripts) ---
+testall_files=()
+while IFS= read -r line; do
+  if [[ "$line" =~ SHELLCHECK_FILES=\( ]]; then
+    # Extract the array content — may span one line
+    content="${line#*SHELLCHECK_FILES=(}"
+    content="${content%)}"
+    for token in $content; do
+      case "$token" in
+        bin/* | lib/xcind/*) testall_files+=("$token") ;;
+      esac
+    done
+  fi
+done < contrib/test-all
+check_list "contrib/test-all SHELLCHECK_FILES" "${testall_files[@]}"
+
+# --- .github/workflows/tests.yml shellcheck step ---
+ci_files=()
+in_shellcheck=false
+while IFS= read -r line; do
+  # Detect the shellcheck run block
+  if [[ "$line" =~ "shellcheck \\" ]]; then
+    in_shellcheck=true
+    continue
+  fi
+  if [ "$in_shellcheck" = true ]; then
+    trimmed="${line#"${line%%[![:space:]]*}"}"
+    # Stop when we hit a non-continuation line (no trailing backslash and not a file path)
+    case "$trimmed" in
+      bin/* | lib/xcind/*)
+        # Strip trailing backslash
+        trimmed="${trimmed% \\}"
+        trimmed="${trimmed%\\}"
+        trimmed="${trimmed%% *}"
+        ci_files+=("$trimmed")
+        ;;
+      *)
+        in_shellcheck=false
+        ;;
+    esac
+  fi
+done < .github/workflows/tests.yml
+check_list ".github/workflows/tests.yml shellcheck" "${ci_files[@]}"
+
+# ---------------------------------------------------------------------------
+# 4. Report
+# ---------------------------------------------------------------------------
+
+if [ "$errors" -gt 0 ]; then
+  echo ""
+  echo "Found $errors manifest(s) out of sync with bin/ and lib/xcind/."
+  echo "Update the listed files so every installed file is included."
+  exit 1
+else
+  echo "All manifests are in sync."
+  exit 0
+fi

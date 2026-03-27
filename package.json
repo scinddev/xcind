@@ -4,7 +4,8 @@
   "description": "Slim shell wrapper around docker compose with per-application config",
   "bin": {
     "xcind-compose": "bin/xcind-compose",
-    "xcind-config": "bin/xcind-config"
+    "xcind-config": "bin/xcind-config",
+    "xcind-proxy": "bin/xcind-proxy"
   },
   "files": [
     "bin",
