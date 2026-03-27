@@ -38,15 +38,19 @@ check_list() {
   local -a actual=("$@")
 
   # Sort both
-  IFS=$'\n' expected_sorted=($(printf '%s\n' "${expected[@]}" | sort)); unset IFS
-  IFS=$'\n' actual_sorted=($(printf '%s\n' "${actual[@]}" | sort)); unset IFS
+  local -a expected_sorted actual_sorted
+  mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+  mapfile -t actual_sorted < <(printf '%s\n' "${actual[@]}" | sort)
 
   local missing=() extra=()
 
   for f in "${expected_sorted[@]}"; do
     local found=false
     for a in "${actual_sorted[@]}"; do
-      if [ "$f" = "$a" ]; then found=true; break; fi
+      if [ "$f" = "$a" ]; then
+        found=true
+        break
+      fi
     done
     if [ "$found" = false ]; then
       missing+=("$f")
@@ -56,7 +60,10 @@ check_list() {
   for a in "${actual_sorted[@]}"; do
     local found=false
     for f in "${expected_sorted[@]}"; do
-      if [ "$a" = "$f" ]; then found=true; break; fi
+      if [ "$a" = "$f" ]; then
+        found=true
+        break
+      fi
     done
     if [ "$found" = false ]; then
       extra+=("$a")
@@ -82,15 +89,19 @@ check_bin_list() {
   local -a expected=("${bin_files[@]}")
   local -a actual=("$@")
 
-  IFS=$'\n' expected_sorted=($(printf '%s\n' "${expected[@]}" | sort)); unset IFS
-  IFS=$'\n' actual_sorted=($(printf '%s\n' "${actual[@]}" | sort)); unset IFS
+  local -a expected_sorted actual_sorted
+  mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+  mapfile -t actual_sorted < <(printf '%s\n' "${actual[@]}" | sort)
 
   local missing=() extra=()
 
   for f in "${expected_sorted[@]}"; do
     local found=false
     for a in "${actual_sorted[@]}"; do
-      if [ "$f" = "$a" ]; then found=true; break; fi
+      if [ "$f" = "$a" ]; then
+        found=true
+        break
+      fi
     done
     if [ "$found" = false ]; then missing+=("$f"); fi
   done
@@ -98,7 +109,10 @@ check_bin_list() {
   for a in "${actual_sorted[@]}"; do
     local found=false
     for f in "${expected_sorted[@]}"; do
-      if [ "$a" = "$f" ]; then found=true; break; fi
+      if [ "$a" = "$f" ]; then
+        found=true
+        break
+      fi
     done
     if [ "$found" = false ]; then extra+=("$a"); fi
   done
@@ -123,23 +137,23 @@ check_bin_list() {
 install_files=()
 while IFS= read -r line; do
   # Lines like: install -m 755 "$XCIND_ROOT/bin/xcind-compose" "$PREFIX/bin/xcind-compose"
-  if [[ "$line" =~ \$XCIND_ROOT/(bin/[^\"]+)\" ]]; then
+  if [[ $line =~ \$XCIND_ROOT/(bin/[^\"]+)\" ]]; then
     install_files+=("${BASH_REMATCH[1]}")
-  elif [[ "$line" =~ \$XCIND_ROOT/(lib/xcind/[^\"]+)\" ]]; then
+  elif [[ $line =~ \$XCIND_ROOT/(lib/xcind/[^\"]+)\" ]]; then
     install_files+=("${BASH_REMATCH[1]}")
   fi
-done < install.sh
+done <install.sh
 check_list "install.sh" "${install_files[@]}"
 
 # --- uninstall.sh ---
 uninstall_files=()
 while IFS= read -r line; do
-  if [[ "$line" =~ \$PREFIX/(bin/[^\"]+)\" ]]; then
+  if [[ $line =~ \$PREFIX/(bin/[^\"]+)\" ]]; then
     uninstall_files+=("${BASH_REMATCH[1]}")
-  elif [[ "$line" =~ \$PREFIX/(lib/xcind/[^\"]+)\" ]]; then
+  elif [[ $line =~ \$PREFIX/(lib/xcind/[^\"]+)\" ]]; then
     uninstall_files+=("${BASH_REMATCH[1]}")
   fi
-done < uninstall.sh
+done <uninstall.sh
 check_list "uninstall.sh" "${uninstall_files[@]}"
 
 # --- package.json "bin" field (bin/ executables only) ---
@@ -154,35 +168,35 @@ with open('package.json') as f:
     data = json.load(f)
 for v in sorted(data.get('bin', {}).values()):
     print(v)
-" 2>/dev/null || \
-  # Fallback: parse with grep if python3 is unavailable
-  grep -oP ':\s*"(bin/[^"]+)"' package.json | sed 's/.*"\(bin\/[^"]*\)".*/\1/' | sort
+" 2>/dev/null ||
+    # Fallback: parse with grep if python3 is unavailable
+    grep -oP ':\s*"(bin/[^"]+)"' package.json | sed 's/.*"\(bin\/[^"]*\)".*/\1/' | sort
 )
 check_bin_list "package.json bin" "${pkg_bin_files[@]}"
 
 # --- flake.nix postInstall wrapProgram (bin/ executables only) ---
 flake_bin_files=()
 while IFS= read -r line; do
-  if [[ "$line" =~ wrapProgram.*/bin/([^\"[:space:]\\]+) ]]; then
+  if [[ $line =~ wrapProgram.*/bin/([^\"[:space:]\\]+) ]]; then
     flake_bin_files+=("bin/${BASH_REMATCH[1]}")
   fi
-done < flake.nix
+done <flake.nix
 check_bin_list "flake.nix wrapProgram" "${flake_bin_files[@]}"
 
 # --- contrib/test-all SHELLCHECK_FILES (all shell scripts) ---
 testall_files=()
 while IFS= read -r line; do
-  if [[ "$line" =~ SHELLCHECK_FILES=\( ]]; then
+  if [[ $line =~ SHELLCHECK_FILES=\( ]]; then
     # Extract the array content — may span one line
     content="${line#*SHELLCHECK_FILES=(}"
     content="${content%)}"
     for token in $content; do
       case "$token" in
-        bin/* | lib/xcind/*) testall_files+=("$token") ;;
+      bin/* | lib/xcind/*) testall_files+=("$token") ;;
       esac
     done
   fi
-done < contrib/test-all
+done <contrib/test-all
 check_list "contrib/test-all SHELLCHECK_FILES" "${testall_files[@]}"
 
 # --- .github/workflows/tests.yml shellcheck step ---
@@ -190,7 +204,8 @@ ci_files=()
 in_shellcheck=false
 while IFS= read -r line; do
   # Detect the shellcheck run block
-  if [[ "$line" =~ "shellcheck \\" ]]; then
+  # shellcheck disable=SC1003  # backslash is literal in glob pattern
+  if [[ $line == *'shellcheck \'* ]]; then
     in_shellcheck=true
     continue
   fi
@@ -198,19 +213,19 @@ while IFS= read -r line; do
     trimmed="${line#"${line%%[![:space:]]*}"}"
     # Stop when we hit a non-continuation line (no trailing backslash and not a file path)
     case "$trimmed" in
-      bin/* | lib/xcind/*)
-        # Strip trailing backslash
-        trimmed="${trimmed% \\}"
-        trimmed="${trimmed%\\}"
-        trimmed="${trimmed%% *}"
-        ci_files+=("$trimmed")
-        ;;
-      *)
-        in_shellcheck=false
-        ;;
+    bin/* | lib/xcind/*)
+      # Strip trailing backslash
+      trimmed="${trimmed% \\}"
+      trimmed="${trimmed%\\}"
+      trimmed="${trimmed%% *}"
+      ci_files+=("$trimmed")
+      ;;
+    *)
+      in_shellcheck=false
+      ;;
     esac
   fi
-done < .github/workflows/tests.yml
+done <.github/workflows/tests.yml
 check_list ".github/workflows/tests.yml shellcheck" "${ci_files[@]}"
 
 # ---------------------------------------------------------------------------

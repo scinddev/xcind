@@ -217,6 +217,7 @@ services:
 YAML
 
   # Mock docker network inspect to pretend xcind-proxy exists
+  # shellcheck disable=SC2317  # invoked indirectly via xcind-proxy
   docker() {
     if [ "${1:-}" = "network" ] && [ "${2:-}" = "inspect" ]; then
       return 0
@@ -487,6 +488,7 @@ services:
 YAML
 
   # Mock docker
+  # shellcheck disable=SC2317  # invoked indirectly via xcind-workspace-hook
   docker() {
     if [ "${1:-}" = "network" ]; then
       return 0
