@@ -765,7 +765,6 @@ rm -rf "$EMPTY_APP"
 echo ""
 echo "=== Test: __xcind-source-additional-configs with unset variable ==="
 
-UNSET_APP=$(mktemp -d)
 __XCIND_SOURCED_CONFIG_FILES=()
 WS_UNSET_ROOT=$(mktemp -d)
 mkdir -p "$WS_UNSET_ROOT/myworkspace/myapp"
