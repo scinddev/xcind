@@ -146,7 +146,7 @@ while IFS= read -r line; do
     # Determine whether this is still a continuation line (ends with \)
     is_continuation=false
     # shellcheck disable=SC1003  # backslash is literal in glob pattern
-    [[ "$trimmed" == *'\' ]] && is_continuation=true
+    [[ $trimmed == *'\' ]] && is_continuation=true
     # Strip trailing backslash and any trailing whitespace
     path="${trimmed% \\}"
     path="${path%\\}"
