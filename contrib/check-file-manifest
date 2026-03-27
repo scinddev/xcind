@@ -143,19 +143,23 @@ while IFS= read -r line; do
   fi
   if [ "$in_shellcheck" = true ]; then
     trimmed="${line#"${line%%[![:space:]]*}"}"
-    # Stop when we hit a non-continuation line (no trailing backslash and not a file path)
-    case "$trimmed" in
-    bin/* | lib/xcind/*)
-      # Strip trailing backslash
-      trimmed="${trimmed% \\}"
-      trimmed="${trimmed%\\}"
-      trimmed="${trimmed%% *}"
-      ci_files+=("$trimmed")
-      ;;
-    *)
-      in_shellcheck=false
-      ;;
+    # Determine whether this is still a continuation line (ends with \)
+    is_continuation=false
+    # shellcheck disable=SC1003  # backslash is literal in glob pattern
+    [[ "$trimmed" == *'\' ]] && is_continuation=true
+    # Strip trailing backslash and any trailing whitespace
+    path="${trimmed% \\}"
+    path="${path%\\}"
+    path="${path%% *}"
+    # Collect only bin/ and lib/xcind/ paths; skip other entries (test/, install.sh, …)
+    # but keep scanning the whole block so ordering doesn't matter.
+    case "$path" in
+    bin/* | lib/xcind/*) ci_files+=("$path") ;;
     esac
+    # End collection once we leave the continuation block
+    if [ "$is_continuation" = false ]; then
+      in_shellcheck=false
+    fi
   fi
 done <.github/workflows/tests.yml
 check_set ".github/workflows/tests.yml shellcheck" "$tmpdir/all_installed" "${ci_files[@]}"
