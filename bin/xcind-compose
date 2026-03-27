@@ -43,6 +43,7 @@ fi
 # --- Main ---
 
 # Step 1: Detect app root
+# shellcheck disable=SC2119  # intentionally called with no args
 app_root=$(__xcind-app-root) || exit 1
 export XCIND_APP_ROOT="$app_root"
 

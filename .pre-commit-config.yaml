@@ -17,6 +17,16 @@ repos:
     hooks:
       - id: shfmt
 
+  # -- Manifest consistency --
+  - repo: local
+    hooks:
+      - id: check-file-manifest
+        name: check installed-file manifests are in sync
+        entry: contrib/check-file-manifest
+        language: script
+        pass_filenames: false
+        files: ^(bin/|lib/xcind/|install\.sh|uninstall\.sh|package\.json|flake\.nix|contrib/test-all|contrib/check-file-manifest|\.github/workflows/tests\.yml)
+
   # -- Linters (run after formatters) --
   - repo: https://github.com/jumanjihouse/pre-commit-hooks
     rev: 3.0.0
