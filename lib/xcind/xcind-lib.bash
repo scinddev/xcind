@@ -16,11 +16,13 @@ export XCIND_VERSION="0.1.0"
 
 __XCIND_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-app-env-lib.bash"
+# shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-proxy-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-proxy-hook" "xcind-workspace-hook")
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")
 
 # --------------------------------------------------------------------------
 # Portable SHA-256 helper
@@ -87,13 +89,14 @@ __xcind-app-root() {
 # --------------------------------------------------------------------------
 
 # Source the .xcind.sh config file from the given app root.
-# This populates XCIND_COMPOSE_FILES, XCIND_ENV_FILES, etc.
+# This populates XCIND_COMPOSE_FILES, XCIND_COMPOSE_ENV_FILES, etc.
 #
 # Expected variables that .xcind.sh may set:
-#   XCIND_COMPOSE_FILES=()   — Compose file patterns (relative to app root)
-#   XCIND_ENV_FILES=()       — Environment file patterns (relative to app root)
-#   XCIND_BAKE_FILES=()      — Bake file patterns (reserved for future use)
-#   XCIND_COMPOSE_DIR=""     — Subdirectory for compose files (optional convenience)
+#   XCIND_COMPOSE_FILES=()       — Compose file patterns (relative to app root)
+#   XCIND_COMPOSE_ENV_FILES=()   — Env file patterns for compose YAML interpolation (--env-file)
+#   XCIND_APP_ENV_FILES=()       — Env file patterns injected into containers (env_file:)
+#   XCIND_BAKE_FILES=()          — Bake file patterns (reserved for future use)
+#   XCIND_COMPOSE_DIR=""         — Subdirectory for compose files (optional convenience)
 #
 # Usage:
 #   __xcind-load-config /path/to/app/root
@@ -105,9 +108,6 @@ __xcind-load-config() {
   # disk are used (see __xcind-resolve-files).
   if [[ -z ${XCIND_COMPOSE_FILES+set} ]]; then
     XCIND_COMPOSE_FILES=("compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml")
-  fi
-  if [[ -z ${XCIND_ENV_FILES+set} ]]; then
-    XCIND_ENV_FILES=(".env")
   fi
   if [[ -z ${XCIND_BAKE_FILES+set} ]]; then
     XCIND_BAKE_FILES=()
@@ -128,6 +128,23 @@ __xcind-load-config() {
   # shellcheck disable=SC1091
   source "$app_root/.xcind.sh"
   __XCIND_SOURCED_CONFIG_FILES+=("$app_root/.xcind.sh")
+
+  # BC shim: migrate XCIND_ENV_FILES → XCIND_COMPOSE_ENV_FILES
+  if [[ -n ${XCIND_ENV_FILES+set} ]]; then
+    if [[ -n ${XCIND_COMPOSE_ENV_FILES+set} ]]; then
+      echo "xcind: warning: both XCIND_ENV_FILES (deprecated) and XCIND_COMPOSE_ENV_FILES are set; XCIND_ENV_FILES will take precedence" >&2
+    fi
+    XCIND_COMPOSE_ENV_FILES=("${XCIND_ENV_FILES[@]}")
+    echo "xcind: warning: XCIND_ENV_FILES is deprecated, use XCIND_COMPOSE_ENV_FILES instead" >&2
+  fi
+
+  # Env file defaults (after source + BC shim so migration works)
+  if [[ -z ${XCIND_COMPOSE_ENV_FILES+set} ]]; then
+    XCIND_COMPOSE_ENV_FILES=(".env")
+  fi
+  if [[ -z ${XCIND_APP_ENV_FILES+set} ]]; then
+    XCIND_APP_ENV_FILES=()
+  fi
 }
 
 # --------------------------------------------------------------------------
@@ -303,7 +320,7 @@ __xcind-build-compose-opts() {
   local env_file
   while IFS= read -r env_file; do
     XCIND_DOCKER_COMPOSE_OPTS+=("--env-file" "$env_file")
-  done < <(__xcind-resolve-files "$app_root" ${XCIND_ENV_FILES[@]+"${XCIND_ENV_FILES[@]}"})
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_COMPOSE_ENV_FILES[@]+"${XCIND_COMPOSE_ENV_FILES[@]}"})
 
   # Resolve compose files → -f flags
   local compose_file
@@ -336,11 +353,17 @@ __xcind-resolve-json() {
   fi
 
   # Collect resolved file lists
-  local env_files=()
-  local env_file
-  while IFS= read -r env_file; do
-    env_files+=("$env_file")
-  done < <(__xcind-resolve-files "$app_root" ${XCIND_ENV_FILES[@]+"${XCIND_ENV_FILES[@]}"})
+  local compose_env_files=()
+  local _cef
+  while IFS= read -r _cef; do
+    compose_env_files+=("$_cef")
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_COMPOSE_ENV_FILES[@]+"${XCIND_COMPOSE_ENV_FILES[@]}"})
+
+  local app_env_files=()
+  local _aef
+  while IFS= read -r _aef; do
+    app_env_files+=("$_aef")
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_APP_ENV_FILES[@]+"${XCIND_APP_ENV_FILES[@]}"})
 
   local compose_files=()
   local compose_file
@@ -398,7 +421,8 @@ __xcind-resolve-json() {
     --arg app_root "$app_root" \
     --argjson config_files "$(__to_json_array ${__XCIND_SOURCED_CONFIG_FILES[@]+"${__XCIND_SOURCED_CONFIG_FILES[@]}"})" \
     --argjson compose_files "$(__to_json_array ${compose_files[@]+"${compose_files[@]}"})" \
-    --argjson env_files "$(__to_json_array ${env_files[@]+"${env_files[@]}"})" \
+    --argjson compose_env_files "$(__to_json_array ${compose_env_files[@]+"${compose_env_files[@]}"})" \
+    --argjson app_env_files "$(__to_json_array ${app_env_files[@]+"${app_env_files[@]}"})" \
     --argjson bake_files "$(__to_json_array ${bake_files[@]+"${bake_files[@]}"})" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
@@ -412,7 +436,8 @@ __xcind-resolve-json() {
             appRoot: $app_root,
             configFiles: $config_files,
             composeFiles: $compose_files,
-            envFiles: $env_files,
+            composeEnvFiles: $compose_env_files,
+            appEnvFiles: $app_env_files,
             bakeFiles: $bake_files
         }'
 }
@@ -662,6 +687,25 @@ __xcind-compute-sha() {
       sha_input+=$(__xcind-sha256 "$file" | cut -d' ' -f1)
     fi
   done <<<"$sorted_files"
+
+  # Add compose env file content hashes
+  local _env_file
+  while IFS= read -r _env_file; do
+    [ -z "$_env_file" ] && continue
+    sha_input+="$_env_file"
+    if [ -f "$_env_file" ]; then
+      sha_input+=$(__xcind-sha256 "$_env_file" | cut -d' ' -f1)
+    fi
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_COMPOSE_ENV_FILES[@]+"${XCIND_COMPOSE_ENV_FILES[@]}"})
+
+  # Add app env file content hashes
+  while IFS= read -r _env_file; do
+    [ -z "$_env_file" ] && continue
+    sha_input+="$_env_file"
+    if [ -f "$_env_file" ]; then
+      sha_input+=$(__xcind-sha256 "$_env_file" | cut -d' ' -f1)
+    fi
+  done < <(__xcind-resolve-files "$app_root" ${XCIND_APP_ENV_FILES[@]+"${XCIND_APP_ENV_FILES[@]}"})
 
   # Add app .xcind.sh content
   if [ -f "$app_root/.xcind.sh" ]; then

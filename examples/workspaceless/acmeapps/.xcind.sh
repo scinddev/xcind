@@ -15,7 +15,7 @@
 # --- Environment Files ---
 # Listed in load order. For each entry, xcind also checks for an .override
 # variant (e.g., .env → .env.override) and includes it if present.
-XCIND_ENV_FILES=(
+XCIND_COMPOSE_ENV_FILES=(
   ".env"
   ".env.local"
 )

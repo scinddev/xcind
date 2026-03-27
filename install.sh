@@ -16,5 +16,6 @@ install -m 755 "$XCIND_ROOT/bin/xcind-proxy" "$PREFIX/bin/xcind-proxy"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-lib.bash" "$PREFIX/lib/xcind/xcind-lib.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-proxy-lib.bash" "$PREFIX/lib/xcind/xcind-proxy-lib.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-workspace-lib.bash" "$PREFIX/lib/xcind/xcind-workspace-lib.bash"
+install -m 644 "$XCIND_ROOT/lib/xcind/xcind-app-env-lib.bash" "$PREFIX/lib/xcind/xcind-app-env-lib.bash"
 
 echo "Done."

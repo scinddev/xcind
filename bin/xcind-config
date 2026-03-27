@@ -165,8 +165,13 @@ files)
     printf '%s\n' "${__XCIND_SOURCED_CONFIG_FILES[@]}"
   fi
 
-  echo "# Env files:"
-  __xcind-resolve-files "$app_root" "${XCIND_ENV_FILES[@]}"
+  echo "# Compose env files:"
+  __xcind-resolve-files "$app_root" "${XCIND_COMPOSE_ENV_FILES[@]}"
+
+  if [[ ${#XCIND_APP_ENV_FILES[@]} -gt 0 ]]; then
+    echo "# App env files:"
+    __xcind-resolve-files "$app_root" ${XCIND_APP_ENV_FILES[@]+"${XCIND_APP_ENV_FILES[@]}"}
+  fi
 
   echo "# Compose files:"
   _base_compose_files=()

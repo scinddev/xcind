@@ -215,8 +215,9 @@ assert_eq "default XCIND_COMPOSE_FILES[0]" "compose.yaml" "${XCIND_COMPOSE_FILES
 assert_eq "default XCIND_COMPOSE_FILES[1]" "compose.yml" "${XCIND_COMPOSE_FILES[1]}"
 assert_eq "default XCIND_COMPOSE_FILES[2]" "docker-compose.yaml" "${XCIND_COMPOSE_FILES[2]}"
 assert_eq "default XCIND_COMPOSE_FILES[3]" "docker-compose.yml" "${XCIND_COMPOSE_FILES[3]}"
-assert_eq "default XCIND_ENV_FILES count" "1" "${#XCIND_ENV_FILES[@]}"
-assert_eq "default XCIND_ENV_FILES[0]" ".env" "${XCIND_ENV_FILES[0]}"
+assert_eq "default XCIND_COMPOSE_ENV_FILES count" "1" "${#XCIND_COMPOSE_ENV_FILES[@]}"
+assert_eq "default XCIND_COMPOSE_ENV_FILES[0]" ".env" "${XCIND_COMPOSE_ENV_FILES[0]}"
+assert_eq "default XCIND_APP_ENV_FILES count" "0" "${#XCIND_APP_ENV_FILES[@]}"
 assert_eq "default XCIND_COMPOSE_DIR is empty" "" "$XCIND_COMPOSE_DIR"
 assert_eq "default XCIND_BAKE_FILES count" "0" "${#XCIND_BAKE_FILES[@]}"
 
@@ -238,7 +239,7 @@ echo "=== Test: __xcind-load-config overrides defaults ==="
 OVERRIDE_PROJECT=$(mktemp -d)
 cat >"$OVERRIDE_PROJECT/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_FILES=("my-compose.yaml")
-XCIND_ENV_FILES=(".env.custom")
+XCIND_COMPOSE_ENV_FILES=(".env.custom")
 EOF
 touch "$OVERRIDE_PROJECT/my-compose.yaml"
 touch "$OVERRIDE_PROJECT/.env.custom"
@@ -247,10 +248,37 @@ __xcind-load-config "$OVERRIDE_PROJECT"
 
 assert_eq "override XCIND_COMPOSE_FILES count" "1" "${#XCIND_COMPOSE_FILES[@]}"
 assert_eq "override XCIND_COMPOSE_FILES[0]" "my-compose.yaml" "${XCIND_COMPOSE_FILES[0]}"
-assert_eq "override XCIND_ENV_FILES count" "1" "${#XCIND_ENV_FILES[@]}"
-assert_eq "override XCIND_ENV_FILES[0]" ".env.custom" "${XCIND_ENV_FILES[0]}"
+assert_eq "override XCIND_COMPOSE_ENV_FILES count" "1" "${#XCIND_COMPOSE_ENV_FILES[@]}"
+assert_eq "override XCIND_COMPOSE_ENV_FILES[0]" ".env.custom" "${XCIND_COMPOSE_ENV_FILES[0]}"
 
 rm -rf "$OVERRIDE_PROJECT"
+
+# ======================================================================
+echo ""
+echo "=== Test: BC shim migrates XCIND_ENV_FILES ==="
+
+BC_APP=$(mktemp -d)
+cat >"$BC_APP/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_ENV_FILES=(".env.legacy")
+EOF
+touch "$BC_APP/compose.yaml"
+touch "$BC_APP/.env.legacy"
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
+__XCIND_SOURCED_CONFIG_FILES=()
+
+bc_stderr_file=$(mktemp)
+__xcind-load-config "$BC_APP" 2>"$bc_stderr_file"
+bc_stderr=$(<"$bc_stderr_file")
+rm "$bc_stderr_file"
+
+assert_eq "BC shim sets XCIND_COMPOSE_ENV_FILES count" "1" "${#XCIND_COMPOSE_ENV_FILES[@]}"
+assert_eq "BC shim sets XCIND_COMPOSE_ENV_FILES[0]" ".env.legacy" "${XCIND_COMPOSE_ENV_FILES[0]}"
+assert_contains "BC shim emits deprecation warning" "deprecated" "$bc_stderr"
+
+rm -rf "$BC_APP"
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ENV_FILES
 
 # ======================================================================
 echo ""
@@ -263,7 +291,7 @@ XCIND_COMPOSE_FILES=(
     "compose.common.yaml"
     "compose.dev.yaml"
 )
-XCIND_ENV_FILES=(
+XCIND_COMPOSE_ENV_FILES=(
     ".env"
     ".env.local"
 )
@@ -274,7 +302,7 @@ __xcind-load-config "$MOCK_APP"
 
 assert_eq "loads XCIND_COMPOSE_DIR" "docker" "$XCIND_COMPOSE_DIR"
 assert_eq "loads 3 compose files" "3" "${#XCIND_COMPOSE_FILES[@]}"
-assert_eq "loads 2 env files" "2" "${#XCIND_ENV_FILES[@]}"
+assert_eq "loads 2 env files" "2" "${#XCIND_COMPOSE_ENV_FILES[@]}"
 
 # Test full compose opts build
 __xcind-build-compose-opts "$MOCK_APP"
@@ -299,9 +327,13 @@ if command -v jq &>/dev/null; then
   # compose.yaml + compose.override.yaml + compose.common.yaml + compose.dev.yaml + compose.dev.override.yaml = 5
   assert_eq "JSON compose file count" "5" "$json_compose_count"
 
-  json_env_count=$(echo "$json" | jq '.envFiles | length')
+  json_compose_env_count=$(echo "$json" | jq '.composeEnvFiles | length')
   # .env + .env.local = 2 (no overrides exist)
-  assert_eq "JSON env file count" "2" "$json_env_count"
+  assert_eq "JSON composeEnvFiles count" "2" "$json_compose_env_count"
+
+  json_app_env_count=$(echo "$json" | jq '.appEnvFiles | length')
+  # XCIND_APP_ENV_FILES defaults to empty
+  assert_eq "JSON appEnvFiles count" "0" "$json_app_env_count"
 else
   echo "  (skipped: jq not installed)"
 fi
@@ -533,7 +565,7 @@ echo 'version: "3"' >"$SHA_APP/docker/compose.yaml"
 touch "$SHA_APP/.env"
 
 # Build opts so SHA has compose files to hash
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
 __xcind-load-config "$SHA_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 XCIND_COMPOSE_DIR="docker"
@@ -582,7 +614,7 @@ stub_hook() {
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("stub_hook")
 
 # Build base opts
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
 __xcind-load-config "$HOOK_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$HOOK_APP"
@@ -625,7 +657,7 @@ hook_beta() {
 # Register beta before alpha to verify order is preserved (not lexicographic)
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("hook_beta" "hook_alpha")
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
 __xcind-load-config "$ORDER_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$ORDER_APP"
@@ -687,7 +719,7 @@ XCIND_PROXY_EXPORTS=("nginx" "mailhog")
 EOF
 
 # Load config then source additional configs
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
 __xcind-load-config "$ADDCFG_APP"
 
 assert_eq "base config sets XCIND_PROXY_EXPORTS" "nginx" "${XCIND_PROXY_EXPORTS[0]}"
@@ -723,7 +755,7 @@ cat >"$VAREXP_APP/.xcind.staging.sh" <<'EOF'
 XCIND_STAGING_LOADED=1
 EOF
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
 export APP_ENV="staging"
 __xcind-load-config "$VAREXP_APP"
 __xcind-source-additional-configs "$VAREXP_APP"
@@ -731,7 +763,7 @@ __xcind-source-additional-configs "$VAREXP_APP"
 assert_eq "variable expansion resolves staging" "1" "${XCIND_STAGING_LOADED:-0}"
 
 # Non-existent file is skipped silently
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_STAGING_LOADED
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_STAGING_LOADED
 __XCIND_SOURCED_CONFIG_FILES=()
 export APP_ENV="prod"
 __xcind-load-config "$VAREXP_APP"
@@ -752,7 +784,7 @@ EMPTY_APP=$(mktemp -d)
 __XCIND_SOURCED_CONFIG_FILES=()
 echo '# no additional configs' >"$EMPTY_APP/.xcind.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
 __xcind-load-config "$EMPTY_APP"
 __xcind-source-additional-configs "$EMPTY_APP"
 
@@ -790,7 +822,7 @@ EOF
 
 # Simulate the pipeline
 unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
 
 __xcind-discover-workspace "$WS_ADD_ROOT/myworkspace/myapp"
 assert_eq "workspace inherited - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
@@ -841,7 +873,7 @@ XCIND_LOCAL_LOADED=1
 EOF
 
 unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_LOCAL_LOADED
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_LOCAL_LOADED
 
 __xcind-discover-workspace "$WS_OVR_ROOT/myworkspace/myapp"
 
@@ -873,7 +905,7 @@ EOF
 echo 'version: "3"' >"$SHA_ADD_APP/compose.yaml"
 echo 'XCIND_DEV_VAR=original' >"$SHA_ADD_APP/.xcind.dev.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
 __xcind-load-config "$SHA_ADD_APP"
 __xcind-source-additional-configs "$SHA_ADD_APP"
 __xcind-build-compose-opts "$SHA_ADD_APP"
@@ -911,7 +943,7 @@ EOF
   touch "$JSON_APP/compose.yaml"
   echo '# dev config' >"$JSON_APP/.xcind.dev.sh"
 
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
   XCIND_WORKSPACELESS=1
   XCIND_WORKSPACE=""
   XCIND_APP="testapp"
@@ -951,7 +983,7 @@ EOF
   XCIND_APP="myapp"
   XCIND_DOCKER_COMPOSE_OPTS=()
   XCIND_COMPOSE_FILES=()
-  XCIND_ENV_FILES=()
+  XCIND_COMPOSE_ENV_FILES=()
   XCIND_BAKE_FILES=()
   XCIND_COMPOSE_DIR=""
 
@@ -966,6 +998,103 @@ EOF
   rm -rf "$JSON_WS"
 else
   echo "  (skipped: jq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-app-env-hook (no-op when XCIND_APP_ENV_FILES unset) ==="
+
+APPENV_NOOP=$(mktemp -d)
+export XCIND_SHA="appenvnoop"
+export XCIND_CACHE_DIR="$APPENV_NOOP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$APPENV_NOOP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+unset XCIND_APP_ENV_FILES
+hook_output=$(xcind-app-env-hook "$APPENV_NOOP")
+assert_eq "hook no-op when unset: no output" "" "$hook_output"
+assert_eq "hook no-op when unset: no file generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+XCIND_APP_ENV_FILES=()
+hook_output=$(xcind-app-env-hook "$APPENV_NOOP")
+assert_eq "hook no-op when empty array: no output" "" "$hook_output"
+assert_eq "hook no-op when empty array: no file generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+# XCIND_APP_ENV_FILES set to a non-existent file — resolves to nothing
+XCIND_APP_ENV_FILES=(".nonexistent-env-file-xcind-test")
+hook_output=$(xcind-app-env-hook "$APPENV_NOOP")
+assert_eq "hook no-op when no files resolve: no output" "" "$hook_output"
+assert_eq "hook no-op when no files resolve: no file generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+rm -rf "$APPENV_NOOP"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-app-env-hook generates compose.app-env.yaml ==="
+
+if command -v yq &>/dev/null; then
+  APPENV_APP=$(mktemp -d)
+  export XCIND_SHA="appenvhash"
+  export XCIND_CACHE_DIR="$APPENV_APP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$APPENV_APP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  # Create env files that will be resolved
+  echo "DB_URL=postgres://localhost/test" >"$APPENV_APP/.env"
+  echo "API_KEY=secret" >"$APPENV_APP/.env.local"
+
+  # Create a minimal resolved-config.yaml with two services
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+  worker:
+    image: alpine
+YAML
+
+  XCIND_APP_ENV_FILES=(".env" ".env.local")
+  hook_output=$(xcind-app-env-hook "$APPENV_APP")
+
+  # Verify -f flag is returned
+  assert_contains "hook returns -f flag" "-f $XCIND_GENERATED_DIR/compose.app-env.yaml" "$hook_output"
+
+  # Verify file was generated
+  assert_eq "compose.app-env.yaml was created" "true" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.app-env.yaml" ] && echo true || echo false)"
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.app-env.yaml")"
+
+  # Verify both services are present
+  assert_contains "generated YAML has web service" "web:" "$generated"
+  assert_contains "generated YAML has worker service" "worker:" "$generated"
+
+  # Verify env_file entries use absolute paths
+  assert_contains "generated YAML has absolute .env path" "$APPENV_APP/.env" "$generated"
+  assert_contains "generated YAML has absolute .env.local path" "$APPENV_APP/.env.local" "$generated"
+
+  # Verify both services include both env files
+  web_env_count=$(yq -r '.services.web.env_file | length' "$XCIND_GENERATED_DIR/compose.app-env.yaml")
+  assert_eq "web service has 2 env_file entries" "2" "$web_env_count"
+
+  worker_env_count=$(yq -r '.services.worker.env_file | length' "$XCIND_GENERATED_DIR/compose.app-env.yaml")
+  assert_eq "worker service has 2 env_file entries" "2" "$worker_env_count"
+
+  # Verify single env file case
+  XCIND_APP_ENV_FILES=(".env")
+  rm -f "$XCIND_GENERATED_DIR/compose.app-env.yaml"
+  hook_output_single=$(xcind-app-env-hook "$APPENV_APP")
+
+  assert_contains "single env file: returns -f flag" "-f $XCIND_GENERATED_DIR/compose.app-env.yaml" "$hook_output_single"
+
+  single_env_count=$(yq -r '.services.web.env_file | length' "$XCIND_GENERATED_DIR/compose.app-env.yaml")
+  assert_eq "single env file: web has 1 env_file entry" "1" "$single_env_count"
+
+  rm -rf "$APPENV_APP"
+else
+  echo "  (skipped: yq not installed)"
 fi
 
 # ======================================================================

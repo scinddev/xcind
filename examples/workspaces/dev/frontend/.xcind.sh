@@ -11,7 +11,7 @@ XCIND_COMPOSE_FILES=(
 )
 
 # --- Environment Files ---
-XCIND_ENV_FILES=(
+XCIND_COMPOSE_ENV_FILES=(
   ".env"
 )
 

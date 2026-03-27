@@ -23,10 +23,10 @@ configuration file (`.xcind.sh`).
    # For applications using standard compose.yaml / .env, an empty file is enough!
    # Defaults: XCIND_COMPOSE_FILES looks for compose.yaml, compose.yml,
    #           docker-compose.yaml, docker-compose.yml
-   #           XCIND_ENV_FILES looks for .env
+   #           XCIND_COMPOSE_ENV_FILES looks for .env
    #
    # Override only if your application needs something different:
-   XCIND_ENV_FILES=(".env" ".env.local")
+   XCIND_COMPOSE_ENV_FILES=(".env" ".env.local")
    XCIND_COMPOSE_DIR="docker"
    XCIND_COMPOSE_FILES=("compose.yaml" "compose.dev.yaml")
    ```
@@ -56,17 +56,36 @@ When you run `xcind-compose`, it:
 
 The `.xcind.sh` file is a sourceable bash script. It may set the following variables:
 
-### `XCIND_ENV_FILES`
+### `XCIND_COMPOSE_ENV_FILES`
 
-Array of environment file patterns, relative to the app root. Each file that
-exists on disk is passed via `--env-file`. For each file, an `.override` variant
+Array of environment file patterns for Docker Compose YAML interpolation. Each
+file that exists on disk is passed via `--env-file` to `docker compose`. These
+variables are available for `${VAR}` substitution in compose files but are
+**not** injected into running containers. For each file, an `.override` variant
 is also checked (e.g., `.env` → `.env.override`).
 
 **Default:** `(".env")`
 
 ```bash
-XCIND_ENV_FILES=(".env" ".env.local" '.env.${APP_ENV}')
+XCIND_COMPOSE_ENV_FILES=(".env" ".env.local" '.env.${APP_ENV}')
 ```
+
+### `XCIND_APP_ENV_FILES`
+
+Array of environment file patterns to inject into all container services via
+Docker Compose's `env_file:` directive. Unlike `XCIND_COMPOSE_ENV_FILES`, these
+files are available inside the running containers. For each file, an `.override`
+variant is also checked.
+
+**Default:** `()` (empty — no app-level injection unless configured)
+
+```bash
+XCIND_APP_ENV_FILES=(".env" ".env.local")
+```
+
+> **Note:** It is valid and common to list the same file (e.g., `.env`) in both
+> `XCIND_COMPOSE_ENV_FILES` and `XCIND_APP_ENV_FILES`. This makes `.env` available
+> for both YAML interpolation and inside containers — the behavior most people expect.
 
 ### `XCIND_COMPOSE_DIR`
 
