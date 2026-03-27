@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-03-27
+
+### Maintenance
+
+- Add manifest consistency checker and update file registrations (#14) by @simensen in [#14](https://github.com/scinddev/xcind/pull/14)
+- Fix shellcheck SC2034 warnings in test-xcind.sh (#15) by @simensen in [#15](https://github.com/scinddev/xcind/pull/15)
 ## [0.1.1] - 2026-03-27
 
 ### Added
