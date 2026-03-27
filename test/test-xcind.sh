@@ -515,7 +515,7 @@ assert_eq "workspace router template" "{workspace}-{app}-{export}-{protocol}" "$
 # Custom templates
 unset XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE
 XCIND_WORKSPACELESS=1
-XCIND_WORKSPACELESS_APP_URL_TEMPLATE="{export}.{app}.{domain}"
+export XCIND_WORKSPACELESS_APP_URL_TEMPLATE="{export}.{app}.{domain}"
 __xcind-resolve-url-templates
 assert_eq "custom workspaceless URL template" "{export}.{app}.{domain}" "$XCIND_APP_URL_TEMPLATE"
 unset XCIND_WORKSPACELESS_APP_URL_TEMPLATE
@@ -547,8 +547,8 @@ unset XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE
 # Apex opt-out — empty string disables apex
 unset XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
 XCIND_WORKSPACELESS=1
-XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE=""
-XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE=""
+export XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE=""
+export XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE=""
 __xcind-resolve-url-templates
 assert_eq "apex URL opt-out (empty string)" "" "$XCIND_APP_APEX_URL_TEMPLATE"
 assert_eq "apex router opt-out (empty string)" "" "$XCIND_APEX_ROUTER_TEMPLATE"
@@ -655,6 +655,7 @@ hook_beta() {
   touch "$XCIND_GENERATED_DIR/compose.beta.yaml"
 }
 # Register beta before alpha to verify order is preserved (not lexicographic)
+# shellcheck disable=SC2034 # consumed by __xcind-run-hooks
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("hook_beta" "hook_alpha")
 
 unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
@@ -807,7 +808,7 @@ echo 'XCIND_IS_WORKSPACE=1' >"$WS_UNSET_ROOT/myworkspace/.xcind.sh"
 echo '# nothing' >"$WS_UNSET_ROOT/myworkspace/myapp/.xcind.sh"
 
 unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
-XCIND_APP_ROOT=""
+export XCIND_APP_ROOT=""
 app_root=$(__xcind-app-root "$WS_UNSET_ROOT/myworkspace/myapp")
 __xcind-discover-workspace "$app_root"
 
