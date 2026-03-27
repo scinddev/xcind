@@ -23,11 +23,13 @@ existing pattern:
 - Executables: `install -m 755 "$XCIND_ROOT/<path>" "$PREFIX/<path>"`
 - Libraries:   `install -m 644 "$XCIND_ROOT/<path>" "$PREFIX/<path>"`
 
-Keep lines sorted alphabetically within each section (bin, then lib).
+Keep lines ordered consistently with the existing entries (bin section first,
+then lib).
 
 ### 2. `uninstall.sh`
 
-Add a corresponding `rm -f "$PREFIX/<path>"` line, sorted to match install.sh.
+Add a corresponding `rm -f "$PREFIX/<path>"` line, placed to mirror the
+matching entry in `install.sh`.
 
 ### 3. `package.json`
 

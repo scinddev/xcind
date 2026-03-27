@@ -39,7 +39,7 @@ check_set() {
 
   local missing extra
   missing=$(comm -23 "$expected_file" "$tmpdir/actual")
-  extra=$(comm -13 "$expected_file" "$tmpdir/actual")
+  extra=$(comm -13 "$expected_file" "$tmpdir/actual" | sed 's/^\t//')
 
   if [ -n "$missing" ] || [ -n "$extra" ]; then
     echo "MISMATCH in $label:"
