@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-27
+
+### Added
+
+- feat: rename XCIND_ENV_FILES and add XCIND_APP_ENV_FILES (#11) by @simensen in [#11](https://github.com/scinddev/xcind/pull/11)
+
+### Maintenance
+
+- feat: implement XCIND_ADDITIONAL_CONFIG_FILES (#10) by @simensen in [#10](https://github.com/scinddev/xcind/pull/10)
+- Fix unbound variable error in __xcind-source-additional-configs (#12) by @simensen in [#12](https://github.com/scinddev/xcind/pull/12)
 ## [0.1.0] - 2026-03-26
 
 ### Added

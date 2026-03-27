@@ -10,7 +10,7 @@
     let
       mkXcind = pkgs: pkgs.stdenv.mkDerivation {
         pname = "xcind";
-        version = "0.1.0";
+        version = "0.1.1";
         src = ./.;
         nativeBuildInputs = [ pkgs.makeWrapper ];
         dontBuild = true;
