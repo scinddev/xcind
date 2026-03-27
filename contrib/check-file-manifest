@@ -31,34 +31,34 @@ errors=0
 #   expected_file: path to a sorted file of expected entries
 #   remaining args: the actual entries found in the manifest
 check_set() {
-	local label="$1"
-	local expected_file="$2"
-	shift 2
+  local label="$1"
+  local expected_file="$2"
+  shift 2
 
-	printf '%s\n' "$@" | sort >"$tmpdir/actual"
+  printf '%s\n' "$@" | sort >"$tmpdir/actual"
 
-	local missing extra
-	missing=$(comm -23 "$expected_file" "$tmpdir/actual")
-	extra=$(comm -13 "$expected_file" "$tmpdir/actual")
+  local missing extra
+  missing=$(comm -23 "$expected_file" "$tmpdir/actual")
+  extra=$(comm -13 "$expected_file" "$tmpdir/actual")
 
-	if [ -n "$missing" ] || [ -n "$extra" ]; then
-		echo "MISMATCH in $label:"
-		if [ -n "$missing" ]; then
-			while IFS= read -r f; do
-				echo "  - missing: $f"
-			done <<EOF
+  if [ -n "$missing" ] || [ -n "$extra" ]; then
+    echo "MISMATCH in $label:"
+    if [ -n "$missing" ]; then
+      while IFS= read -r f; do
+        echo "  - missing: $f"
+      done <<EOF
 $missing
 EOF
-		fi
-		if [ -n "$extra" ]; then
-			while IFS= read -r f; do
-				echo "  + extra:   $f"
-			done <<EOF
+    fi
+    if [ -n "$extra" ]; then
+      while IFS= read -r f; do
+        echo "  + extra:   $f"
+      done <<EOF
 $extra
 EOF
-		fi
-		errors=$((errors + 1))
-	fi
+    fi
+    errors=$((errors + 1))
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -68,66 +68,66 @@ EOF
 # --- install.sh ---
 install_files=()
 while IFS= read -r line; do
-	# Lines like: install -m 755 "$XCIND_ROOT/bin/xcind-compose" "$PREFIX/bin/xcind-compose"
-	if [[ $line =~ \$XCIND_ROOT/(bin/[^\"]+)\" ]]; then
-		install_files+=("${BASH_REMATCH[1]}")
-	elif [[ $line =~ \$XCIND_ROOT/(lib/xcind/[^\"]+)\" ]]; then
-		install_files+=("${BASH_REMATCH[1]}")
-	fi
+  # Lines like: install -m 755 "$XCIND_ROOT/bin/xcind-compose" "$PREFIX/bin/xcind-compose"
+  if [[ $line =~ \$XCIND_ROOT/(bin/[^\"]+)\" ]]; then
+    install_files+=("${BASH_REMATCH[1]}")
+  elif [[ $line =~ \$XCIND_ROOT/(lib/xcind/[^\"]+)\" ]]; then
+    install_files+=("${BASH_REMATCH[1]}")
+  fi
 done <install.sh
 check_set "install.sh" "$tmpdir/all_installed" "${install_files[@]}"
 
 # --- uninstall.sh ---
 uninstall_files=()
 while IFS= read -r line; do
-	if [[ $line =~ \$PREFIX/(bin/[^\"]+)\" ]]; then
-		uninstall_files+=("${BASH_REMATCH[1]}")
-	elif [[ $line =~ \$PREFIX/(lib/xcind/[^\"]+)\" ]]; then
-		uninstall_files+=("${BASH_REMATCH[1]}")
-	fi
+  if [[ $line =~ \$PREFIX/(bin/[^\"]+)\" ]]; then
+    uninstall_files+=("${BASH_REMATCH[1]}")
+  elif [[ $line =~ \$PREFIX/(lib/xcind/[^\"]+)\" ]]; then
+    uninstall_files+=("${BASH_REMATCH[1]}")
+  fi
 done <uninstall.sh
 check_set "uninstall.sh" "$tmpdir/all_installed" "${uninstall_files[@]}"
 
 # --- package.json "bin" field (bin/ executables only) ---
 pkg_bin_files=()
 while IFS= read -r val; do
-	pkg_bin_files+=("$val")
+  pkg_bin_files+=("$val")
 done < <(
-	# Extract values from the "bin" object in package.json
-	python3 -c "
+  # Extract values from the "bin" object in package.json
+  python3 -c "
 import json, sys
 with open('package.json') as f:
     data = json.load(f)
 for v in sorted(data.get('bin', {}).values()):
     print(v)
 " 2>/dev/null ||
-		# Fallback: parse with grep if python3 is unavailable (avoid non-portable -P)
-		grep -oE ':[[:space:]]*"(bin/[^"]+)"' package.json | sed 's/.*"\(bin\/[^"]*\)".*/\1/' | sort
+    # Fallback: parse with grep if python3 is unavailable (avoid non-portable -P)
+    grep -oE ':[[:space:]]*"(bin/[^"]+)"' package.json | sed 's/.*"\(bin\/[^"]*\)".*/\1/' | sort
 )
 check_set "package.json bin" "$tmpdir/bin_files" "${pkg_bin_files[@]}"
 
 # --- flake.nix postInstall wrapProgram (bin/ executables only) ---
 flake_bin_files=()
 while IFS= read -r line; do
-	if [[ $line =~ wrapProgram.*/bin/([^\"[:space:]\\]+) ]]; then
-		flake_bin_files+=("bin/${BASH_REMATCH[1]}")
-	fi
+  if [[ $line =~ wrapProgram.*/bin/([^\"[:space:]\\]+) ]]; then
+    flake_bin_files+=("bin/${BASH_REMATCH[1]}")
+  fi
 done <flake.nix
 check_set "flake.nix wrapProgram" "$tmpdir/bin_files" "${flake_bin_files[@]}"
 
 # --- contrib/test-all SHELLCHECK_FILES (all shell scripts) ---
 testall_files=()
 while IFS= read -r line; do
-	if [[ $line =~ SHELLCHECK_FILES=\( ]]; then
-		# Extract the array content — may span one line
-		content="${line#*SHELLCHECK_FILES=(}"
-		content="${content%)}"
-		for token in $content; do
-			case "$token" in
-			bin/* | lib/xcind/*) testall_files+=("$token") ;;
-			esac
-		done
-	fi
+  if [[ $line =~ SHELLCHECK_FILES=\( ]]; then
+    # Extract the array content — may span one line
+    content="${line#*SHELLCHECK_FILES=(}"
+    content="${content%)}"
+    for token in $content; do
+      case "$token" in
+      bin/* | lib/xcind/*) testall_files+=("$token") ;;
+      esac
+    done
+  fi
 done <contrib/test-all
 check_set "contrib/test-all SHELLCHECK_FILES" "$tmpdir/all_installed" "${testall_files[@]}"
 
@@ -135,28 +135,28 @@ check_set "contrib/test-all SHELLCHECK_FILES" "$tmpdir/all_installed" "${testall
 ci_files=()
 in_shellcheck=false
 while IFS= read -r line; do
-	# Detect the shellcheck run block
-	# shellcheck disable=SC1003  # backslash is literal in glob pattern
-	if [[ $line == *'shellcheck \'* ]]; then
-		in_shellcheck=true
-		continue
-	fi
-	if [ "$in_shellcheck" = true ]; then
-		trimmed="${line#"${line%%[![:space:]]*}"}"
-		# Stop when we hit a non-continuation line (no trailing backslash and not a file path)
-		case "$trimmed" in
-		bin/* | lib/xcind/*)
-			# Strip trailing backslash
-			trimmed="${trimmed% \\}"
-			trimmed="${trimmed%\\}"
-			trimmed="${trimmed%% *}"
-			ci_files+=("$trimmed")
-			;;
-		*)
-			in_shellcheck=false
-			;;
-		esac
-	fi
+  # Detect the shellcheck run block
+  # shellcheck disable=SC1003  # backslash is literal in glob pattern
+  if [[ $line == *'shellcheck \'* ]]; then
+    in_shellcheck=true
+    continue
+  fi
+  if [ "$in_shellcheck" = true ]; then
+    trimmed="${line#"${line%%[![:space:]]*}"}"
+    # Stop when we hit a non-continuation line (no trailing backslash and not a file path)
+    case "$trimmed" in
+    bin/* | lib/xcind/*)
+      # Strip trailing backslash
+      trimmed="${trimmed% \\}"
+      trimmed="${trimmed%\\}"
+      trimmed="${trimmed%% *}"
+      ci_files+=("$trimmed")
+      ;;
+    *)
+      in_shellcheck=false
+      ;;
+    esac
+  fi
 done <.github/workflows/tests.yml
 check_set ".github/workflows/tests.yml shellcheck" "$tmpdir/all_installed" "${ci_files[@]}"
 
@@ -165,11 +165,11 @@ check_set ".github/workflows/tests.yml shellcheck" "$tmpdir/all_installed" "${ci
 # ---------------------------------------------------------------------------
 
 if [ "$errors" -gt 0 ]; then
-	echo ""
-	echo "Found $errors manifest(s) out of sync with bin/ and lib/xcind/."
-	echo "Update the listed files so every installed file is included."
-	exit 1
+  echo ""
+  echo "Found $errors manifest(s) out of sync with bin/ and lib/xcind/."
+  echo "Update the listed files so every installed file is included."
+  exit 1
 else
-	echo "All manifests are in sync."
-	exit 0
+  echo "All manifests are in sync."
+  exit 0
 fi
