@@ -447,6 +447,23 @@ __xcind-resolve-json() {
 # Docker Wrapper Generation
 # --------------------------------------------------------------------------
 
+# Emit a POSIX shell snippet that strips -f/--file arguments from "$@".
+# Handles: -f FILE, --file FILE, -fFILE, --file=FILE
+# Called via $() inside heredocs of the wrapper generators.
+__xcind-dump-strip-file-args() {
+  cat <<'STRIP'
+_xcind_newargs=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f|--file) shift ; shift 2>/dev/null || true ;;
+        -f*|--file=*) shift ;;
+        *) _xcind_newargs="${_xcind_newargs} '$(printf '%s\n' "$1" | sed "s/'/'\\''/g")'" ; shift ;;
+    esac
+done
+eval "set -- ${_xcind_newargs}"
+STRIP
+}
+
 # Generate a POSIX-compatible docker-compose wrapper script.
 # The wrapper tries xcind-compose first, falling back to docker compose.
 #
@@ -461,6 +478,7 @@ __xcind-dump-docker-compose-wrapper() {
 set -eu
 PATH="\$PATH:${xcind_bin_dir}"
 export XCIND_APP_ROOT="${app_root}"
+$(__xcind-dump-strip-file-args)
 if command -v xcind-compose >/dev/null 2>&1; then
     exec xcind-compose "\$@"
 else
@@ -486,6 +504,7 @@ PATH="\$PATH:${xcind_bin_dir}"
 export XCIND_APP_ROOT="${app_root}"
 if [ \$# -gt 0 ] && [ "\$1" = "compose" ]; then
     shift
+$(__xcind-dump-strip-file-args | sed 's/^/    /')
     if command -v xcind-compose >/dev/null 2>&1; then
         exec xcind-compose "\$@"
     else

@@ -401,6 +401,18 @@ assert_contains "docker wrapper falls back to docker compose" \
 assert_contains "docker wrapper passes non-compose to docker" \
   'docker "$@"' "$docker_wrapper"
 
+assert_contains "compose wrapper strips -f/--file args" \
+  '_xcind_newargs' "$compose_wrapper"
+
+assert_contains "docker wrapper strips -f/--file args" \
+  '_xcind_newargs' "$docker_wrapper"
+
+assert_contains "compose wrapper handles -f with space" \
+  '-f|--file) shift' "$compose_wrapper"
+
+assert_contains "compose wrapper handles --file=value" \
+  '--file=*) shift' "$compose_wrapper"
+
 rm -rf "$WRAPPER_APP"
 
 # ======================================================================
