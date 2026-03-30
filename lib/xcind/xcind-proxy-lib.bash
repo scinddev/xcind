@@ -226,11 +226,8 @@ xcind-proxy-hook() {
     source "$global_config"
   fi
 
-  # Check xcind-proxy network exists
-  if ! docker network inspect xcind-proxy &>/dev/null; then
-    echo "Error: xcind-proxy network not found. Run 'xcind-proxy init' first." >&2
-    return 1
-  fi
+  # Ensure xcind-proxy network exists (lazy, idempotent)
+  docker network create xcind-proxy >/dev/null 2>&1 || true
 
   # Require yq
   if ! command -v yq &>/dev/null; then
