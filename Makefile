@@ -18,10 +18,10 @@ test:
 	bash test/test-xcind-proxy.sh
 
 format:
-	shfmt --write $(SHELL_FILES)
+	shfmt --write .
 
 shfmt:
-	shfmt --diff $(SHELL_FILES)
+	shfmt --diff .
 
 shellcheck:
 	shellcheck $(SHELL_FILES)
