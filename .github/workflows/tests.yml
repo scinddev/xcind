@@ -43,6 +43,7 @@ jobs:
             bin/xcind-proxy \
             lib/xcind/xcind-app-env-lib.bash \
             lib/xcind/xcind-lib.bash \
+            lib/xcind/xcind-naming-lib.bash \
             lib/xcind/xcind-proxy-lib.bash \
             lib/xcind/xcind-workspace-lib.bash \
             test/test-xcind.sh \
