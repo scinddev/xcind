@@ -1,11 +1,169 @@
 #!/usr/bin/env bash
-# xcind-proxy-lib.bash — Proxy hook for generating compose.proxy.yaml
+# xcind-proxy-lib.bash — Proxy hook and shared lifecycle functions
 #
 # Provides xcind-proxy-hook, a post-resolve-generate hook that generates
 # Traefik proxy configuration from XCIND_PROXY_EXPORTS declarations.
 #
+# Also provides __xcind-proxy-ensure-* functions used by both the hook
+# and the xcind-proxy CLI to manage proxy infrastructure.
+#
 # This file is auto-sourced by xcind-lib.bash. The hook is registered by
 # default — apps only need to declare XCIND_PROXY_EXPORTS to use it.
+
+# --------------------------------------------------------------------------
+# Shared Constants
+# --------------------------------------------------------------------------
+
+XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+XCIND_PROXY_NETWORK="xcind-proxy"
+
+# --------------------------------------------------------------------------
+# Proxy Lifecycle Functions
+# --------------------------------------------------------------------------
+
+# Ensure the xcind-proxy Docker network exists.
+__xcind-proxy-ensure-network() {
+  if docker network inspect "$XCIND_PROXY_NETWORK" &>/dev/null; then
+    return 0
+  fi
+
+  if ! docker network create "$XCIND_PROXY_NETWORK" >/dev/null; then
+    echo "Error: Failed to create Docker network '$XCIND_PROXY_NETWORK'." >&2
+    echo "Check that Docker is running and you have permission to create networks." >&2
+    return 1
+  fi
+}
+
+# Ensure proxy infrastructure files exist in ~/.config/xcind/proxy/.
+# Creates config.sh (if missing), docker-compose.yaml, and traefik.yaml.
+# Calls __xcind-proxy-ensure-network after generating files.
+__xcind-proxy-ensure-init() {
+  mkdir -p "$XCIND_PROXY_DIR"
+
+  # Write config.sh only if it doesn't exist (never overwrite user config)
+  if [ ! -f "$XCIND_PROXY_DIR/config.sh" ]; then
+    cat >"$XCIND_PROXY_DIR/config.sh" <<'EOF'
+# xcind-proxy global configuration
+# Domain suffix for generated hostnames (.localhost = zero DNS config, RFC 6761)
+XCIND_PROXY_DOMAIN="localhost"
+
+# Traefik Docker image
+XCIND_PROXY_IMAGE="traefik:v3"
+
+# Host port for HTTP traffic
+XCIND_PROXY_HTTP_PORT="80"
+
+# Enable Traefik dashboard
+XCIND_PROXY_DASHBOARD="false"
+
+# Dashboard port (only used if dashboard is enabled)
+XCIND_PROXY_DASHBOARD_PORT="8080"
+EOF
+  fi
+
+  # Source config for variable expansion
+  # shellcheck disable=SC1091
+  source "$XCIND_PROXY_DIR/config.sh"
+
+  # Write docker-compose.yaml (always regenerated)
+  local dashboard_command=""
+  local dashboard_port=""
+  if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
+    dashboard_command='
+      - "--api.dashboard=true"'
+    dashboard_port="
+      - \"${XCIND_PROXY_DASHBOARD_PORT:-8080}:8080\""
+  fi
+
+  cat >"$XCIND_PROXY_COMPOSE" <<EOF
+name: xcind-proxy
+
+services:
+  traefik:
+    image: ${XCIND_PROXY_IMAGE:-traefik:v3}
+    command:
+      - "--configFile=/etc/traefik/traefik.yaml"${dashboard_command}
+    ports:
+      - "${XCIND_PROXY_HTTP_PORT:-80}:80"${dashboard_port}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yaml:/etc/traefik/traefik.yaml:ro
+    networks:
+      - xcind-proxy
+    restart: unless-stopped
+    labels:
+      - "xcind.managed=true"
+      - "xcind.component=proxy"
+
+networks:
+  xcind-proxy:
+    external: true
+EOF
+
+  # Write traefik.yaml (always regenerated)
+  local dashboard_config=""
+  if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
+    dashboard_config="
+api:
+  dashboard: true
+  insecure: true"
+  fi
+
+  cat >"$XCIND_PROXY_DIR/traefik.yaml" <<EOF
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: xcind-proxy
+
+log:
+  level: INFO${dashboard_config}
+EOF
+
+  # Create Docker network if it doesn't exist
+  __xcind-proxy-ensure-network
+}
+
+# Ensure the proxy is fully operational: initialized, network exists, Traefik running.
+# Skips auto-start if XCIND_PROXY_AUTO_START=0.
+# All output goes to stderr to avoid interfering with hook stdout.
+__xcind-proxy-ensure-running() {
+  # Opt-out: skip auto-start entirely
+  if [[ ${XCIND_PROXY_AUTO_START:-1} == "0" ]]; then
+    # Still ensure network exists for compose overlay compatibility
+    __xcind-proxy-ensure-network 2>/dev/null || true
+    return 0
+  fi
+
+  # Fast path: check if proxy is already running
+  local running
+  running=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
+  if [ -n "$running" ]; then
+    return 0
+  fi
+
+  # Ensure init has been done
+  if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
+    echo "xcind-proxy: Initializing proxy config at $XCIND_PROXY_DIR" >&2
+  fi
+  __xcind-proxy-ensure-init
+
+  # Start Traefik
+  echo "xcind-proxy: Starting Traefik proxy..." >&2
+  if ! docker compose -f "$XCIND_PROXY_COMPOSE" up -d 2>&1 >&2; then
+    echo "xcind-proxy: Failed to start Traefik. Check 'xcind-proxy status' for details." >&2
+    echo "xcind-proxy: Port ${XCIND_PROXY_HTTP_PORT:-80} may already be in use." >&2
+    # Non-fatal: the compose overlay is still generated with correct labels
+  fi
+}
+
+# --------------------------------------------------------------------------
+# YAML Templates
+# --------------------------------------------------------------------------
 
 # Per-service YAML snippet template (without workspace labels)
 # shellcheck disable=SC2016 # Template placeholders, not shell expansions
@@ -218,16 +376,16 @@ xcind-proxy-hook() {
     return 0
   fi
 
+  # Ensure proxy is fully operational (init + network + Traefik)
+  __xcind-proxy-ensure-running
+
   # Default domain and source global config
   XCIND_PROXY_DOMAIN="${XCIND_PROXY_DOMAIN:-localhost}"
-  local global_config="${HOME}/.config/xcind/proxy/config.sh"
+  local global_config="${XCIND_PROXY_DIR}/config.sh"
   if [ -f "$global_config" ]; then
     # shellcheck disable=SC1090
     source "$global_config"
   fi
-
-  # Ensure xcind-proxy network exists (lazy, idempotent)
-  docker network create xcind-proxy >/dev/null 2>&1 || true
 
   # Require yq
   if ! command -v yq &>/dev/null; then
