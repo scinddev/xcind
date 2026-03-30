@@ -267,6 +267,12 @@ if command -v yq &>/dev/null; then
   HOOK_APP=$(mktemp -d)
   echo '# hook test' >"$HOOK_APP/.xcind.sh"
 
+  # Sandbox HOME so __xcind-proxy-ensure-init never writes to the real home dir
+  _orig_HOME="$HOME"
+  HOME=$(mktemp -d)
+  export XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
+  export XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+
   # Set up pipeline env vars
   export XCIND_APP="myapp"
   export XCIND_WORKSPACE=""
@@ -571,7 +577,9 @@ YAML
   assert_contains "auto-start=0: yaml has traefik labels" "traefik.enable=true" "$auto_start_off_yaml"
 
   unset -f docker
-  rm -rf "$HOOK_APP"
+  rm -rf "$HOOK_APP" "$HOME"
+  HOME="$_orig_HOME"
+  unset XCIND_PROXY_DIR XCIND_PROXY_COMPOSE _orig_HOME
 else
   echo "  (skipped proxy hook tests: yq not installed)"
 fi
