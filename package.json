@@ -19,6 +19,7 @@
     "test": "test"
   },
   "scripts": {
+    "postinstall": "xcind-config --check 2>/dev/null || true",
     "test": "test/test-xcind.sh"
   },
   "publishConfig": {

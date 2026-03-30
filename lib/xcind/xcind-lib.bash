@@ -760,6 +760,122 @@ __xcind-populate-cache() {
 }
 
 # --------------------------------------------------------------------------
+# Dependency Check
+# --------------------------------------------------------------------------
+
+# Check whether required and optional external dependencies are available.
+# Prints a human-readable report and returns 0 when all *required* deps are
+# present (missing optional deps produce warnings but not a failure).
+#
+# Usage:
+#   __xcind-check-deps
+__xcind-check-deps() {
+  local rc=0
+  local required_missing=0
+  local warnings=0
+
+  echo "xcind v${XCIND_VERSION} — dependency check"
+  echo ""
+
+  # --- helpers -----------------------------------------------------------
+  __check_required() {
+    local cmd="$1" purpose="$2"
+    if command -v "$cmd" >/dev/null 2>&1; then
+      local ver
+      ver=$(__dep_version "$cmd")
+      printf "  ✓ %-20s %s\n" "$cmd" "$ver"
+    else
+      printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
+      required_missing=$((required_missing + 1))
+      rc=1
+    fi
+  }
+
+  __check_optional() {
+    local cmd="$1" purpose="$2"
+    if command -v "$cmd" >/dev/null 2>&1; then
+      local ver
+      ver=$(__dep_version "$cmd")
+      printf "  ✓ %-20s %s\n" "$cmd" "$ver"
+    else
+      printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
+      warnings=$((warnings + 1))
+    fi
+  }
+
+  __dep_version() {
+    local cmd="$1" out
+    case "$cmd" in
+    bash) out=$(bash --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*version \([^ ]*\).*/\1/' ;;
+    docker) docker --version 2>/dev/null | sed 's/Docker version \([^,]*\).*/\1/' ;;
+    "docker compose") docker compose version --short 2>/dev/null || echo "?" ;;
+    jq) jq --version 2>/dev/null | sed 's/^jq-//' ;;
+    yq) yq --version 2>/dev/null | sed 's/.*version v\{0,1\}//' ;;
+    sha256sum) out=$(sha256sum --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*(GNU coreutils) //' ;;
+    shasum) out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
+    *) echo "" ;;
+    esac
+  }
+  # -----------------------------------------------------------------------
+
+  echo "Required:"
+  __check_required bash "shell interpreter"
+  __check_required docker "container runtime"
+
+  # docker compose is a subcommand, not a standalone binary
+  if docker compose version >/dev/null 2>&1; then
+    local dc_ver
+    dc_ver=$(__dep_version "docker compose")
+    printf "  ✓ %-20s %s\n" "docker compose" "$dc_ver"
+  else
+    printf "  ✗ %-20s %-12s  %s\n" "docker compose" "(not found)" "required by xcind-compose"
+    required_missing=$((required_missing + 1))
+    rc=1
+  fi
+
+  # SHA-256: either sha256sum or shasum satisfies the requirement
+  if command -v sha256sum >/dev/null 2>&1; then
+    local ver
+    ver=$(__dep_version sha256sum)
+    printf "  ✓ %-20s %s\n" "sha256sum" "$ver"
+  elif command -v shasum >/dev/null 2>&1; then
+    local ver
+    ver=$(__dep_version shasum)
+    printf "  ✓ %-20s %s  %s\n" "shasum" "$ver" "(sha256sum alternative)"
+  else
+    printf "  ✗ %-20s %-12s  %s\n" "sha256sum/shasum" "(not found)" "cache invalidation"
+    required_missing=$((required_missing + 1))
+    rc=1
+  fi
+
+  echo ""
+  echo "Optional (needed for specific features):"
+  __check_optional jq "JSON output (xcind-config default mode)"
+  __check_optional yq "proxy-hook, workspace-hook, app-env-hook"
+
+  echo ""
+
+  # --- summary -----------------------------------------------------------
+  local issues=$((required_missing + warnings))
+  if [ "$issues" -eq 0 ]; then
+    echo "All dependencies found."
+  else
+    echo "$issues issue(s) found:"
+    if [ "$required_missing" -gt 0 ]; then
+      echo "  • Required dependencies are missing — core functionality will not work."
+    fi
+    if [ "$warnings" -gt 0 ]; then
+      echo "  • Optional dependencies are missing — some features will be unavailable."
+    fi
+  fi
+
+  # clean up helpers from the shell namespace
+  unset -f __check_required __check_optional __dep_version
+
+  return "$rc"
+}
+
+# --------------------------------------------------------------------------
 # Hook Execution
 # --------------------------------------------------------------------------
 

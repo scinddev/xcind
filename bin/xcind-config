@@ -58,18 +58,29 @@ case "${1:-}" in
   echo "xcind-config ${XCIND_VERSION}"
   exit 0
   ;;
+--check)
+  MODE="check"
+  shift
+  ;;
 --help | -h)
-  echo "Usage: xcind-config [--version|--preview|--files|--dump-docker-wrapper|--dump-docker-compose-wrapper|--help]"
+  echo "Usage: xcind-config [--version|--preview|--files|--check|--dump-docker-wrapper|--dump-docker-compose-wrapper|--help]"
   echo ""
   echo "  (default)                    Output resolved configuration as JSON"
   echo "  --preview                    Show the docker compose command that would be executed"
   echo "  --files                      List all resolved files, one per line"
+  echo "  --check                      Check whether required and optional dependencies are available"
   echo "  --dump-docker-wrapper        Generate a POSIX docker wrapper script"
   echo "  --dump-docker-compose-wrapper  Generate a POSIX docker-compose wrapper script"
   echo "  --help                       Show this help"
   exit 0
   ;;
 esac
+
+# --check runs before app-root detection — it's purely about system tools
+if [ "$MODE" = "check" ]; then
+  __xcind-check-deps
+  exit $?
+fi
 
 # --- Main ---
 
