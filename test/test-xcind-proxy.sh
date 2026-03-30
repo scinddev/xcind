@@ -115,6 +115,90 @@ rm -rf "$MOCK_HOME"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-proxy-ensure-running ==="
+
+MOCK_HOME2=$(mktemp -d)
+REAL_HOME2="$HOME"
+export HOME="$MOCK_HOME2"
+# Re-derive proxy paths from new HOME
+XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+
+# Track which docker commands were called
+DOCKER_CALLS_FILE="$MOCK_HOME2/docker_calls.log"
+
+# Mock docker with call tracking
+# shellcheck disable=SC2317
+docker() {
+  echo "$*" >>"$DOCKER_CALLS_FILE"
+  # "docker ps" returns empty = not running
+  if [ "${1:-}" = "ps" ]; then
+    echo ""
+    return 0
+  fi
+  # "docker compose ... up -d" succeeds
+  if [ "${1:-}" = "compose" ]; then
+    return 0
+  fi
+  # network operations succeed
+  if [ "${1:-}" = "network" ]; then
+    return 0
+  fi
+  return 0
+}
+
+# Test: ensure-running auto-inits and starts when nothing exists
+: >"$DOCKER_CALLS_FILE"
+__xcind-proxy-ensure-running 2>/dev/null
+assert_file_exists "ensure-running: config.sh created" "$MOCK_HOME2/.config/xcind/proxy/config.sh"
+assert_file_exists "ensure-running: docker-compose.yaml created" "$MOCK_HOME2/.config/xcind/proxy/docker-compose.yaml"
+assert_file_exists "ensure-running: traefik.yaml created" "$MOCK_HOME2/.config/xcind/proxy/traefik.yaml"
+docker_calls=$(<"$DOCKER_CALLS_FILE")
+assert_contains "ensure-running: called docker ps" "ps --filter" "$docker_calls"
+assert_contains "ensure-running: called docker compose up" "compose" "$docker_calls"
+
+# Test: ensure-running is no-op when proxy is already running
+# shellcheck disable=SC2317
+docker() {
+  echo "$*" >>"$DOCKER_CALLS_FILE"
+  if [ "${1:-}" = "ps" ]; then
+    echo "abc123def456" # simulate running container
+    return 0
+  fi
+  if [ "${1:-}" = "network" ]; then
+    return 0
+  fi
+  return 0
+}
+: >"$DOCKER_CALLS_FILE"
+__xcind-proxy-ensure-running 2>/dev/null
+docker_calls=$(<"$DOCKER_CALLS_FILE")
+assert_contains "ensure-running already-running: checked docker ps" "ps --filter" "$docker_calls"
+assert_not_contains "ensure-running already-running: did not call compose up" "compose" "$docker_calls"
+
+# Test: XCIND_PROXY_AUTO_START=0 skips everything except network
+# shellcheck disable=SC2317
+docker() {
+  echo "$*" >>"$DOCKER_CALLS_FILE"
+  if [ "${1:-}" = "network" ]; then
+    return 0
+  fi
+  return 0
+}
+: >"$DOCKER_CALLS_FILE"
+XCIND_PROXY_AUTO_START=0 __xcind-proxy-ensure-running 2>/dev/null
+docker_calls=$(<"$DOCKER_CALLS_FILE")
+assert_not_contains "auto-start=0: did not call docker ps" "ps --filter" "$docker_calls"
+assert_not_contains "auto-start=0: did not call compose up" "compose" "$docker_calls"
+
+unset -f docker
+export HOME="$REAL_HOME2"
+XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+rm -rf "$MOCK_HOME2"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-proxy version ==="
 
 version_output=$("$XCIND_ROOT/bin/xcind-proxy" --version)
@@ -183,6 +267,12 @@ if command -v yq &>/dev/null; then
   HOOK_APP=$(mktemp -d)
   echo '# hook test' >"$HOOK_APP/.xcind.sh"
 
+  # Sandbox HOME so __xcind-proxy-ensure-init never writes to the real home dir
+  _orig_HOME="$HOME"
+  HOME=$(mktemp -d)
+  export XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
+  export XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+
   # Set up pipeline env vars
   export XCIND_APP="myapp"
   export XCIND_WORKSPACE=""
@@ -216,10 +306,19 @@ services:
         published: "5433"
 YAML
 
-  # Mock docker to accept network operations silently (lazy network creation)
+  # Mock docker to accept proxy lifecycle operations
   # shellcheck disable=SC2317  # invoked indirectly via xcind-proxy
   docker() {
     if [ "${1:-}" = "network" ]; then
+      return 0
+    fi
+    # Mock "docker ps" for ensure-running check (simulate proxy not running)
+    if [ "${1:-}" = "ps" ]; then
+      echo ""
+      return 0
+    fi
+    # Mock "docker compose ... up -d" for auto-start
+    if [ "${1:-}" = "compose" ]; then
       return 0
     fi
     command docker "$@"
@@ -450,8 +549,37 @@ YAML
   assert_eq "missing service exits non-zero" "1" "$status"
   assert_contains "missing service error message" "not found" "$result"
 
+  # Test: XCIND_PROXY_AUTO_START=0 skips ensure-running but still generates YAML
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  export XCIND_WORKSPACELESS=1
+  export XCIND_WORKSPACE=""
+  export XCIND_WORKSPACE_ROOT=""
+  export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+  export XCIND_ROUTER_TEMPLATE='{app}-{export}-{protocol}'
+  unset XCIND_APP_APEX_URL_TEMPLATE 2>/dev/null || true
+  unset XCIND_APEX_ROUTER_TEMPLATE 2>/dev/null || true
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+YAML
+
+  XCIND_PROXY_EXPORTS=("web")
+  XCIND_PROXY_AUTO_START=0 xcind-proxy-hook "$HOOK_APP" >/dev/null
+  assert_file_exists "auto-start=0: compose.proxy.yaml still created" "$XCIND_GENERATED_DIR/compose.proxy.yaml"
+  auto_start_off_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+  assert_contains "auto-start=0: yaml has web service" "web:" "$auto_start_off_yaml"
+  assert_contains "auto-start=0: yaml has traefik labels" "traefik.enable=true" "$auto_start_off_yaml"
+
   unset -f docker
-  rm -rf "$HOOK_APP"
+  rm -rf "$HOOK_APP" "$HOME"
+  HOME="$_orig_HOME"
+  unset XCIND_PROXY_DIR XCIND_PROXY_COMPOSE _orig_HOME
 else
   echo "  (skipped proxy hook tests: yq not installed)"
 fi
