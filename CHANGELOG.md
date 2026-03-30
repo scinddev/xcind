@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-03-30
+
+### Added
+
+- Add xcind-naming-hook for automatic Docker Compose project naming (#20) by @simensen in [#20](https://github.com/scinddev/xcind/pull/20)
+
+### Changed
+
+- Auto-start proxy when xcind-compose runs with XCIND_PROXY_EXPORTS (#19) by @simensen in [#19](https://github.com/scinddev/xcind/pull/19)
+
+### Infrastructure
+
+- Lazy-create proxy network instead of blocking on missing init (#16) by @simensen in [#16](https://github.com/scinddev/xcind/pull/16)
+
+### Maintenance
+
+- Add dependency check command to xcind-config (#17) by @simensen in [#17](https://github.com/scinddev/xcind/pull/17)
+- Add Makefile, CLAUDE.md, and convert add-installed-file to skill (#18) by @simensen in [#18](https://github.com/scinddev/xcind/pull/18)
+- maint: Include `gh release create ...` release output
 ## [0.1.2] - 2026-03-27
 
 ### Maintenance
