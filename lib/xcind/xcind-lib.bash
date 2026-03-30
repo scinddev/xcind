@@ -16,13 +16,15 @@ export XCIND_VERSION="0.1.2"
 
 __XCIND_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-naming-lib.bash"
+# shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-app-env-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-proxy-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")
 
 # --------------------------------------------------------------------------
 # Portable SHA-256 helper

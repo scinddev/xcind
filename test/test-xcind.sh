@@ -1031,6 +1031,54 @@ fi
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-naming-hook (workspaceless mode) ==="
+
+NAMING_WL=$(mktemp -d)
+export XCIND_SHA="naminghash"
+export XCIND_CACHE_DIR="$NAMING_WL/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$NAMING_WL/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+XCIND_APP="myapp"
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+
+hook_output=$(xcind-naming-hook "$NAMING_WL")
+
+assert_contains "naming hook returns -f flag" "-f $XCIND_GENERATED_DIR/compose.naming.yaml" "$hook_output"
+assert_eq "compose.naming.yaml was created" "true" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.naming.yaml" ] && echo true || echo false)"
+
+generated="$(cat "$XCIND_GENERATED_DIR/compose.naming.yaml")"
+assert_contains "workspaceless name is app only" "name: myapp" "$generated"
+
+rm -rf "$NAMING_WL"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-naming-hook (workspace mode) ==="
+
+NAMING_WS=$(mktemp -d)
+export XCIND_SHA="naminghash2"
+export XCIND_CACHE_DIR="$NAMING_WS/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$NAMING_WS/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+XCIND_APP="frontend"
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="dev"
+
+hook_output=$(xcind-naming-hook "$NAMING_WS")
+
+assert_contains "naming hook returns -f flag" "-f $XCIND_GENERATED_DIR/compose.naming.yaml" "$hook_output"
+
+generated="$(cat "$XCIND_GENERATED_DIR/compose.naming.yaml")"
+assert_contains "workspace name is workspace-app" "name: dev-frontend" "$generated"
+
+rm -rf "$NAMING_WS"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-app-env-hook (no-op when XCIND_APP_ENV_FILES unset) ==="
 
 APPENV_NOOP=$(mktemp -d)
