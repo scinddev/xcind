@@ -1127,6 +1127,66 @@ else
 fi
 
 # ======================================================================
+echo "=== Test: __xcind-check-deps ==="
+
+CDEPS_STUBS=$(mktemp -d)
+CDEPS_EMPTY=$(mktemp -d)
+
+# docker stub: handles --version, compose version, and compose version --short
+cat > "$CDEPS_STUBS/docker" <<'STUB'
+#!/bin/sh
+case "$*" in
+  "--version")               echo "Docker version 24.0.0, build abc" ;;
+  "compose version")         echo "Docker Compose version v2.20.0" ; exit 0 ;;
+  "compose version --short") echo "v2.20.0" ; exit 0 ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$CDEPS_STUBS/docker"
+
+# bash stub (to give __check_required bash a known version)
+printf '#!/bin/sh\necho "GNU bash, version 5.0.0(1)-release"\n' > "$CDEPS_STUBS/bash"
+chmod +x "$CDEPS_STUBS/bash"
+
+# sha256sum, jq, yq stubs
+printf '#!/bin/sh\necho "sha256sum (GNU coreutils) 9.1.0"\n' > "$CDEPS_STUBS/sha256sum"
+printf '#!/bin/sh\necho "jq-1.7"\n'                          > "$CDEPS_STUBS/jq"
+printf '#!/bin/sh\necho "yq version 4.35.0"\n'               > "$CDEPS_STUBS/yq"
+chmod +x "$CDEPS_STUBS/sha256sum" "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq"
+
+# 1. All required + optional deps present → returns 0, "All dependencies found."
+cdeps_all_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1); cdeps_all_rc=$?
+assert_eq "all deps present: returns 0" "0" "$cdeps_all_rc"
+assert_contains "all deps present: reports no issues" "All dependencies found." "$cdeps_all_out"
+
+# 2. Optional deps missing but required present → still returns 0, warns about optional
+# Remove jq/yq from stubs so they are not found
+rm -f "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq"
+cdeps_reqonly_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1); cdeps_reqonly_rc=$?
+assert_eq "required-only: returns 0" "0" "$cdeps_reqonly_rc"
+assert_not_contains "required-only: no required-missing message" "Required dependencies are missing" "$cdeps_reqonly_out"
+assert_contains "required-only: optional-missing warning shown" "Optional dependencies are missing" "$cdeps_reqonly_out"
+
+# 3. Required deps missing → returns non-zero
+cdeps_miss_out=$(PATH="$CDEPS_EMPTY" __xcind-check-deps 2>&1) && cdeps_miss_rc=0 || cdeps_miss_rc=$?
+assert_eq "required missing: returns 1" "1" "$cdeps_miss_rc"
+assert_contains "required missing: required message shown" "Required dependencies are missing" "$cdeps_miss_out"
+
+# 4. Multiple required deps missing → issue count reflects all (not capped at 1)
+# Empty PATH: bash, docker, docker compose, sha256sum all missing (4 required) + jq, yq (2 optional) = 6 issues
+cdeps_count_str=$(echo "$cdeps_miss_out" | grep "issue(s) found" | sed 's/ .*//')
+cdeps_count=${cdeps_count_str:-0}
+if [ "${cdeps_count}" -gt 1 ] 2>/dev/null; then
+  echo "  ✓ multiple required missing: issue count is $cdeps_count (> 1)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ multiple required missing: expected count > 1, got '${cdeps_count}'"
+  FAIL=$((FAIL + 1))
+fi
+
+rm -rf "$CDEPS_STUBS" "$CDEPS_EMPTY"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

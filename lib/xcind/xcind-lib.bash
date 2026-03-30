@@ -771,6 +771,7 @@ __xcind-populate-cache() {
 #   __xcind-check-deps
 __xcind-check-deps() {
   local rc=0
+  local required_missing=0
   local warnings=0
 
   echo "xcind v${XCIND_VERSION} — dependency check"
@@ -785,6 +786,7 @@ __xcind-check-deps() {
       printf "  ✓ %-20s %s\n" "$cmd" "$ver"
     else
       printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
+      required_missing=$((required_missing + 1))
       rc=1
     fi
   }
@@ -823,19 +825,15 @@ __xcind-check-deps() {
   # docker compose is a subcommand, not a standalone binary
   if docker compose version >/dev/null 2>&1; then
     local dc_ver
-    dc_ver=$(docker compose version --short 2>/dev/null || echo "?")
+    dc_ver=$(__dep_version "docker compose")
     printf "  ✓ %-20s %s\n" "docker compose" "$dc_ver"
   else
     printf "  ✗ %-20s %-12s  %s\n" "docker compose" "(not found)" "required by xcind-compose"
+    required_missing=$((required_missing + 1))
     rc=1
   fi
 
-  echo ""
-  echo "Optional (needed for specific features):"
-  __check_optional jq            "JSON output (xcind-config default mode)"
-  __check_optional yq            "proxy-hook, workspace-hook, app-env-hook"
-
-  # SHA-256: either sha256sum or shasum is fine
+  # SHA-256: either sha256sum or shasum satisfies the requirement
   if command -v sha256sum >/dev/null 2>&1; then
     local ver
     ver=$(__dep_version sha256sum)
@@ -846,18 +844,24 @@ __xcind-check-deps() {
     printf "  ✓ %-20s %s  %s\n" "shasum" "$ver" "(sha256sum alternative)"
   else
     printf "  ✗ %-20s %-12s  %s\n" "sha256sum/shasum" "(not found)" "cache invalidation"
-    warnings=$((warnings + 1))
+    required_missing=$((required_missing + 1))
+    rc=1
   fi
+
+  echo ""
+  echo "Optional (needed for specific features):"
+  __check_optional jq            "JSON output (xcind-config default mode)"
+  __check_optional yq            "proxy-hook, workspace-hook, app-env-hook"
 
   echo ""
 
   # --- summary -----------------------------------------------------------
-  local issues=$((rc + warnings))
+  local issues=$((required_missing + warnings))
   if [ "$issues" -eq 0 ]; then
     echo "All dependencies found."
   else
     echo "$issues issue(s) found:"
-    if [ "$rc" -ne 0 ]; then
+    if [ "$required_missing" -gt 0 ]; then
       echo "  • Required dependencies are missing — core functionality will not work."
     fi
     if [ "$warnings" -gt 0 ]; then
