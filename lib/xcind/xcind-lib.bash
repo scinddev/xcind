@@ -739,6 +739,14 @@ __xcind-compute-sha() {
     sha_input+=$(__xcind-sha256 "$global_config" | cut -d' ' -f1)
   fi
 
+  # Add naming-relevant variables so overrides invalidate the cache
+  sha_input+="XCIND_APP=${XCIND_APP:-}
+"
+  sha_input+="XCIND_WORKSPACE=${XCIND_WORKSPACE:-}
+"
+  sha_input+="XCIND_WORKSPACELESS=${XCIND_WORKSPACELESS:-}
+"
+
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
