@@ -154,7 +154,7 @@ __xcind-proxy-ensure-running() {
 
   # Start Traefik
   echo "xcind-proxy: Starting Traefik proxy..." >&2
-  if ! docker compose -f "$XCIND_PROXY_COMPOSE" up -d 2>&1 >&2; then
+  if ! docker compose -f "$XCIND_PROXY_COMPOSE" up -d 1>&2; then
     echo "xcind-proxy: Failed to start Traefik. Check 'xcind-proxy status' for details." >&2
     echo "xcind-proxy: Port ${XCIND_PROXY_HTTP_PORT:-80} may already be in use." >&2
     # Non-fatal: the compose overlay is still generated with correct labels
