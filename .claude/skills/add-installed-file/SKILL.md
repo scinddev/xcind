@@ -1,3 +1,8 @@
+---
+name: add-installed-file
+description: Register new bin/* or lib/xcind/*.bash files in all installation/packaging manifests. TRIGGER when a new executable or library file is created under bin/ or lib/xcind/.
+---
+
 # Add Installed File
 
 Register a new file in all installation/packaging manifests so it is included in
@@ -12,8 +17,8 @@ $ARGUMENTS — path(s) to the new file(s) relative to the project root (e.g. `bi
 For **each** file path provided in $ARGUMENTS, update the manifests listed below.
 Determine the file type from the path prefix:
 
-- `bin/*` — an executable (applies to all 6 manifests)
-- `lib/xcind/*.bash` — a library (applies to manifests 1-4 only; add to 5-6 only for shell scripts)
+- `bin/*` — an executable (applies to all 7 manifests)
+- `lib/xcind/*.bash` — a library (applies to manifests 1-4 only; add to 5-7 only for shell scripts)
 
 ### 1. `install.sh`
 
@@ -49,13 +54,18 @@ matching entry in `install.sh`.
 
 ### 5. `contrib/test-all`
 
-Add the file path to the `SHELLCHECK_FILES` array (sorted alphabetically,
+Add the file path to the `SHELL_FILES` array (sorted alphabetically,
 bin/ entries first, then lib/xcind/, then test/, then top-level scripts).
 
 ### 6. `.github/workflows/tests.yml`
 
 Add the file path to the `shellcheck` step's file list in the `shellcheck` job
 (sorted the same way as contrib/test-all).
+
+### 7. `Makefile`
+
+Add the file path to the `SHELL_FILES` variable (sorted the same way as
+contrib/test-all).
 
 ## Verification
 
