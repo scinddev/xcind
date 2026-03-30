@@ -806,21 +806,21 @@ __xcind-check-deps() {
   __dep_version() {
     local cmd="$1" out
     case "$cmd" in
-    bash)         out=$(bash --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*version \([^ ]*\).*/\1/' ;;
-    docker)       docker --version 2>/dev/null | sed 's/Docker version \([^,]*\).*/\1/' ;;
+    bash) out=$(bash --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*version \([^ ]*\).*/\1/' ;;
+    docker) docker --version 2>/dev/null | sed 's/Docker version \([^,]*\).*/\1/' ;;
     "docker compose") docker compose version --short 2>/dev/null || echo "?" ;;
-    jq)           jq --version 2>/dev/null | sed 's/^jq-//' ;;
-    yq)           yq --version 2>/dev/null | sed 's/.*version v\{0,1\}//' ;;
-    sha256sum)    out=$(sha256sum --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*(GNU coreutils) //' ;;
-    shasum)       out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
-    *)            echo "" ;;
+    jq) jq --version 2>/dev/null | sed 's/^jq-//' ;;
+    yq) yq --version 2>/dev/null | sed 's/.*version v\{0,1\}//' ;;
+    sha256sum) out=$(sha256sum --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*(GNU coreutils) //' ;;
+    shasum) out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
+    *) echo "" ;;
     esac
   }
   # -----------------------------------------------------------------------
 
   echo "Required:"
-  __check_required bash          "shell interpreter"
-  __check_required docker        "container runtime"
+  __check_required bash "shell interpreter"
+  __check_required docker "container runtime"
 
   # docker compose is a subcommand, not a standalone binary
   if docker compose version >/dev/null 2>&1; then
@@ -850,8 +850,8 @@ __xcind-check-deps() {
 
   echo ""
   echo "Optional (needed for specific features):"
-  __check_optional jq            "JSON output (xcind-config default mode)"
-  __check_optional yq            "proxy-hook, workspace-hook, app-env-hook"
+  __check_optional jq "JSON output (xcind-config default mode)"
+  __check_optional yq "proxy-hook, workspace-hook, app-env-hook"
 
   echo ""
 

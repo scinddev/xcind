@@ -1133,7 +1133,7 @@ CDEPS_STUBS=$(mktemp -d)
 CDEPS_EMPTY=$(mktemp -d)
 
 # docker stub: handles --version, compose version, and compose version --short
-cat > "$CDEPS_STUBS/docker" <<'STUB'
+cat >"$CDEPS_STUBS/docker" <<'STUB'
 #!/bin/sh
 case "$*" in
   "--version")               echo "Docker version 24.0.0, build abc" ;;
@@ -1145,24 +1145,26 @@ STUB
 chmod +x "$CDEPS_STUBS/docker"
 
 # bash stub (to give __check_required bash a known version)
-printf '#!/bin/sh\necho "GNU bash, version 5.0.0(1)-release"\n' > "$CDEPS_STUBS/bash"
+printf '#!/bin/sh\necho "GNU bash, version 5.0.0(1)-release"\n' >"$CDEPS_STUBS/bash"
 chmod +x "$CDEPS_STUBS/bash"
 
 # sha256sum, jq, yq stubs
-printf '#!/bin/sh\necho "sha256sum (GNU coreutils) 9.1.0"\n' > "$CDEPS_STUBS/sha256sum"
-printf '#!/bin/sh\necho "jq-1.7"\n'                          > "$CDEPS_STUBS/jq"
-printf '#!/bin/sh\necho "yq version 4.35.0"\n'               > "$CDEPS_STUBS/yq"
+printf '#!/bin/sh\necho "sha256sum (GNU coreutils) 9.1.0"\n' >"$CDEPS_STUBS/sha256sum"
+printf '#!/bin/sh\necho "jq-1.7"\n' >"$CDEPS_STUBS/jq"
+printf '#!/bin/sh\necho "yq version 4.35.0"\n' >"$CDEPS_STUBS/yq"
 chmod +x "$CDEPS_STUBS/sha256sum" "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq"
 
 # 1. All required + optional deps present → returns 0, "All dependencies found."
-cdeps_all_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1); cdeps_all_rc=$?
+cdeps_all_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1)
+cdeps_all_rc=$?
 assert_eq "all deps present: returns 0" "0" "$cdeps_all_rc"
 assert_contains "all deps present: reports no issues" "All dependencies found." "$cdeps_all_out"
 
 # 2. Optional deps missing but required present → still returns 0, warns about optional
 # Remove jq/yq from stubs so they are not found
 rm -f "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq"
-cdeps_reqonly_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1); cdeps_reqonly_rc=$?
+cdeps_reqonly_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1)
+cdeps_reqonly_rc=$?
 assert_eq "required-only: returns 0" "0" "$cdeps_reqonly_rc"
 assert_not_contains "required-only: no required-missing message" "Required dependencies are missing" "$cdeps_reqonly_out"
 assert_contains "required-only: optional-missing warning shown" "Optional dependencies are missing" "$cdeps_reqonly_out"
