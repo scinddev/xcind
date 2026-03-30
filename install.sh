@@ -19,3 +19,5 @@ install -m 644 "$XCIND_ROOT/lib/xcind/xcind-workspace-lib.bash" "$PREFIX/lib/xci
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-app-env-lib.bash" "$PREFIX/lib/xcind/xcind-app-env-lib.bash"
 
 echo "Done."
+echo ""
+"$PREFIX/bin/xcind-config" --check || true
