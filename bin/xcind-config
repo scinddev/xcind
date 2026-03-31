@@ -54,6 +54,14 @@ case "${1:-}" in
   MODE="dump-docker-compose-wrapper"
   shift
   ;;
+--dump-ide-docker-wrapper)
+  MODE="dump-ide-docker-wrapper"
+  shift
+  ;;
+--dump-ide-docker-compose-wrapper)
+  MODE="dump-ide-docker-compose-wrapper"
+  shift
+  ;;
 --version | -V)
   echo "xcind-config ${XCIND_VERSION}"
   exit 0
@@ -63,7 +71,7 @@ case "${1:-}" in
   shift
   ;;
 --help | -h)
-  echo "Usage: xcind-config [--version|--preview|--files|--check|--dump-docker-wrapper|--dump-docker-compose-wrapper|--help]"
+  echo "Usage: xcind-config [--version|--preview|--files|--check|--dump-docker-wrapper|--dump-docker-compose-wrapper|--dump-ide-docker-wrapper|--dump-ide-docker-compose-wrapper|--help]"
   echo ""
   echo "  (default)                    Output resolved configuration as JSON"
   echo "  --preview                    Show the docker compose command that would be executed"
@@ -71,6 +79,8 @@ case "${1:-}" in
   echo "  --check                      Check whether required and optional dependencies are available"
   echo "  --dump-docker-wrapper        Generate a POSIX docker wrapper script"
   echo "  --dump-docker-compose-wrapper  Generate a POSIX docker-compose wrapper script"
+  echo "  --dump-ide-docker-wrapper        Generate a POSIX docker IDE wrapper script"
+  echo "  --dump-ide-docker-compose-wrapper  Generate a POSIX docker-compose IDE wrapper script"
   echo "  --help                       Show this help"
   exit 0
   ;;
@@ -166,6 +176,14 @@ dump-docker-wrapper)
 
 dump-docker-compose-wrapper)
   __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)"
+  ;;
+
+dump-ide-docker-wrapper)
+  __xcind-dump-ide-docker-wrapper "$app_root" "$(__xcind_bin_dir)"
+  ;;
+
+dump-ide-docker-compose-wrapper)
+  __xcind-dump-ide-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)"
   ;;
 
 files)

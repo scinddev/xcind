@@ -401,6 +401,87 @@ assert_contains "docker wrapper falls back to docker compose" \
 assert_contains "docker wrapper passes non-compose to docker" \
   'docker "$@"' "$docker_wrapper"
 
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-dump-ide-docker-compose-wrapper ==="
+
+ide_compose_wrapper=$(__xcind-dump-ide-docker-compose-wrapper "$WRAPPER_APP" "/usr/local/bin")
+
+assert_contains "IDE compose wrapper has shebang" \
+  "#!/bin/sh" "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper has set -eu" \
+  "set -eu" "$ide_compose_wrapper"
+
+assert_not_contains "IDE compose wrapper has no pipefail (POSIX)" \
+  "pipefail" "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper adds xcind bin to PATH" \
+  'PATH="$PATH:/usr/local/bin"' "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper exports XCIND_APP_ROOT" \
+  "export XCIND_APP_ROOT=\"${WRAPPER_APP}\"" "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper regenerates compose.ide.yaml" \
+  "compose.ide.yaml" "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper uses xcind-compose config for regeneration" \
+  "xcind-compose config" "$ide_compose_wrapper"
+
+assert_not_contains "IDE compose wrapper does not exec xcind-compose" \
+  "exec xcind-compose" "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper execs docker compose" \
+  'exec docker compose "$@"' "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper has debug logging support" \
+  "XCIND_WRAPPER_DEBUG" "$ide_compose_wrapper"
+
+assert_contains "IDE compose wrapper has session ID" \
+  '_sid=$(date' "$ide_compose_wrapper"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-dump-ide-docker-wrapper ==="
+
+ide_docker_wrapper=$(__xcind-dump-ide-docker-wrapper "$WRAPPER_APP" "/home/testuser/.nix-profile/bin")
+
+assert_contains "IDE docker wrapper has shebang" \
+  "#!/bin/sh" "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper has set -eu" \
+  "set -eu" "$ide_docker_wrapper"
+
+assert_not_contains "IDE docker wrapper has no pipefail (POSIX)" \
+  "pipefail" "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper adds xcind bin to PATH" \
+  'PATH="$PATH:/home/testuser/.nix-profile/bin"' "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper exports XCIND_APP_ROOT" \
+  "export XCIND_APP_ROOT=\"${WRAPPER_APP}\"" "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper checks for compose subcommand" \
+  '[ "$1" = "compose" ]' "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper regenerates compose.ide.yaml" \
+  "compose.ide.yaml" "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper uses xcind-compose config for regeneration" \
+  "xcind-compose config" "$ide_docker_wrapper"
+
+assert_not_contains "IDE docker wrapper does not exec xcind-compose" \
+  "exec xcind-compose" "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper execs docker compose" \
+  'exec docker compose "$@"' "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper passes non-compose to docker" \
+  'docker "$@"' "$ide_docker_wrapper"
+
+assert_contains "IDE docker wrapper has debug logging support" \
+  "XCIND_WRAPPER_DEBUG" "$ide_docker_wrapper"
+
 rm -rf "$WRAPPER_APP"
 
 # ======================================================================

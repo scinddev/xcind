@@ -499,6 +499,128 @@ fi
 EOF
 }
 
+# Generate a POSIX-compatible docker-compose IDE wrapper script.
+# Unlike the standard wrapper, this regenerates a compose.ide.yaml snapshot
+# from xcind-compose config before every invocation, then passes all commands
+# through to plain docker compose (not xcind-compose). This ensures container
+# labels match what JetBrains IDEs expect.
+#
+# Usage:
+#   __xcind-dump-ide-docker-compose-wrapper /path/to/app /path/to/xcind/bin
+__xcind-dump-ide-docker-compose-wrapper() {
+  local app_root="$1"
+  local xcind_bin_dir="$2"
+
+  cat <<EOF
+#!/bin/sh
+set -eu
+PATH="\$PATH:${xcind_bin_dir}"
+export XCIND_APP_ROOT="${app_root}"
+
+_log_dir="\${XDG_STATE_HOME:-\$HOME/.local/state}/xcind"
+_sid=\$(date '+%s')\$\$
+
+_log() {
+    if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
+        mkdir -p "\$_log_dir"
+        printf '%s [%s] %s\n' "\$(date '+%Y-%m-%d %H:%M:%S')" "\$_sid" "\$*" >> "\$_log_dir/wrapper.log"
+        logger -t xcind-wrapper "\$*" 2>/dev/null || true
+    fi
+}
+
+# Regenerate compose.ide.yaml from xcind's resolved config
+if command -v xcind-compose >/dev/null 2>&1; then
+    if xcind-compose config > "\$XCIND_APP_ROOT/compose.ide.yaml.tmp" 2>/dev/null; then
+        mv "\$XCIND_APP_ROOT/compose.ide.yaml.tmp" "\$XCIND_APP_ROOT/compose.ide.yaml"
+        _log "config: regenerated compose.ide.yaml"
+    else
+        rm -f "\$XCIND_APP_ROOT/compose.ide.yaml.tmp"
+        _log "config: regeneration failed, using existing"
+    fi
+fi
+
+_log "cmd: docker compose \$*"
+
+if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
+    _stderr_tmp=\$(mktemp)
+    docker compose "\$@" 2>"\$_stderr_tmp"
+    _rc=\$?
+    if [ -s "\$_stderr_tmp" ]; then
+        sed "s/^/\$(date '+%Y-%m-%d %H:%M:%S') [\$_sid] stderr: /" "\$_stderr_tmp" >> "\$_log_dir/wrapper.log"
+        logger -t xcind-wrapper-stderr "\$(cat "\$_stderr_tmp")" 2>/dev/null || true
+    fi
+    rm -f "\$_stderr_tmp"
+    exit "\$_rc"
+else
+    exec docker compose "\$@" 2>/dev/null
+fi
+EOF
+}
+
+# Generate a POSIX-compatible docker IDE wrapper script.
+# When the first argument is "compose", regenerates compose.ide.yaml from
+# xcind-compose config, then passes through to plain docker compose.
+# All other docker subcommands pass through to docker directly.
+#
+# Usage:
+#   __xcind-dump-ide-docker-wrapper /path/to/app /path/to/xcind/bin
+__xcind-dump-ide-docker-wrapper() {
+  local app_root="$1"
+  local xcind_bin_dir="$2"
+
+  cat <<EOF
+#!/bin/sh
+set -eu
+PATH="\$PATH:${xcind_bin_dir}"
+export XCIND_APP_ROOT="${app_root}"
+
+_log_dir="\${XDG_STATE_HOME:-\$HOME/.local/state}/xcind"
+_sid=\$(date '+%s')\$\$
+
+_log() {
+    if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
+        mkdir -p "\$_log_dir"
+        printf '%s [%s] %s\n' "\$(date '+%Y-%m-%d %H:%M:%S')" "\$_sid" "\$*" >> "\$_log_dir/wrapper.log"
+        logger -t xcind-wrapper "\$*" 2>/dev/null || true
+    fi
+}
+
+if [ \$# -gt 0 ] && [ "\$1" = "compose" ]; then
+    shift
+
+    # Regenerate compose.ide.yaml from xcind's resolved config
+    if command -v xcind-compose >/dev/null 2>&1; then
+        if xcind-compose config > "\$XCIND_APP_ROOT/compose.ide.yaml.tmp" 2>/dev/null; then
+            mv "\$XCIND_APP_ROOT/compose.ide.yaml.tmp" "\$XCIND_APP_ROOT/compose.ide.yaml"
+            _log "config: regenerated compose.ide.yaml"
+        else
+            rm -f "\$XCIND_APP_ROOT/compose.ide.yaml.tmp"
+            _log "config: regeneration failed, using existing"
+        fi
+    fi
+
+    _log "cmd: docker compose \$*"
+
+    if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
+        _stderr_tmp=\$(mktemp)
+        docker compose "\$@" 2>"\$_stderr_tmp"
+        _rc=\$?
+        if [ -s "\$_stderr_tmp" ]; then
+            sed "s/^/\$(date '+%Y-%m-%d %H:%M:%S') [\$_sid] stderr: /" "\$_stderr_tmp" >> "\$_log_dir/wrapper.log"
+            logger -t xcind-wrapper-stderr "\$(cat "\$_stderr_tmp")" 2>/dev/null || true
+        fi
+        rm -f "\$_stderr_tmp"
+        exit "\$_rc"
+    else
+        exec docker compose "\$@" 2>/dev/null
+    fi
+else
+    _log "cmd: docker \$*"
+    exec docker "\$@"
+fi
+EOF
+}
+
 # --------------------------------------------------------------------------
 # Debug / Dry-Run
 # --------------------------------------------------------------------------
