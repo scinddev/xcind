@@ -482,6 +482,129 @@ assert_contains "IDE docker wrapper passes non-compose to docker" \
 assert_contains "IDE docker wrapper has debug logging support" \
   "XCIND_WRAPPER_DEBUG" "$ide_docker_wrapper"
 
+# ======================================================================
+echo ""
+echo "=== Test: IDE wrapper execution ==="
+
+IDE_EXEC_DIR=$(mktemp -d)
+IDE_EXEC_APP="$IDE_EXEC_DIR/app"
+mkdir -p "$IDE_EXEC_APP"
+echo '# test' >"$IDE_EXEC_APP/.xcind.sh"
+
+IDE_EXEC_BIN="$IDE_EXEC_DIR/bin"
+mkdir -p "$IDE_EXEC_BIN"
+
+# Stub xcind-compose: succeeds (config subcommand) unless XCIND_COMPOSE_FAIL=1
+cat >"$IDE_EXEC_BIN/xcind-compose" <<'STUB'
+#!/bin/sh
+if [ "${XCIND_COMPOSE_FAIL:-0}" = "1" ]; then exit 1; fi
+if [ "${1:-}" = "config" ]; then
+  printf 'services:\n  app:\n    image: test\n'
+fi
+STUB
+chmod +x "$IDE_EXEC_BIN/xcind-compose"
+
+# Stub docker: records "$*" to DOCKER_CALLS_LOG, exits with STUB_DOCKER_RC (default 0)
+cat >"$IDE_EXEC_BIN/docker" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"${DOCKER_CALLS_LOG}"
+exit "${STUB_DOCKER_RC:-0}"
+STUB
+chmod +x "$IDE_EXEC_BIN/docker"
+
+# --- IDE compose wrapper execution tests ---
+
+_ide_compose_exec_script="$IDE_EXEC_DIR/ide-docker-compose"
+__xcind-dump-ide-docker-compose-wrapper "$IDE_EXEC_APP" "$IDE_EXEC_BIN" >"$_ide_compose_exec_script"
+chmod +x "$_ide_compose_exec_script"
+
+# Test: regenerates compose.ide.yaml on each invocation
+rm -f "$IDE_EXEC_APP/compose.ide.yaml"
+DOCKER_CALLS_LOG="$IDE_EXEC_DIR/docker-calls.log" \
+  PATH="$IDE_EXEC_BIN:$PATH" /bin/sh "$_ide_compose_exec_script" up -d >/dev/null 2>&1
+if [ -f "$IDE_EXEC_APP/compose.ide.yaml" ]; then
+  assert_eq "IDE compose wrapper exec: regenerates compose.ide.yaml" "yes" "yes"
+else
+  assert_eq "IDE compose wrapper exec: regenerates compose.ide.yaml" "yes" "no"
+fi
+
+# Test: docker compose is called with original args
+_docker_calls=$(cat "$IDE_EXEC_DIR/docker-calls.log" 2>/dev/null || echo "")
+assert_contains "IDE compose wrapper exec: passes args to docker compose" \
+  "compose up -d" "$_docker_calls"
+rm -f "$IDE_EXEC_DIR/docker-calls.log"
+
+# Test: fallback preserves existing compose.ide.yaml when xcind-compose fails
+printf 'services:\n  existing:\n    image: existing\n' >"$IDE_EXEC_APP/compose.ide.yaml"
+_previous_content=$(cat "$IDE_EXEC_APP/compose.ide.yaml")
+XCIND_COMPOSE_FAIL=1 DOCKER_CALLS_LOG="$IDE_EXEC_DIR/docker-calls.log" \
+  PATH="$IDE_EXEC_BIN:$PATH" /bin/sh "$_ide_compose_exec_script" ps >/dev/null 2>&1 || true
+_current_content=$(cat "$IDE_EXEC_APP/compose.ide.yaml" 2>/dev/null || echo "")
+assert_eq "IDE compose wrapper exec: preserves compose.ide.yaml on failure" \
+  "$_previous_content" "$_current_content"
+rm -f "$IDE_EXEC_DIR/docker-calls.log"
+
+# Test: debug mode returns original exit code under set -e (|| _rc=$? fix)
+_ide_debug_rc=0
+XCIND_WRAPPER_DEBUG=1 STUB_DOCKER_RC=42 HOME="$IDE_EXEC_DIR" \
+  DOCKER_CALLS_LOG="$IDE_EXEC_DIR/docker-calls.log" \
+  PATH="$IDE_EXEC_BIN:$PATH" /bin/sh "$_ide_compose_exec_script" ps \
+  >/dev/null 2>&1 || _ide_debug_rc=$?
+assert_eq "IDE compose wrapper exec: debug mode propagates exit code" \
+  "42" "$_ide_debug_rc"
+rm -f "$IDE_EXEC_DIR/docker-calls.log"
+
+# --- IDE docker wrapper execution tests ---
+
+_ide_docker_exec_script="$IDE_EXEC_DIR/ide-docker"
+__xcind-dump-ide-docker-wrapper "$IDE_EXEC_APP" "$IDE_EXEC_BIN" >"$_ide_docker_exec_script"
+chmod +x "$_ide_docker_exec_script"
+
+# Restore xcind-compose to working version
+cat >"$IDE_EXEC_BIN/xcind-compose" <<'STUB'
+#!/bin/sh
+if [ "${XCIND_COMPOSE_FAIL:-0}" = "1" ]; then exit 1; fi
+if [ "${1:-}" = "config" ]; then
+  printf 'services:\n  app:\n    image: test\n'
+fi
+STUB
+
+# Test: 'compose' subcommand regenerates compose.ide.yaml and routes to docker compose
+rm -f "$IDE_EXEC_APP/compose.ide.yaml"
+DOCKER_CALLS_LOG="$IDE_EXEC_DIR/docker-calls.log" \
+  PATH="$IDE_EXEC_BIN:$PATH" /bin/sh "$_ide_docker_exec_script" compose up -d >/dev/null 2>&1
+if [ -f "$IDE_EXEC_APP/compose.ide.yaml" ]; then
+  assert_eq "IDE docker wrapper exec: compose subcommand regenerates compose.ide.yaml" "yes" "yes"
+else
+  assert_eq "IDE docker wrapper exec: compose subcommand regenerates compose.ide.yaml" "yes" "no"
+fi
+_docker_calls=$(cat "$IDE_EXEC_DIR/docker-calls.log" 2>/dev/null || echo "")
+assert_contains "IDE docker wrapper exec: routes 'compose' to docker compose" \
+  "compose up -d" "$_docker_calls"
+rm -f "$IDE_EXEC_DIR/docker-calls.log"
+
+# Test: non-compose subcommands pass directly to docker (no compose.ide.yaml regeneration)
+rm -f "$IDE_EXEC_APP/compose.ide.yaml"
+DOCKER_CALLS_LOG="$IDE_EXEC_DIR/docker-calls.log" \
+  PATH="$IDE_EXEC_BIN:$PATH" /bin/sh "$_ide_docker_exec_script" ps -a >/dev/null 2>&1
+_docker_calls=$(cat "$IDE_EXEC_DIR/docker-calls.log" 2>/dev/null || echo "")
+assert_contains "IDE docker wrapper exec: non-compose passes to docker" "ps -a" "$_docker_calls"
+assert_eq "IDE docker wrapper exec: non-compose does not regenerate compose.ide.yaml" \
+  "" "$([ -f "$IDE_EXEC_APP/compose.ide.yaml" ] && echo "exists" || echo "")"
+rm -f "$IDE_EXEC_DIR/docker-calls.log"
+
+# Test: debug mode for docker wrapper returns original exit code under set -e
+_ide_docker_debug_rc=0
+XCIND_WRAPPER_DEBUG=1 STUB_DOCKER_RC=7 HOME="$IDE_EXEC_DIR" \
+  DOCKER_CALLS_LOG="$IDE_EXEC_DIR/docker-calls.log" \
+  PATH="$IDE_EXEC_BIN:$PATH" /bin/sh "$_ide_docker_exec_script" compose ps \
+  >/dev/null 2>&1 || _ide_docker_debug_rc=$?
+assert_eq "IDE docker wrapper exec: debug mode propagates exit code" \
+  "7" "$_ide_docker_debug_rc"
+rm -f "$IDE_EXEC_DIR/docker-calls.log"
+
+rm -rf "$IDE_EXEC_DIR"
+
 rm -rf "$WRAPPER_APP"
 
 # ======================================================================

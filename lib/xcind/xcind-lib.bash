@@ -543,8 +543,8 @@ _log "cmd: docker compose \$*"
 
 if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
     _stderr_tmp=\$(mktemp)
-    docker compose "\$@" 2>"\$_stderr_tmp"
-    _rc=\$?
+    _rc=0
+    docker compose "\$@" 2>"\$_stderr_tmp" || _rc=\$?
     if [ -s "\$_stderr_tmp" ]; then
         sed "s/^/\$(date '+%Y-%m-%d %H:%M:%S') [\$_sid] stderr: /" "\$_stderr_tmp" >> "\$_log_dir/wrapper.log"
         logger -t xcind-wrapper-stderr "\$(cat "\$_stderr_tmp")" 2>/dev/null || true
@@ -574,7 +574,7 @@ set -eu
 PATH="\$PATH:${xcind_bin_dir}"
 export XCIND_APP_ROOT="${app_root}"
 
-_log_dir="\${XDG_STATE_HOME:-\$HOME/.local/state}/xcind"
+_log_dir="\${XDG_STATE_HOME:-\${HOME:-}/.local/state}/xcind"
 _sid=\$(date '+%s')\$\$
 
 _log() {
@@ -603,8 +603,8 @@ if [ \$# -gt 0 ] && [ "\$1" = "compose" ]; then
 
     if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
         _stderr_tmp=\$(mktemp)
-        docker compose "\$@" 2>"\$_stderr_tmp"
-        _rc=\$?
+        _rc=0
+        docker compose "\$@" 2>"\$_stderr_tmp" || _rc=\$?
         if [ -s "\$_stderr_tmp" ]; then
             sed "s/^/\$(date '+%Y-%m-%d %H:%M:%S') [\$_sid] stderr: /" "\$_stderr_tmp" >> "\$_log_dir/wrapper.log"
             logger -t xcind-wrapper-stderr "\$(cat "\$_stderr_tmp")" 2>/dev/null || true
@@ -612,7 +612,7 @@ if [ \$# -gt 0 ] && [ "\$1" = "compose" ]; then
         rm -f "\$_stderr_tmp"
         exit "\$_rc"
     else
-        exec docker compose "\$@" 2>/dev/null
+        exec docker compose "\$@"
     fi
 else
     _log "cmd: docker \$*"
