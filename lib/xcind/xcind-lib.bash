@@ -517,7 +517,7 @@ set -eu
 PATH="\$PATH:${xcind_bin_dir}"
 export XCIND_APP_ROOT="${app_root}"
 
-_log_dir="\${XDG_STATE_HOME:-\$HOME/.local/state}/xcind"
+_log_dir="\${XDG_STATE_HOME:-\${HOME:-}/.local/state}/xcind"
 _sid=\$(date '+%s')\$\$
 
 _log() {
@@ -552,7 +552,7 @@ if [ "\${XCIND_WRAPPER_DEBUG:-0}" = "1" ]; then
     rm -f "\$_stderr_tmp"
     exit "\$_rc"
 else
-    exec docker compose "\$@" 2>/dev/null
+    exec docker compose "\$@"
 fi
 EOF
 }
