@@ -126,7 +126,7 @@ XCIND_PROXY_EXPORTS=(
 )
 ```
 
-When the port is omitted, it is inferred from the service's port mapping (requires exactly one port mapping). Requires `yq`.
+When the port is omitted, it is inferred from the service's port mapping (requires exactly one port mapping). `yq` is required by `xcind-proxy-hook` whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
 
 ### `XCIND_PROXY_DOMAIN`
 

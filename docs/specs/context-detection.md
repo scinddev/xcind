@@ -40,7 +40,7 @@ If the app's `.xcind.sh` sets `XCIND_WORKSPACE` directly (without a parent works
 If no `.xcind.sh` is found in the current directory or any parent:
 
 ```
-Error: Could not find .xcind.sh in any parent directory
+Error: No .xcind.sh found. Are you inside an xcind-managed application?
 ```
 
 Exit code: 1
@@ -50,7 +50,7 @@ Exit code: 1
 If `XCIND_APP_ROOT` is set but the directory does not contain `.xcind.sh`:
 
 ```
-Error: No .xcind.sh found at XCIND_APP_ROOT=/path/to/dir
+Error: No .xcind.sh found in /path/to/dir
 ```
 
 Exit code: 1
@@ -59,9 +59,9 @@ Exit code: 1
 
 ## Edge Cases
 
-- **Nested directories**: The upward walk stops at the first `.xcind.sh` found. If you're in `frontend/src/components/`, it finds `frontend/.xcind.sh`.
+- **Nested directories**: The upward walk stops at the first `.xcind.sh` found that does not set `XCIND_IS_WORKSPACE=1`. If you're in `frontend/src/components/`, it finds `frontend/.xcind.sh`.
 - **Workspace self-declaration**: An app can declare itself part of a workspace by setting `XCIND_WORKSPACE` in its own `.xcind.sh`, without needing a parent workspace directory.
-- **Single-app workspaces**: A directory can be both the workspace and the app — its `.xcind.sh` sets `XCIND_IS_WORKSPACE=1` and also defines `XCIND_COMPOSE_FILES`, etc. In this case, the parent-check finds no workspace, but the app can self-declare.
+- **Workspace-only directories**: A `.xcind.sh` that sets `XCIND_IS_WORKSPACE=1` is skipped by the upward walk — it is never treated as an app root on its own.
 
 ---
 

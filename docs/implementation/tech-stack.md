@@ -8,7 +8,7 @@ Technologies and tools used to build and distribute Xcind.
 |-----------|---------|---------------|
 | Bash | Core language | 3.2+ compatibility target |
 | Docker Compose | Underlying tool being wrapped | v2 |
-| yq | YAML manipulation for hook-generated compose files | Required by proxy and workspace hooks |
+| yq | YAML manipulation for hook-generated compose files | Required by proxy, app-env, and workspace hooks |
 | jq | JSON output for `xcind-config` | Used in config dump |
 
 ## Development

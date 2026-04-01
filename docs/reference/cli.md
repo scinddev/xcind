@@ -61,7 +61,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 
 | Flag | Output |
 |------|--------|
-| *(none)* | JSON output (`appRoot`, `composeFiles`, `envFiles`, `bakeFiles`) |
+| *(none)* | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`) |
 | `--preview` | The `docker compose` command line that would run |
 | `--files` | Resolved file paths, one per line, grouped by type |
 | `--check` | Check whether required and optional dependencies are available |
@@ -88,9 +88,16 @@ The default JSON output follows the contract expected by the xcind JetBrains plu
 
 ```json
 {
+  "metadata": {
+    "workspace": "my-workspace",
+    "app": "my-app",
+    "workspaceless": false
+  },
   "appRoot": "/path/to/app",
+  "configFiles": ["/path/to/workspace/.xcind.sh", "/path/to/app/.xcind.sh"],
   "composeFiles": ["compose.yaml", "compose.override.yaml"],
-  "envFiles": [".env"],
+  "composeEnvFiles": [".env"],
+  "appEnvFiles": [".env.app"],
   "bakeFiles": []
 }
 ```

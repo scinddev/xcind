@@ -40,7 +40,7 @@ When the port is omitted from an export entry, `xcind-proxy-hook` infers it from
 - If the service has **exactly one** port mapping, that port's target (container port) is used
 - If the service has **zero** or **multiple** port mappings, an error is reported asking for explicit port specification
 
-Requires `yq`.
+Note: `yq` is required by `xcind-proxy-hook` whenever `XCIND_PROXY_EXPORTS` is configured — for service validation, config inspection, and port inference — not only when the port is omitted.
 
 ## Private Services
 
