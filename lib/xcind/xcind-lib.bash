@@ -375,7 +375,7 @@ __xcind-resolve-tools() {
 
     # Skip duplicates (first wins) — linear scan of seen names
     case ",$seen_names," in
-      *",$name,"*) continue ;;
+    *",$name,"*) continue ;;
     esac
     seen_names="${seen_names:+$seen_names,}$name"
 
@@ -393,8 +393,8 @@ __xcind-resolve-tools() {
         key="${pair%%=*}"
         val="${pair#*=}"
         case "$key" in
-          use) use="$val" ;;
-          path) path="$val" ;;
+        use) use="$val" ;;
+        path) path="$val" ;;
         esac
       done
     fi
