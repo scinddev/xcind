@@ -395,12 +395,14 @@ xcind-compose down --remove-orphans
 Dumps the resolved configuration. Useful for debugging and for the JetBrains plugin.
 
 ```bash
-xcind-config                          # JSON output
-xcind-config --preview                # Show the docker compose command line
-xcind-config --files                  # List resolved files
-xcind-config --dump-docker-wrapper    # Generate a POSIX docker wrapper script
-xcind-config --dump-docker-compose-wrapper  # Generate a POSIX docker-compose wrapper script
-xcind-config --version                # Show version
+xcind-config                                           # Show help
+xcind-config --json                                    # JSON output
+xcind-config --preview                                 # Show the docker compose command line
+xcind-config --check                                   # Check system dependencies
+xcind-config --generate-docker-wrapper                 # Generate a POSIX docker wrapper script
+xcind-config --generate-docker-compose-wrapper         # Generate a POSIX docker-compose wrapper script
+xcind-config --generate-ide-configuration=DIR          # Generate compose.ide.yaml in DIR
+xcind-config --version                                 # Show version
 ```
 
 ### `xcind-proxy`
@@ -445,7 +447,7 @@ source_env .xcind.sh
 
 ## JetBrains Plugin
 
-The `xcind-config` command outputs JSON compatible with the xcind JetBrains
+The `xcind-config --json` command outputs JSON compatible with the xcind JetBrains
 plugin. Point the plugin at the `xcind-config` script path, and it will
 resolve compose files and env files for your IDE's Docker integration.
 
@@ -459,7 +461,7 @@ npm install -g @scinddev/xcind
 
 # Or run directly with npx
 npx -p @scinddev/xcind xcind-compose up -d
-npx -p @scinddev/xcind xcind-config --preview
+npx -p @scinddev/xcind xcind-config --json
 ```
 
 ### Install script
@@ -606,7 +608,7 @@ MIT — see [LICENSE](LICENSE) for details.
 xcind/
 ├── bin/
 │   ├── xcind-compose          # Main executable — wraps docker compose
-│   ├── xcind-config           # Config dump — JSON, preview, file listing
+│   ├── xcind-config           # Config dump — JSON, preview, code generation
 │   └── xcind-proxy            # Manages shared Traefik proxy infrastructure
 ├── lib/xcind/
 │   ├── xcind-lib.bash         # Shared library (sourced by other scripts)
