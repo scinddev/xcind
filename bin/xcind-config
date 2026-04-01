@@ -2,17 +2,13 @@
 # xcind-config — Dump resolved xcind configuration
 #
 # Usage:
-#   xcind-config              # JSON output (for JetBrains plugin, scripts, etc.)
-#   xcind-config --preview    # Show the docker compose command that would run
-#   xcind-config --files      # List resolved files only (one per line)
-#
-# The JSON output follows the contract expected by the xcind JetBrains plugin:
-# {
-#   "appRoot": "/path/to/app",
-#   "composeFiles": [...],
-#   "envFiles": [...],
-#   "bakeFiles": [...]
-# }
+#   xcind-config                                           Show help
+#   xcind-config --json                                    JSON output (for JetBrains plugin, scripts)
+#   xcind-config --preview [-- ARGS...]                    Show the docker compose command
+#   xcind-config --check                                   Check system dependencies
+#   xcind-config --generate-docker-wrapper[=FILE]          Generate a POSIX docker wrapper
+#   xcind-config --generate-docker-compose-wrapper[=FILE]  Generate a POSIX docker-compose wrapper
+#   xcind-config --generate-ide-configuration=DIR          Generate compose.ide.yaml in DIR
 
 set -euo pipefail
 
@@ -34,72 +30,196 @@ XCIND_ROOT="$(cd "$(dirname "$(__xcind_resolve_link "${BASH_SOURCE[0]}")")" && c
 # shellcheck disable=SC1091
 source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
 
+# --- Helpers ---
+
+__xcind_config_usage() {
+  cat <<'HELPEOF'
+Usage: xcind-config [OPTIONS]
+
+Options:
+  --help, -h                            Show this help
+  --version, -V                         Show version
+  --check                               Check required/optional dependencies
+
+  --json                                Output resolved config as JSON
+  --preview [-- ARGS...]                Show docker compose command
+
+  --generate-docker-wrapper[=FILE]             Generate docker wrapper script
+  --generate-docker-compose-wrapper[=FILE]     Generate docker-compose wrapper script
+  --generate-ide-configuration=DIR             Generate compose.ide.yaml in DIR
+
+Multiple --generate-* flags may be combined when each specifies a file/dir.
+Combine with --json to also output JSON to stdout.
+HELPEOF
+}
+
+__xcind_config_die() {
+  echo "Error: $1" >&2
+  echo "Run 'xcind-config --help' for usage." >&2
+  exit 1
+}
+
+__xcind_config_claim_stdout() {
+  local action="$1"
+  if [[ -n $_stdout_claim ]]; then
+    __xcind_config_die "cannot combine --${action} (stdout) with --${_stdout_claim} (stdout); specify a file path for one of them"
+  fi
+  _stdout_claim="$action"
+}
+
 # --- Parse arguments ---
 
-MODE="json"
-IDE_CONFIG_DIR=""
+_do_help=false
+_do_version=false
+_do_check=false
+_do_json=false
+_do_preview=false
+_do_gen_docker_wrapper=false
+_gen_docker_wrapper_file=""
+_do_gen_compose_wrapper=false
+_gen_compose_wrapper_file=""
+_do_gen_ide_config=false
+_gen_ide_config_dir=""
+_stdout_claim=""
+_action_count=0
+PREVIEW_EXTRA_ARGS=()
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-  --preview)
-    MODE="preview"
-    ;;
-  --files)
-    MODE="files"
-    ;;
-  --dump-docker-wrapper)
-    MODE="dump-docker-wrapper"
-    ;;
-  --dump-docker-compose-wrapper)
-    MODE="dump-docker-compose-wrapper"
-    ;;
-  --dump-ide-docker-compose-config)
-    MODE="dump-ide-docker-compose-config"
-    ;;
-  --xcind-ide-config-dir)
-    shift
-    IDE_CONFIG_DIR="$1"
+  --help | -h)
+    _do_help=true
+    _action_count=$((_action_count + 1))
     ;;
   --version | -V)
-    echo "xcind-config ${XCIND_VERSION}"
-    exit 0
+    _do_version=true
+    _action_count=$((_action_count + 1))
     ;;
   --check)
-    MODE="check"
+    _do_check=true
+    _action_count=$((_action_count + 1))
     ;;
-  --help | -h)
-    echo "Usage: xcind-config [--version|--preview|--files|--check|--dump-docker-wrapper|--dump-docker-compose-wrapper|--dump-ide-docker-compose-config|--help]"
-    echo ""
-    echo "  (default)                              Output resolved configuration as JSON"
-    echo "  --preview                              Show the docker compose command that would be executed"
-    echo "  --files                                List all resolved files, one per line"
-    echo "  --check                                Check whether required and optional dependencies are available"
-    echo "  --dump-docker-wrapper                  Generate a POSIX docker wrapper script"
-    echo "  --dump-docker-compose-wrapper          Generate a POSIX docker-compose wrapper script"
-    echo "  --dump-ide-docker-compose-config       Generate compose.ide.yaml for IDE integration"
-    echo "  --xcind-ide-config-dir <path>          Output directory for IDE config (default: app root)"
-    echo "  --help                                 Show this help"
-    exit 0
+  --json)
+    _do_json=true
+    _action_count=$((_action_count + 1))
+    __xcind_config_claim_stdout "json"
+    ;;
+  --preview)
+    _do_preview=true
+    _action_count=$((_action_count + 1))
+    __xcind_config_claim_stdout "preview"
+    ;;
+  --generate-docker-wrapper=*)
+    _do_gen_docker_wrapper=true
+    _gen_docker_wrapper_file="${1#*=}"
+    _action_count=$((_action_count + 1))
+    ;;
+  --generate-docker-wrapper)
+    _do_gen_docker_wrapper=true
+    # Check if next arg is a value (not a flag)
+    if [[ $# -ge 2 && ${2:0:1} != "-" ]]; then
+      shift
+      _gen_docker_wrapper_file="$1"
+    else
+      __xcind_config_claim_stdout "generate-docker-wrapper"
+    fi
+    _action_count=$((_action_count + 1))
+    ;;
+  --generate-docker-compose-wrapper=*)
+    _do_gen_compose_wrapper=true
+    _gen_compose_wrapper_file="${1#*=}"
+    _action_count=$((_action_count + 1))
+    ;;
+  --generate-docker-compose-wrapper)
+    _do_gen_compose_wrapper=true
+    # Check if next arg is a value (not a flag)
+    if [[ $# -ge 2 && ${2:0:1} != "-" ]]; then
+      shift
+      _gen_compose_wrapper_file="$1"
+    else
+      __xcind_config_claim_stdout "generate-docker-compose-wrapper"
+    fi
+    _action_count=$((_action_count + 1))
+    ;;
+  --generate-ide-configuration=*)
+    _do_gen_ide_config=true
+    _gen_ide_config_dir="${1#*=}"
+    _action_count=$((_action_count + 1))
+    ;;
+  --generate-ide-configuration)
+    # Next arg must be the directory (required)
+    if [[ $# -ge 2 && ${2:0:1} != "-" ]]; then
+      shift
+      _do_gen_ide_config=true
+      _gen_ide_config_dir="$1"
+      _action_count=$((_action_count + 1))
+    else
+      __xcind_config_die "--generate-ide-configuration requires a directory argument"
+    fi
+    ;;
+  --)
+    shift
+    PREVIEW_EXTRA_ARGS=("$@")
+    break
+    ;;
+  -*)
+    __xcind_config_die "unknown option: $1"
     ;;
   *)
-    break
+    __xcind_config_die "unexpected argument: $1"
     ;;
   esac
   shift
 done
 
-# --xcind-ide-config-dir requires an IDE mode flag
-if [[ -n "$IDE_CONFIG_DIR" && "$MODE" != "dump-ide-docker-compose-config" ]]; then
-  echo "Error: --xcind-ide-config-dir requires --dump-ide-docker-compose-config" >&2
-  exit 1
+# --- Post-parse validation ---
+
+# No actions means help
+if [[ $_action_count -eq 0 ]]; then
+  _do_help=true
 fi
 
-# --check runs before app-root detection — it's purely about system tools
-if [ "$MODE" = "check" ]; then
+# Standalone actions cannot combine with anything
+if [[ $_do_help == true && $_action_count -gt 1 ]]; then
+  __xcind_config_die "--help cannot be combined with other options"
+fi
+if [[ $_do_version == true && $_action_count -gt 1 ]]; then
+  __xcind_config_die "--version cannot be combined with other options"
+fi
+if [[ $_do_check == true && $_action_count -gt 1 ]]; then
+  __xcind_config_die "--check cannot be combined with other options"
+fi
+if [[ $_do_preview == true && $_action_count -gt 1 ]]; then
+  __xcind_config_die "--preview cannot be combined with other options"
+fi
+
+# -- args only valid with --preview
+if [[ ${#PREVIEW_EXTRA_ARGS[@]} -gt 0 && $_do_preview != true ]]; then
+  __xcind_config_die "extra arguments after -- are only valid with --preview"
+fi
+
+# IDE configuration dir must not be empty
+if [[ $_do_gen_ide_config == true && -z $_gen_ide_config_dir ]]; then
+  __xcind_config_die "--generate-ide-configuration requires a directory argument"
+fi
+
+# --- Standalone early-exit actions ---
+
+if [[ $_do_help == true ]]; then
+  __xcind_config_usage
+  exit 0
+fi
+
+if [[ $_do_version == true ]]; then
+  echo "xcind-config ${XCIND_VERSION}"
+  exit 0
+fi
+
+if [[ $_do_check == true ]]; then
   __xcind-check-deps
   exit $?
 fi
 
-# --- Main ---
+# --- Main pipeline (steps 1-14) ---
 
 # Step 1: Detect app root
 # shellcheck disable=SC2119  # intentionally called with no args
@@ -168,83 +288,32 @@ __xcind_bin_dir() {
   fi
 }
 
-case "$MODE" in
-json)
-  __xcind-resolve-json "$app_root"
-  ;;
+# --- Execute actions ---
 
-preview)
-  __xcind-preview-command "$app_root" "$@"
-  ;;
+if [[ $_do_preview == true ]]; then
+  __xcind-preview-command "$app_root" "${PREVIEW_EXTRA_ARGS[@]}"
+fi
 
-dump-docker-wrapper)
-  __xcind-dump-docker-wrapper "$app_root" "$(__xcind_bin_dir)"
-  ;;
-
-dump-docker-compose-wrapper)
-  __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)"
-  ;;
-
-files)
-  local_compose_dir="${XCIND_COMPOSE_DIR:+$app_root/$XCIND_COMPOSE_DIR}"
-  local_resolve_base="${local_compose_dir:-$app_root}"
-
-  if [ ${#__XCIND_SOURCED_CONFIG_FILES[@]} -gt 0 ]; then
-    echo "# Config files:"
-    printf '%s\n' "${__XCIND_SOURCED_CONFIG_FILES[@]}"
-  fi
-
-  echo "# Compose env files:"
-  __xcind-resolve-files "$app_root" "${XCIND_COMPOSE_ENV_FILES[@]}"
-
-  if [[ ${#XCIND_APP_ENV_FILES[@]} -gt 0 ]]; then
-    echo "# App env files:"
-    __xcind-resolve-files "$app_root" ${XCIND_APP_ENV_FILES[@]+"${XCIND_APP_ENV_FILES[@]}"}
-  fi
-
-  echo "# Compose files:"
-  _base_compose_files=()
-  while IFS= read -r _cf; do
-    _base_compose_files+=("$_cf")
-    echo "$_cf"
-  done < <(__xcind-resolve-files "$local_resolve_base" "${XCIND_COMPOSE_FILES[@]}")
-
-  # Include hook-generated compose files
-  _i=0
-  while [ "$_i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
-    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$_i]}" = "-f" ]; then
-      _i=$((_i + 1))
-      _f="${XCIND_DOCKER_COMPOSE_OPTS[$_i]}"
-      _dup=false
-      for _cf in "${_base_compose_files[@]+"${_base_compose_files[@]}"}"; do
-        if [ "$_cf" = "$_f" ]; then
-          _dup=true
-          break
-        fi
-      done
-      if [ "$_dup" = false ]; then
-        echo "$_f"
-      fi
-    fi
-    _i=$((_i + 1))
-  done
-
-  if [ ${#XCIND_BAKE_FILES[@]} -gt 0 ]; then
-    echo "# Bake files:"
-    __xcind-resolve-files "$app_root" "${XCIND_BAKE_FILES[@]}"
-  fi
-  ;;
-
-dump-ide-docker-compose-config)
-  _out_dir="${IDE_CONFIG_DIR:-$XCIND_APP_ROOT}"
-  mkdir -p "$_out_dir"
-  if xcind-compose config >"$_out_dir/compose.ide.yaml.tmp" 2>/dev/null; then
-    mv "$_out_dir/compose.ide.yaml.tmp" "$_out_dir/compose.ide.yaml"
-    exit 0
+if [[ $_do_gen_docker_wrapper == true ]]; then
+  if [[ -n $_gen_docker_wrapper_file ]]; then
+    __xcind-dump-docker-wrapper "$app_root" "$(__xcind_bin_dir)" >"$_gen_docker_wrapper_file"
   else
-    rm -f "$_out_dir/compose.ide.yaml.tmp"
-    echo "Error: failed to generate compose.ide.yaml" >&2
-    exit 1
+    __xcind-dump-docker-wrapper "$app_root" "$(__xcind_bin_dir)"
   fi
-  ;;
-esac
+fi
+
+if [[ $_do_gen_compose_wrapper == true ]]; then
+  if [[ -n $_gen_compose_wrapper_file ]]; then
+    __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)" >"$_gen_compose_wrapper_file"
+  else
+    __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)"
+  fi
+fi
+
+if [[ $_do_gen_ide_config == true ]]; then
+  __xcind-generate-ide-configuration "$_gen_ide_config_dir" || exit 1
+fi
+
+if [[ $_do_json == true ]]; then
+  __xcind-resolve-json "$app_root"
+fi

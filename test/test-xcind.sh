@@ -1238,7 +1238,7 @@ rm -rf "$CDEPS_STUBS" "$CDEPS_EMPTY"
 
 # ======================================================================
 echo ""
-echo "=== Test: --dump-ide-docker-compose-config ==="
+echo "=== Test: --generate-ide-configuration ==="
 
 if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
 
@@ -1253,26 +1253,26 @@ services:
     image: alpine
 COMPEOF
 
-  # 1. --dump-ide-docker-compose-config with --xcind-ide-config-dir generates the file
+  # 1. --generate-ide-configuration=DIR generates the file
   IDE_OUT_DIR=$(mktemp -d)
   (cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-    --dump-ide-docker-compose-config --xcind-ide-config-dir "$IDE_OUT_DIR" 2>&1) && ide_rc=0 || ide_rc=$?
-  assert_eq "dump-ide-docker-compose-config: exit code 0" "0" "$ide_rc"
-  assert_eq "dump-ide-docker-compose-config: compose.ide.yaml exists" "true" \
+    --generate-ide-configuration="$IDE_OUT_DIR" 2>&1) && ide_rc=0 || ide_rc=$?
+  assert_eq "generate-ide-configuration: exit code 0" "0" "$ide_rc"
+  assert_eq "generate-ide-configuration: compose.ide.yaml exists" "true" \
     "$([ -f "$IDE_OUT_DIR/compose.ide.yaml" ] && echo true || echo false)"
   ide_yaml_content=$(cat "$IDE_OUT_DIR/compose.ide.yaml" 2>/dev/null || true)
-  assert_contains "dump-ide-docker-compose-config: contains services key" "services:" "$ide_yaml_content"
+  assert_contains "generate-ide-configuration: contains services key" "services:" "$ide_yaml_content"
   rm -rf "$IDE_OUT_DIR"
 
-  # 2. --dump-ide-docker-compose-config defaults to app root without --xcind-ide-config-dir
+  # 2. --generate-ide-configuration DIR (space-separated) generates in app root
   (cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-    --dump-ide-docker-compose-config 2>&1) && ide_rc=0 || ide_rc=$?
-  assert_eq "dump-ide-docker-compose-config default dir: exit code 0" "0" "$ide_rc"
-  assert_eq "dump-ide-docker-compose-config default dir: compose.ide.yaml in app root" "true" \
+    --generate-ide-configuration "$IDE_TEST_APP" 2>&1) && ide_rc=0 || ide_rc=$?
+  assert_eq "generate-ide-configuration space form: exit code 0" "0" "$ide_rc"
+  assert_eq "generate-ide-configuration space form: compose.ide.yaml in app root" "true" \
     "$([ -f "$IDE_TEST_APP/compose.ide.yaml" ] && echo true || echo false)"
   rm -f "$IDE_TEST_APP/compose.ide.yaml"
 
-  # 3. --dump-ide-docker-compose-config fails gracefully on bad config
+  # 3. --generate-ide-configuration fails gracefully on bad config
   IDE_BAD_APP=$(mktemp -d)
   cat >"$IDE_BAD_APP/.xcind.sh" <<'XCINDEOF'
 XCIND_COMPOSE_FILES=(nonexistent.yaml)
@@ -1280,10 +1280,10 @@ XCIND_COMPOSE_ENV_FILES=()
 XCINDEOF
   IDE_BAD_OUT=$(mktemp -d)
   (cd "$IDE_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-    --dump-ide-docker-compose-config --xcind-ide-config-dir "$IDE_BAD_OUT" 2>&1) && ide_bad_rc=0 || ide_bad_rc=$?
-  assert_eq "dump-ide-docker-compose-config bad config: non-zero exit" "true" \
+    --generate-ide-configuration="$IDE_BAD_OUT" 2>&1) && ide_bad_rc=0 || ide_bad_rc=$?
+  assert_eq "generate-ide-configuration bad config: non-zero exit" "true" \
     "$([ "$ide_bad_rc" -ne 0 ] && echo true || echo false)"
-  assert_eq "dump-ide-docker-compose-config bad config: no compose.ide.yaml left behind" "false" \
+  assert_eq "generate-ide-configuration bad config: no compose.ide.yaml left behind" "false" \
     "$([ -f "$IDE_BAD_OUT/compose.ide.yaml" ] && echo true || echo false)"
   rm -rf "$IDE_BAD_APP" "$IDE_BAD_OUT"
 
@@ -1293,13 +1293,43 @@ else
   echo "  (skipped: docker compose not available)"
 fi
 
-# 4. --xcind-ide-config-dir without a matching mode flag errors (no docker needed)
-ide_nomode_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-  --xcind-ide-config-dir /some/path 2>&1) && ide_nomode_rc=0 || ide_nomode_rc=$?
-assert_eq "--xcind-ide-config-dir without mode: non-zero exit" "true" \
-  "$([ "$ide_nomode_rc" -ne 0 ] && echo true || echo false)"
-assert_contains "--xcind-ide-config-dir without mode: error message" \
-  "--xcind-ide-config-dir requires --dump-ide-docker-compose-config" "$ide_nomode_result"
+# 4. --generate-ide-configuration without dir argument errors (no docker needed)
+ide_nodir_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-ide-configuration 2>&1) && ide_nodir_rc=0 || ide_nodir_rc=$?
+assert_eq "--generate-ide-configuration without dir: non-zero exit" "true" \
+  "$([ "$ide_nodir_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "--generate-ide-configuration without dir: error message" \
+  "--generate-ide-configuration requires a directory argument" "$ide_nodir_result"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-config argument validation ==="
+
+# 5. Unknown flag is rejected
+unknown_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --bogus-flag 2>&1) && unknown_rc=0 || unknown_rc=$?
+assert_eq "unknown flag: non-zero exit" "true" \
+  "$([ "$unknown_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "unknown flag: error message" "unknown option" "$unknown_result"
+
+# 6. No arguments shows help
+noargs_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config 2>&1) && noargs_rc=0 || noargs_rc=$?
+assert_eq "no args: exit code 0" "0" "$noargs_rc"
+assert_contains "no args: shows usage" "Usage:" "$noargs_result"
+
+# 7. Standalone flag cannot be combined with others
+standalone_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --check --json 2>&1) && standalone_rc=0 || standalone_rc=$?
+assert_eq "standalone conflict: non-zero exit" "true" \
+  "$([ "$standalone_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "standalone conflict: error message" "cannot be combined" "$standalone_result"
+
+# 8. Two stdout-claiming flags conflict
+stdout_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --json --generate-docker-wrapper 2>&1) && stdout_rc=0 || stdout_rc=$?
+assert_eq "stdout conflict: non-zero exit" "true" \
+  "$([ "$stdout_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "stdout conflict: error message" "stdout" "$stdout_result"
 
 # ======================================================================
 # Cleanup
