@@ -265,7 +265,7 @@ EOF
 touch "$BC_APP/compose.yaml"
 touch "$BC_APP/.env.legacy"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
 __XCIND_SOURCED_CONFIG_FILES=()
 
 bc_stderr_file=$(mktemp)
@@ -278,7 +278,7 @@ assert_eq "BC shim sets XCIND_COMPOSE_ENV_FILES[0]" ".env.legacy" "${XCIND_COMPO
 assert_contains "BC shim emits deprecation warning" "deprecated" "$bc_stderr"
 
 rm -rf "$BC_APP"
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ENV_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ENV_FILES
 
 # ======================================================================
 echo ""
@@ -565,7 +565,7 @@ echo 'version: "3"' >"$SHA_APP/docker/compose.yaml"
 touch "$SHA_APP/.env"
 
 # Build opts so SHA has compose files to hash
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
 __xcind-load-config "$SHA_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 XCIND_COMPOSE_DIR="docker"
@@ -614,7 +614,7 @@ stub_hook() {
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("stub_hook")
 
 # Build base opts
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
 __xcind-load-config "$HOOK_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$HOOK_APP"
@@ -658,7 +658,7 @@ hook_beta() {
 # shellcheck disable=SC2034 # consumed by __xcind-run-hooks
 XCIND_HOOKS_POST_RESOLVE_GENERATE=("hook_beta" "hook_alpha")
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
 __xcind-load-config "$ORDER_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$ORDER_APP"
@@ -720,7 +720,7 @@ XCIND_PROXY_EXPORTS=("nginx" "mailhog")
 EOF
 
 # Load config then source additional configs
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
 __xcind-load-config "$ADDCFG_APP"
 
 assert_eq "base config sets XCIND_PROXY_EXPORTS" "nginx" "${XCIND_PROXY_EXPORTS[0]}"
@@ -756,7 +756,7 @@ cat >"$VAREXP_APP/.xcind.staging.sh" <<'EOF'
 XCIND_STAGING_LOADED=1
 EOF
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
 export APP_ENV="staging"
 __xcind-load-config "$VAREXP_APP"
 __xcind-source-additional-configs "$VAREXP_APP"
@@ -764,7 +764,7 @@ __xcind-source-additional-configs "$VAREXP_APP"
 assert_eq "variable expansion resolves staging" "1" "${XCIND_STAGING_LOADED:-0}"
 
 # Non-existent file is skipped silently
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_STAGING_LOADED
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES XCIND_STAGING_LOADED
 __XCIND_SOURCED_CONFIG_FILES=()
 export APP_ENV="prod"
 __xcind-load-config "$VAREXP_APP"
@@ -785,7 +785,7 @@ EMPTY_APP=$(mktemp -d)
 __XCIND_SOURCED_CONFIG_FILES=()
 echo '# no additional configs' >"$EMPTY_APP/.xcind.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
 __xcind-load-config "$EMPTY_APP"
 __xcind-source-additional-configs "$EMPTY_APP"
 
@@ -807,7 +807,7 @@ echo 'XCIND_IS_WORKSPACE=1' >"$WS_UNSET_ROOT/myworkspace/.xcind.sh"
 # App .xcind.sh is empty (no XCIND_ADDITIONAL_CONFIG_FILES set)
 echo '# nothing' >"$WS_UNSET_ROOT/myworkspace/myapp/.xcind.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
 export XCIND_APP_ROOT=""
 app_root=$(__xcind-app-root "$WS_UNSET_ROOT/myworkspace/myapp")
 __xcind-discover-workspace "$app_root"
@@ -851,7 +851,7 @@ EOF
 
 # Simulate the pipeline
 unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
 
 __xcind-discover-workspace "$WS_ADD_ROOT/myworkspace/myapp"
 assert_eq "workspace inherited - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
@@ -902,7 +902,7 @@ XCIND_LOCAL_LOADED=1
 EOF
 
 unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES XCIND_LOCAL_LOADED
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES XCIND_LOCAL_LOADED
 
 __xcind-discover-workspace "$WS_OVR_ROOT/myworkspace/myapp"
 
@@ -934,7 +934,7 @@ EOF
 echo 'version: "3"' >"$SHA_ADD_APP/compose.yaml"
 echo 'XCIND_DEV_VAR=original' >"$SHA_ADD_APP/.xcind.dev.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
 __xcind-load-config "$SHA_ADD_APP"
 __xcind-source-additional-configs "$SHA_ADD_APP"
 __xcind-build-compose-opts "$SHA_ADD_APP"
@@ -972,7 +972,7 @@ EOF
   touch "$JSON_APP/compose.yaml"
   echo '# dev config' >"$JSON_APP/.xcind.dev.sh"
 
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_ADDITIONAL_CONFIG_FILES
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
   XCIND_WORKSPACELESS=1
   XCIND_WORKSPACE=""
   XCIND_APP="testapp"
@@ -1330,6 +1330,140 @@ stdout_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
 assert_eq "stdout conflict: non-zero exit" "true" \
   "$([ "$stdout_rc" -ne 0 ] && echo true || echo false)"
 assert_contains "stdout conflict: error message" "stdout" "$stdout_result"
+
+# ======================================================================
+echo ""
+echo "=== Test: XCIND_TOOLS parsing and JSON output ==="
+
+if command -v jq &>/dev/null; then
+
+  # --- Setup: fresh app root for tools tests ---
+  TOOLS_APP=$(mktemp -d)
+  cat >"$TOOLS_APP/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+  touch "$TOOLS_APP/compose.yaml"
+
+  # 1. XCIND_TOOLS not set → "tools": {}
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+  tools_obj=$(echo "$json" | jq -c '.tools')
+  assert_eq "tools empty when XCIND_TOOLS unset" "{}" "$tools_obj"
+
+  # 2. XCIND_TOOLS=() (explicit empty) → "tools": {}
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=()
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+  tools_obj=$(echo "$json" | jq -c '.tools')
+  assert_eq "tools empty when XCIND_TOOLS=()" "{}" "$tools_obj"
+
+  # 3. Basic tool declarations
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=("php:app" "npm:app")
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+
+  php_service=$(echo "$json" | jq -r '.tools.php.service')
+  assert_eq "tools php service" "app" "$php_service"
+
+  php_use=$(echo "$json" | jq -r '.tools.php.use')
+  assert_eq "tools php use defaults to exec" "exec" "$php_use"
+
+  npm_service=$(echo "$json" | jq -r '.tools.npm.service')
+  assert_eq "tools npm service" "app" "$npm_service"
+
+  tools_count=$(echo "$json" | jq '.tools | length')
+  assert_eq "tools count" "2" "$tools_count"
+
+  # 4. use=run is reflected
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=("phpunit:app;use=run")
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+
+  phpunit_use=$(echo "$json" | jq -r '.tools.phpunit.use')
+  assert_eq "tools phpunit use=run" "run" "$phpunit_use"
+
+  # 5. path appears only when specified
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=("php:app" "php85:app;path=/usr/local/bin/php8.5")
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+
+  php_has_path=$(echo "$json" | jq 'has("tools") and (.tools.php | has("path"))')
+  assert_eq "tools php has no path key" "false" "$php_has_path"
+
+  php85_path=$(echo "$json" | jq -r '.tools.php85.path')
+  assert_eq "tools php85 path" "/usr/local/bin/php8.5" "$php85_path"
+
+  # 6. Duplicate tool names → first wins
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=("php:app" "php:cron")
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+
+  dup_service=$(echo "$json" | jq -r '.tools.php.service')
+  assert_eq "tools duplicate first wins service" "app" "$dup_service"
+
+  dup_count=$(echo "$json" | jq '.tools | length')
+  assert_eq "tools duplicate count is 1" "1" "$dup_count"
+
+  # 7. Multiple metadata key=value pairs
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=("php:app;use=run;path=/usr/bin/php")
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  json=$(__xcind-resolve-json "$TOOLS_APP")
+
+  multi_use=$(echo "$json" | jq -r '.tools.php.use')
+  assert_eq "tools multi-meta use" "run" "$multi_use"
+
+  multi_path=$(echo "$json" | jq -r '.tools.php.path')
+  assert_eq "tools multi-meta path" "/usr/bin/php" "$multi_path"
+
+  # 8. SHA changes when XCIND_TOOLS changes
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  __XCIND_SOURCED_CONFIG_FILES=()
+  XCIND_DOCKER_COMPOSE_OPTS=()
+  XCIND_TOOLS=("php:app")
+  __xcind-load-config "$TOOLS_APP"
+  __xcind-build-compose-opts "$TOOLS_APP"
+  sha1=$(__xcind-compute-sha "$TOOLS_APP")
+
+  XCIND_TOOLS=("php:app" "npm:app")
+  sha2=$(__xcind-compute-sha "$TOOLS_APP")
+
+  assert_eq "SHA changes when XCIND_TOOLS changes" "true" \
+    "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
+
+  rm -rf "$TOOLS_APP"
+  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+
+else
+  echo "  (skipped: jq not installed)"
+fi
 
 # ======================================================================
 # Cleanup

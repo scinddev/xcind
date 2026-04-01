@@ -98,6 +98,7 @@ __xcind-app-root() {
 #   XCIND_COMPOSE_ENV_FILES=()   — Env file patterns for compose YAML interpolation (--env-file)
 #   XCIND_APP_ENV_FILES=()       — Env file patterns injected into containers (env_file:)
 #   XCIND_BAKE_FILES=()          — Bake file patterns (reserved for future use)
+#   XCIND_TOOLS=()               — Tool declarations (name:service[;key=value…])
 #   XCIND_COMPOSE_DIR=""         — Subdirectory for compose files (optional convenience)
 #
 # Usage:
@@ -113,6 +114,9 @@ __xcind-load-config() {
   fi
   if [[ -z ${XCIND_BAKE_FILES+set} ]]; then
     XCIND_BAKE_FILES=()
+  fi
+  if [[ -z ${XCIND_TOOLS+set} ]]; then
+    XCIND_TOOLS=()
   fi
   if [[ -z ${XCIND_COMPOSE_DIR+set} ]]; then
     XCIND_COMPOSE_DIR=""
@@ -342,6 +346,81 @@ __xcind-build-compose-opts() {
 # JSON Contract (for xcind-config / JetBrains plugin)
 # --------------------------------------------------------------------------
 
+# Parse XCIND_TOOLS into a JSON object keyed by tool name.
+# First entry for a given tool name wins; subsequent duplicates are skipped.
+#
+# Usage:
+#   __xcind-resolve-tools
+#   # prints: {"php":{"service":"app","use":"exec"},"npm":{"service":"app","use":"exec"}}
+__xcind-resolve-tools() {
+  if [[ ${#XCIND_TOOLS[@]} -eq 0 ]]; then
+    echo "{}"
+    return 0
+  fi
+
+  local seen_names=""
+  local first=true
+  local entry name remainder service meta use path key val
+
+  printf '{'
+  for entry in "${XCIND_TOOLS[@]}"; do
+    # Split on ':' for name and service (with optional metadata after ';')
+    name="${entry%%:*}"
+    remainder="${entry#*:}"
+    service="${remainder%%;*}"
+    meta=""
+    if [[ "$remainder" == *";"* ]]; then
+      meta="${remainder#*;}"
+    fi
+
+    # Skip duplicates (first wins) — linear scan of seen names
+    case ",$seen_names," in
+      *",$name,"*) continue ;;
+    esac
+    seen_names="${seen_names:+$seen_names,}$name"
+
+    # Parse metadata key=value pairs
+    use="exec"
+    path=""
+    if [[ -n "$meta" ]]; then
+      local IFS=';'
+      local pairs
+      # shellcheck disable=SC2206
+      pairs=($meta)
+      unset IFS
+      local pair
+      for pair in "${pairs[@]}"; do
+        key="${pair%%=*}"
+        val="${pair#*=}"
+        case "$key" in
+          use) use="$val" ;;
+          path) path="$val" ;;
+        esac
+      done
+    fi
+
+    # Emit JSON
+    if [[ $first == true ]]; then
+      first=false
+    else
+      printf ','
+    fi
+
+    if [[ -n "$path" ]]; then
+      printf '%s:%s' \
+        "$(printf '%s' "$name" | jq -R .)" \
+        "$(jq -n --arg s "$service" --arg u "$use" --arg p "$path" \
+          '{service: $s, use: $u, path: $p}')"
+    else
+      printf '%s:%s' \
+        "$(printf '%s' "$name" | jq -R .)" \
+        "$(jq -n --arg s "$service" --arg u "$use" \
+          '{service: $s, use: $u}')"
+    fi
+  done
+  printf '}'
+}
+
 # Output the resolved configuration as JSON.
 # Requires jq to be installed.
 #
@@ -419,6 +498,10 @@ __xcind-resolve-json() {
   local _app_name="${XCIND_APP:-$(basename "$app_root")}"
   local _workspaceless="${XCIND_WORKSPACELESS:-1}"
 
+  # Resolve tools
+  local tools_json
+  tools_json=$(__xcind-resolve-tools)
+
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
@@ -427,6 +510,7 @@ __xcind-resolve-json() {
     --argjson compose_env_files "$(__to_json_array ${compose_env_files[@]+"${compose_env_files[@]}"})" \
     --argjson app_env_files "$(__to_json_array ${app_env_files[@]+"${app_env_files[@]}"})" \
     --argjson bake_files "$(__to_json_array ${bake_files[@]+"${bake_files[@]}"})" \
+    --argjson tools "$tools_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
     --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
@@ -441,7 +525,8 @@ __xcind-resolve-json() {
             composeFiles: $compose_files,
             composeEnvFiles: $compose_env_files,
             appEnvFiles: $app_env_files,
-            bakeFiles: $bake_files
+            bakeFiles: $bake_files,
+            tools: $tools
         }'
 }
 
@@ -753,6 +838,11 @@ __xcind-compute-sha() {
   local global_config="${HOME}/.config/xcind/proxy/config.sh"
   if [ -f "$global_config" ]; then
     sha_input+=$(__xcind-sha256 "$global_config" | cut -d' ' -f1)
+  fi
+
+  # Add tools declarations
+  if [[ ${#XCIND_TOOLS[@]} -gt 0 ]]; then
+    sha_input+=$(printf '%s\n' "${XCIND_TOOLS[@]}")
   fi
 
   # Add naming-relevant variables so overrides invalidate the cache
