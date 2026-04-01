@@ -19,14 +19,14 @@ Adopt the Layered Documentation System (LDS) with seven distinct layers, each se
 | 3. Architecture | `architecture/` | Show HOW components relate | Evolving |
 | 4. Specifications | `specs/` | Detail HOW features work | Living |
 | 5. Reference | `reference/` | Provide lookup tables | Generated/maintained |
-| 6. Behaviors | `behaviors/` | Verify expected behaviors | Executable |
+| 6. Behaviors | `behaviors/` | Describe expected behaviors via scenarios | May be executable when wired into tests |
 | 7. Implementation | `implementation/` | Guide HOW to build | Short-lived |
 
 Key principles:
 - **Single Source of Truth**: Each fact lives in exactly one place
 - **Linkage Over Duplication**: Reference other documents rather than copying
 - **Appendix for Scale**: Large content moves to appendices, keeping main docs scannable
-- **Authority Hierarchy**: ADRs > Gherkin > Vision > Specifications > Reference > Implementation
+- **Authority Hierarchy**: ADRs > Vision > Specifications > Reference > Implementation; behavioral examples (e.g., Gherkin) are descriptive and do not override higher layers unless enforced by automated tests
 
 ## Consequences
 
