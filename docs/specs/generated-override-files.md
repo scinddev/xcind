@@ -1,0 +1,166 @@
+# Generated Override Files
+
+> Adapted from the [Scind specification](https://github.com/scinddev/scind). Xcind uses a hook-based generation pipeline writing to `.xcind/generated/`.
+
+---
+
+## Overview
+
+Xcind generates Docker Compose override files via hooks that extend application compose files without modifying them. This implements the pure overlay design (see [ADR-0003](../decisions/0003-pure-overlay-design.md)).
+
+## Generated File Location
+
+**Location**: `{app_root}/.xcind/generated/{sha}/`
+
+Each hook writes a separate compose file:
+
+| Hook | Generated File | Purpose |
+|------|---------------|---------|
+| `xcind-naming-hook` | `compose.naming.yaml` | Sets Docker Compose project `name:` |
+| `xcind-app-env-hook` | `compose.app-env.yaml` | Injects `XCIND_APP_ENV_FILES` via `env_file:` |
+| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, context labels |
+| `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases |
+
+These files are gitignored and regenerated on cache miss.
+
+---
+
+## Caching
+
+Hook output is cached using a SHA-256 hash computed from:
+
+- Compose file paths and content
+- App `.xcind.sh` content
+- Workspace `.xcind.sh` content (if in workspace mode)
+- Global proxy config (if present)
+
+On subsequent runs with the same hash, xcind replays the cached hook output (the `-f` flags) instead of re-running hooks.
+
+---
+
+## Generated Content Examples
+
+### `compose.naming.yaml`
+
+Sets the Docker Compose project name to prevent container/volume/network collisions:
+
+```yaml
+name: dev-frontend
+```
+
+In workspaceless mode:
+
+```yaml
+name: frontend
+```
+
+### `compose.app-env.yaml`
+
+Generated when `XCIND_APP_ENV_FILES` is configured. Injects environment files into all compose services via `env_file:`:
+
+```yaml
+services:
+
+  web:
+    env_file:
+      - /Users/beau/dev/frontend/.env
+      - /Users/beau/dev/frontend/.env.local
+
+  worker:
+    env_file:
+      - /Users/beau/dev/frontend/.env
+      - /Users/beau/dev/frontend/.env.local
+```
+
+Paths are resolved to absolute paths. Only files that exist on disk are included.
+
+### `compose.proxy.yaml`
+
+Generated when `XCIND_PROXY_EXPORTS` is configured. Contains Traefik routing labels, network attachments, and context labels:
+
+```yaml
+services:
+
+  web:
+    networks:
+      default: {}
+      xcind-proxy: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=xcind-proxy"
+      - "traefik.http.routers.dev-frontend-web-http.rule=Host(`dev-frontend-web.localhost`)"
+      - "traefik.http.routers.dev-frontend-web-http.entrypoints=web"
+      - "traefik.http.routers.dev-frontend-web-http.service=dev-frontend-web-http"
+      - "traefik.http.services.dev-frontend-web-http.loadbalancer.server.port=80"
+      - "traefik.http.routers.dev-frontend-http.rule=Host(`dev-frontend.localhost`)"
+      - "traefik.http.routers.dev-frontend-http.entrypoints=web"
+      - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
+      - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
+      - "xcind.app.name=frontend"
+      - "xcind.app.path=/Users/beau/dev/frontend"
+      - "xcind.workspace.name=dev"
+      - "xcind.workspace.path=/Users/beau/dev"
+      - "xcind.export.web.host=dev-frontend-web.localhost"
+      - "xcind.export.web.url=http://dev-frontend-web.localhost"
+      - "xcind.apex.host=dev-frontend.localhost"
+      - "xcind.apex.url=http://dev-frontend.localhost"
+
+networks:
+  xcind-proxy:
+    external: true
+```
+
+For a complete unabridged example, see the [Generated Override Files Appendix](./appendices/generated-override-files/).
+
+### `compose.workspace.yaml`
+
+Generated only in workspace mode. Connects all services to the workspace internal network with aliases:
+
+```yaml
+services:
+
+  web:
+    networks:
+      default: {}
+      dev-internal:
+        aliases:
+          - frontend-web
+
+  db:
+    networks:
+      default: {}
+      dev-internal:
+        aliases:
+          - frontend-db
+
+networks:
+  dev-internal:
+    external: true
+```
+
+---
+
+## Merge Order
+
+Docker Compose files are merged by `docker compose` in this order:
+
+```
+docker compose \
+  -f compose.yaml \
+  [-f compose.override.yaml] \
+  -f .xcind/generated/{sha}/compose.naming.yaml \
+  -f .xcind/generated/{sha}/compose.app-env.yaml \
+  -f .xcind/generated/{sha}/compose.proxy.yaml \
+  -f .xcind/generated/{sha}/compose.workspace.yaml
+```
+
+Application compose files come first (resolved by xcind from `XCIND_COMPOSE_FILES`), followed by hook-generated files in registration order.
+
+---
+
+## Related Documents
+
+- [ADR-0003: Pure Overlay Design](../decisions/0003-pure-overlay-design.md) — Design rationale
+- [Docker Labels](./docker-labels.md) — Label conventions in generated files
+- [Naming Conventions](./naming-conventions.md) — Naming patterns used in generation
+- [Architecture Overview](../architecture/overview.md) — Caching and hook pipeline
