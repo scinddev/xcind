@@ -238,7 +238,7 @@ files)
 dump-ide-docker-compose-config)
   _out_dir="${IDE_CONFIG_DIR:-$XCIND_APP_ROOT}"
   mkdir -p "$_out_dir"
-  if xcind-compose config > "$_out_dir/compose.ide.yaml.tmp" 2>/dev/null; then
+  if xcind-compose config >"$_out_dir/compose.ide.yaml.tmp" 2>/dev/null; then
     mv "$_out_dir/compose.ide.yaml.tmp" "$_out_dir/compose.ide.yaml"
     exit 0
   else

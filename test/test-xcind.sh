@@ -1255,7 +1255,7 @@ COMPEOF
 
   # 1. --dump-ide-docker-compose-config with --xcind-ide-config-dir generates the file
   IDE_OUT_DIR=$(mktemp -d)
-  ide_result=$(cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  (cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --dump-ide-docker-compose-config --xcind-ide-config-dir "$IDE_OUT_DIR" 2>&1) && ide_rc=0 || ide_rc=$?
   assert_eq "dump-ide-docker-compose-config: exit code 0" "0" "$ide_rc"
   assert_eq "dump-ide-docker-compose-config: compose.ide.yaml exists" "true" \
@@ -1265,7 +1265,7 @@ COMPEOF
   rm -rf "$IDE_OUT_DIR"
 
   # 2. --dump-ide-docker-compose-config defaults to app root without --xcind-ide-config-dir
-  ide_result=$(cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  (cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --dump-ide-docker-compose-config 2>&1) && ide_rc=0 || ide_rc=$?
   assert_eq "dump-ide-docker-compose-config default dir: exit code 0" "0" "$ide_rc"
   assert_eq "dump-ide-docker-compose-config default dir: compose.ide.yaml in app root" "true" \
@@ -1279,7 +1279,7 @@ XCIND_COMPOSE_FILES=(nonexistent.yaml)
 XCIND_COMPOSE_ENV_FILES=()
 XCINDEOF
   IDE_BAD_OUT=$(mktemp -d)
-  ide_bad_result=$(cd "$IDE_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  (cd "$IDE_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --dump-ide-docker-compose-config --xcind-ide-config-dir "$IDE_BAD_OUT" 2>&1) && ide_bad_rc=0 || ide_bad_rc=$?
   assert_eq "dump-ide-docker-compose-config bad config: non-zero exit" "true" \
     "$([ "$ide_bad_rc" -ne 0 ] && echo true || echo false)"
