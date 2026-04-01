@@ -31,3 +31,13 @@ to register the file in all manifests.
 Run `make check` and confirm it passes before marking the task complete.
 
 **This is required for every code change.**
+
+## If: Lint or Format Errors
+
+Run `make format` to auto-fix, then re-run `make check`.
+
+## Before Committing
+
+Always follow the pre-commit check procedure in
+`.claude/skills/pre-commit-check/SKILL.md`. Do not commit until `make check`
+passes with zero errors.
