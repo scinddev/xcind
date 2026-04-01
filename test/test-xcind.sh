@@ -1237,6 +1237,71 @@ fi
 rm -rf "$CDEPS_STUBS" "$CDEPS_EMPTY"
 
 # ======================================================================
+echo ""
+echo "=== Test: --dump-ide-docker-compose-config ==="
+
+if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+
+  IDE_TEST_APP=$(mktemp -d)
+  cat >"$IDE_TEST_APP/.xcind.sh" <<'XCINDEOF'
+XCIND_COMPOSE_FILES=(compose.yaml)
+XCIND_COMPOSE_ENV_FILES=()
+XCINDEOF
+  cat >"$IDE_TEST_APP/compose.yaml" <<'COMPEOF'
+services:
+  app:
+    image: alpine
+COMPEOF
+
+  # 1. --dump-ide-docker-compose-config with --xcind-ide-config-dir generates the file
+  IDE_OUT_DIR=$(mktemp -d)
+  ide_result=$(cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --dump-ide-docker-compose-config --xcind-ide-config-dir "$IDE_OUT_DIR" 2>&1) && ide_rc=0 || ide_rc=$?
+  assert_eq "dump-ide-docker-compose-config: exit code 0" "0" "$ide_rc"
+  assert_eq "dump-ide-docker-compose-config: compose.ide.yaml exists" "true" \
+    "$([ -f "$IDE_OUT_DIR/compose.ide.yaml" ] && echo true || echo false)"
+  ide_yaml_content=$(cat "$IDE_OUT_DIR/compose.ide.yaml" 2>/dev/null || true)
+  assert_contains "dump-ide-docker-compose-config: contains services key" "services:" "$ide_yaml_content"
+  rm -rf "$IDE_OUT_DIR"
+
+  # 2. --dump-ide-docker-compose-config defaults to app root without --xcind-ide-config-dir
+  ide_result=$(cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --dump-ide-docker-compose-config 2>&1) && ide_rc=0 || ide_rc=$?
+  assert_eq "dump-ide-docker-compose-config default dir: exit code 0" "0" "$ide_rc"
+  assert_eq "dump-ide-docker-compose-config default dir: compose.ide.yaml in app root" "true" \
+    "$([ -f "$IDE_TEST_APP/compose.ide.yaml" ] && echo true || echo false)"
+  rm -f "$IDE_TEST_APP/compose.ide.yaml"
+
+  # 3. --dump-ide-docker-compose-config fails gracefully on bad config
+  IDE_BAD_APP=$(mktemp -d)
+  cat >"$IDE_BAD_APP/.xcind.sh" <<'XCINDEOF'
+XCIND_COMPOSE_FILES=(nonexistent.yaml)
+XCIND_COMPOSE_ENV_FILES=()
+XCINDEOF
+  IDE_BAD_OUT=$(mktemp -d)
+  ide_bad_result=$(cd "$IDE_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --dump-ide-docker-compose-config --xcind-ide-config-dir "$IDE_BAD_OUT" 2>&1) && ide_bad_rc=0 || ide_bad_rc=$?
+  assert_eq "dump-ide-docker-compose-config bad config: non-zero exit" "true" \
+    "$([ "$ide_bad_rc" -ne 0 ] && echo true || echo false)"
+  assert_eq "dump-ide-docker-compose-config bad config: no compose.ide.yaml left behind" "false" \
+    "$([ -f "$IDE_BAD_OUT/compose.ide.yaml" ] && echo true || echo false)"
+  rm -rf "$IDE_BAD_APP" "$IDE_BAD_OUT"
+
+  rm -rf "$IDE_TEST_APP"
+
+else
+  echo "  (skipped: docker compose not available)"
+fi
+
+# 4. --xcind-ide-config-dir without a matching mode flag errors (no docker needed)
+ide_nomode_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --xcind-ide-config-dir /some/path 2>&1) && ide_nomode_rc=0 || ide_nomode_rc=$?
+assert_eq "--xcind-ide-config-dir without mode: non-zero exit" "true" \
+  "$([ "$ide_nomode_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "--xcind-ide-config-dir without mode: error message" \
+  "--xcind-ide-config-dir requires --dump-ide-docker-compose-config" "$ide_nomode_result"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 
