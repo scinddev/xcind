@@ -1073,6 +1073,11 @@ __xcind-run-hooks() {
 __xcind-run-execute-hooks() {
   local app_root="$1"
 
+  # Guard: empty array is unbound under set -u in Bash 3.2
+  if [[ ${#XCIND_HOOKS_EXECUTE[@]} -eq 0 ]]; then
+    return 0
+  fi
+
   local hook_name
   for hook_name in "${XCIND_HOOKS_EXECUTE[@]}"; do
     "$hook_name" "$app_root"
