@@ -256,8 +256,66 @@ echo ""
 echo "=== Test: xcind-proxy no subcommand ==="
 
 result=$("$XCIND_ROOT/bin/xcind-proxy" 2>&1) && status=0 || status=$?
-assert_eq "no subcommand exits 1" "1" "$status"
-assert_contains "no subcommand error message" "No subcommand" "$result"
+assert_eq "no subcommand exits 0" "0" "$status"
+assert_contains "no subcommand shows help" "Usage" "$result"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy status --json (not initialized) ==="
+
+MOCK_HOME_JSON=$(mktemp -d)
+REAL_HOME_JSON="$HOME"
+export HOME="$MOCK_HOME_JSON"
+
+json_result=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1) && json_status=0 || json_status=$?
+assert_eq "status --json not initialized exits 0" "0" "$json_status"
+assert_contains "json has initialized false" '"initialized":false' "$json_result"
+assert_contains "json has not_initialized status" '"status":"not_initialized"' "$json_result"
+
+export HOME="$REAL_HOME_JSON"
+rm -rf "$MOCK_HOME_JSON"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy status --json (initialized) ==="
+
+MOCK_HOME_JSON2=$(mktemp -d)
+REAL_HOME_JSON2="$HOME"
+export HOME="$MOCK_HOME_JSON2"
+
+export PATH="$MOCK_HOME_JSON2/bin:$PATH"
+mkdir -p "$MOCK_HOME_JSON2/bin"
+cat >"$MOCK_HOME_JSON2/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker — simulate running container for ps, accept network inspect
+case "$1" in
+  compose) echo '{"Name":"traefik"}' ;;
+  network) exit 0 ;;
+  *) exit 0 ;;
+esac
+MOCKEOF
+chmod +x "$MOCK_HOME_JSON2/bin/docker"
+
+"$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
+
+json_result2=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1) && json_status2=0 || json_status2=$?
+assert_eq "status --json initialized exits 0" "0" "$json_status2"
+assert_contains "json has initialized true" '"initialized":true' "$json_result2"
+assert_contains "json has running status" '"status":"running"' "$json_result2"
+assert_contains "json has config" '"config":"current"' "$json_result2"
+assert_contains "json has image" '"image":"traefik:v3"' "$json_result2"
+assert_contains "json has http_port" '"http_port":80' "$json_result2"
+assert_contains "json has network_name" '"network_name":"xcind-proxy"' "$json_result2"
+assert_contains "json has network_exists" '"network_exists":true' "$json_result2"
+
+# Also verify text mode still works
+text_result=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1) && text_status=0 || text_status=$?
+assert_eq "status text exits 0" "0" "$text_status"
+assert_contains "text has Status: running" "Status: running" "$text_result"
+assert_contains "text has Image:" "Image:" "$text_result"
+
+export HOME="$REAL_HOME_JSON2"
+rm -rf "$MOCK_HOME_JSON2"
 
 # ======================================================================
 echo ""
