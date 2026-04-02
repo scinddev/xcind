@@ -94,9 +94,9 @@ A mechanism that allows commands (like `xcind-proxy`) to participate in the conf
 6. Returns exit code 0 on success, non-zero to abort.
 7. **Only called on cache miss** — stdout is persisted to `$XCIND_GENERATED_DIR/.hook-output-<hook_name>` and replayed on subsequent cache-hit runs.
 
-**Registration:** The built-in hooks (`xcind-proxy-hook` and `xcind-workspace-hook`) are auto-sourced and registered by default in `xcind-lib.bash`. Custom hooks can be added via `XCIND_HOOKS_GENERATE` in `.xcind.sh`. Setting the array to `()` disables all hook processing.
+**Registration:** The built-in hooks (`xcind-proxy-hook` and `xcind-workspace-hook`) are auto-sourced and registered by default in `xcind-lib.bash`. Custom hooks can be added via `XCIND_HOOKS_GENERATE` in `.xcind.sh`. Runtime precondition hooks are registered separately via `XCIND_HOOKS_EXECUTE`. Setting either array to `()` disables only that phase; set both to `()` to disable hooks entirely.
 
-xcind's pipeline invokes hooks in order after resolution completes. Hooks are independent — they can run in any order and produce separate overlay files. Docker Compose merges all overlays at invocation time.
+After resolution completes, xcind processes hooks in two phases: it generates and caches compose overlay outputs for the hooks listed in `XCIND_HOOKS_GENERATE` (on cache miss, replaying cached output on cache hit), then runs all hooks listed in `XCIND_HOOKS_EXECUTE` on every invocation (never cached). Hooks are independent — they can run in any order and produce separate overlay files. Docker Compose merges all overlays at invocation time.
 
 #### Hook execution flow
 
