@@ -327,7 +327,7 @@ application services by hostname.
 ### Setup
 
 ```bash
-xcind-proxy init    # Create proxy infrastructure (~/.config/xcind/proxy/)
+xcind-proxy init    # Create proxy infrastructure
 xcind-proxy up      # Start the shared Traefik proxy
 ```
 
@@ -363,7 +363,8 @@ When the port is omitted (`app`), it is inferred from the service's port mapping
 
 ### Global proxy configuration
 
-`xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` with these defaults:
+`xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` (user-editable) and
+generated files in `~/.local/state/xcind/proxy/`. Config defaults:
 
 ```bash
 XCIND_PROXY_DOMAIN="localhost"         # Domain suffix for hostnames
@@ -373,9 +374,8 @@ XCIND_PROXY_DASHBOARD="false"          # Enable Traefik dashboard
 XCIND_PROXY_DASHBOARD_PORT="8080"      # Dashboard port (if enabled)
 ```
 
-Edit this file to customize the proxy. Run `xcind-proxy init` again to
-regenerate the Docker Compose and Traefik files (the config file is never
-overwritten).
+Edit this file to customize the proxy. Run `xcind-proxy up` to regenerate
+and apply changes (the config file is never overwritten).
 
 ## Commands
 
@@ -410,7 +410,7 @@ xcind-config --version                                 # Show version
 Manages the shared Traefik reverse proxy infrastructure.
 
 ```bash
-xcind-proxy init      # Create proxy files in ~/.config/xcind/proxy/
+xcind-proxy init      # Create proxy config and generated files
 xcind-proxy up        # Start the proxy
 xcind-proxy down      # Stop the proxy
 xcind-proxy status    # Show proxy state (running/stopped, port, network)

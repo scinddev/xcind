@@ -39,7 +39,8 @@ fi
 
 __xcind-proxy-init() {
   __xcind-proxy-ensure-init
-  echo "Proxy infrastructure initialized at $XCIND_PROXY_DIR"
+  echo "Proxy config at $XCIND_PROXY_CONFIG_DIR"
+  echo "Generated files at $XCIND_PROXY_STATE_DIR"
 }
 
 __xcind-proxy-up() {
@@ -52,22 +53,33 @@ __xcind-proxy-up() {
     # Tear down existing containers so the network can be recreated
     docker compose -f "$XCIND_PROXY_COMPOSE" down 2>/dev/null || true
     docker network rm "$XCIND_PROXY_NETWORK" 2>/dev/null || true
-    # Force re-init to regenerate files and network
-    __xcind-proxy-ensure-init
+  fi
+
+  # Always regenerate files from current config.sh
+  __xcind-proxy-ensure-init
+
+  if [ "$force" = true ]; then
     docker compose -f "$XCIND_PROXY_COMPOSE" up -d || return $?
   else
-    # Use ensure-running which handles init + network + start
+    # Start if not already running
     XCIND_PROXY_AUTO_START=1 __xcind-proxy-ensure-running
   fi
 }
 
 __xcind-proxy-down() {
-  if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
+  local compose_file="$XCIND_PROXY_COMPOSE"
+
+  # Fallback: check old location for pre-migration installs
+  if [ ! -f "$compose_file" ] && [ -f "$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml" ]; then
+    compose_file="$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml"
+  fi
+
+  if [ ! -f "$compose_file" ]; then
     echo "Proxy not initialized. Run 'xcind-proxy init' first." >&2
     exit 1
   fi
 
-  docker compose -f "$XCIND_PROXY_COMPOSE" down
+  docker compose -f "$compose_file" down
 }
 
 __xcind-proxy-status() {
@@ -79,7 +91,7 @@ __xcind-proxy-status() {
 
   # Source config for display
   # shellcheck disable=SC1091
-  source "$XCIND_PROXY_DIR/config.sh"
+  source "$XCIND_PROXY_CONFIG_DIR/config.sh"
 
   # Check if running
   local running
@@ -89,6 +101,14 @@ __xcind-proxy-status() {
     echo "Status: running"
   else
     echo "Status: stopped"
+  fi
+
+  # Show config staleness
+  if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f "$XCIND_PROXY_COMPOSE" ]] &&
+    [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt "$XCIND_PROXY_COMPOSE" ]]; then
+    echo "Config: stale (run 'xcind-proxy up' to regenerate)"
+  else
+    echo "Config: current"
   fi
 
   echo "Image: ${XCIND_PROXY_IMAGE:-traefik:v3}"
@@ -132,7 +152,7 @@ logs)
   echo "Usage: xcind-proxy <subcommand>"
   echo ""
   echo "Subcommands:"
-  echo "  init          Create proxy infrastructure files in ~/.config/xcind/proxy/"
+  echo "  init          Create proxy infrastructure files"
   echo "  up [--force]  Start the shared Traefik proxy (--force recreates network)"
   echo "  down          Stop the shared Traefik proxy"
   echo "  status        Show proxy state (running/stopped, image, port, network)"

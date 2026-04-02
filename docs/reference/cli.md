@@ -129,7 +129,7 @@ Manages the shared Traefik reverse proxy infrastructure.
 
 | Subcommand | Description |
 |------------|-------------|
-| `init` | Create proxy infrastructure files at `~/.config/xcind/proxy/` |
+| `init` | Create proxy infrastructure files |
 | `up [--force]` | Start the shared Traefik proxy (`--force` recreates the network) |
 | `down` | Stop the shared Traefik proxy |
 | `status` | Show proxy state (running/stopped, image, port, network) |
@@ -145,7 +145,7 @@ Manages the shared Traefik reverse proxy infrastructure.
 ### Usage
 
 ```bash
-xcind-proxy init          # Create proxy files in ~/.config/xcind/proxy/
+xcind-proxy init          # Create proxy config and generated files
 xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy
@@ -163,13 +163,20 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 
 ### Generated Files
 
-`xcind-proxy init` creates the following at `~/.config/xcind/proxy/`:
+`xcind-proxy init` creates files in two locations:
+
+**Config** (`~/.config/xcind/proxy/`):
 
 | File | Purpose | Overwritten on re-init? |
 |------|---------|------------------------|
 | `config.sh` | User-editable proxy configuration | No (never overwritten) |
-| `docker-compose.yaml` | Traefik service definition | Yes |
-| `traefik.yaml` | Traefik static configuration | Yes |
+
+**State** (`~/.local/state/xcind/proxy/`):
+
+| File | Purpose | Overwritten on re-init? |
+|------|---------|------------------------|
+| `docker-compose.yaml` | Traefik service definition | Yes (always regenerated) |
+| `traefik.yaml` | Traefik static configuration | Yes (always regenerated) |
 
 ---
 

@@ -79,35 +79,40 @@ chmod +x "$MOCK_HOME/bin/docker"
 
 "$XCIND_ROOT/bin/xcind-proxy" init
 
-PROXY_DIR="${MOCK_HOME}/.config/xcind/proxy"
+PROXY_CONFIG_DIR="${MOCK_HOME}/.config/xcind/proxy"
+PROXY_STATE_DIR="${MOCK_HOME}/.local/state/xcind/proxy"
 
-assert_file_exists "config.sh created" "$PROXY_DIR/config.sh"
-assert_file_exists "docker-compose.yaml created" "$PROXY_DIR/docker-compose.yaml"
-assert_file_exists "traefik.yaml created" "$PROXY_DIR/traefik.yaml"
+assert_file_exists "config.sh created" "$PROXY_CONFIG_DIR/config.sh"
+assert_file_exists "docker-compose.yaml created" "$PROXY_STATE_DIR/docker-compose.yaml"
+assert_file_exists "traefik.yaml created" "$PROXY_STATE_DIR/traefik.yaml"
+
+# Verify generated files are NOT in config dir (migration cleanup)
+assert_eq "no docker-compose.yaml in config dir" "false" "$([ -f "$PROXY_CONFIG_DIR/docker-compose.yaml" ] && echo true || echo false)"
+assert_eq "no traefik.yaml in config dir" "false" "$([ -f "$PROXY_CONFIG_DIR/traefik.yaml" ] && echo true || echo false)"
 
 # Verify config.sh contents
-config_content=$(<"$PROXY_DIR/config.sh")
+config_content=$(<"$PROXY_CONFIG_DIR/config.sh")
 assert_contains "config has XCIND_PROXY_DOMAIN" "XCIND_PROXY_DOMAIN" "$config_content"
 assert_contains "config has XCIND_PROXY_IMAGE" "XCIND_PROXY_IMAGE" "$config_content"
 assert_contains "config has XCIND_PROXY_HTTP_PORT" "XCIND_PROXY_HTTP_PORT" "$config_content"
 
 # Verify docker-compose.yaml contents
-compose_content=$(<"$PROXY_DIR/docker-compose.yaml")
+compose_content=$(<"$PROXY_STATE_DIR/docker-compose.yaml")
 assert_contains "compose has traefik service" "traefik:" "$compose_content"
 assert_contains "compose has xcind-proxy network" "xcind-proxy:" "$compose_content"
 assert_contains "compose has external network" "external: true" "$compose_content"
 assert_contains "compose has docker socket volume" "/var/run/docker.sock" "$compose_content"
 
 # Verify traefik.yaml contents
-traefik_content=$(<"$PROXY_DIR/traefik.yaml")
+traefik_content=$(<"$PROXY_STATE_DIR/traefik.yaml")
 assert_contains "traefik has web entrypoint" "web:" "$traefik_content"
 assert_contains "traefik has docker provider" "docker:" "$traefik_content"
 assert_contains "traefik has exposedByDefault false" "exposedByDefault: false" "$traefik_content"
 
 # Test idempotency — config.sh should not be overwritten
-echo "# user customization" >>"$PROXY_DIR/config.sh"
+echo "# user customization" >>"$PROXY_CONFIG_DIR/config.sh"
 "$XCIND_ROOT/bin/xcind-proxy" init
-config_after=$(<"$PROXY_DIR/config.sh")
+config_after=$(<"$PROXY_CONFIG_DIR/config.sh")
 assert_contains "config.sh preserved on re-init" "user customization" "$config_after"
 
 export HOME="$REAL_HOME"
@@ -121,8 +126,10 @@ MOCK_HOME2=$(mktemp -d)
 REAL_HOME2="$HOME"
 export HOME="$MOCK_HOME2"
 # Re-derive proxy paths from new HOME
-XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
-XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
 
 # Track which docker commands were called
 DOCKER_CALLS_FILE="$MOCK_HOME2/docker_calls.log"
@@ -151,8 +158,8 @@ docker() {
 : >"$DOCKER_CALLS_FILE"
 __xcind-proxy-ensure-running 2>/dev/null
 assert_file_exists "ensure-running: config.sh created" "$MOCK_HOME2/.config/xcind/proxy/config.sh"
-assert_file_exists "ensure-running: docker-compose.yaml created" "$MOCK_HOME2/.config/xcind/proxy/docker-compose.yaml"
-assert_file_exists "ensure-running: traefik.yaml created" "$MOCK_HOME2/.config/xcind/proxy/traefik.yaml"
+assert_file_exists "ensure-running: docker-compose.yaml created" "$MOCK_HOME2/.local/state/xcind/proxy/docker-compose.yaml"
+assert_file_exists "ensure-running: traefik.yaml created" "$MOCK_HOME2/.local/state/xcind/proxy/traefik.yaml"
 docker_calls=$(<"$DOCKER_CALLS_FILE")
 assert_contains "ensure-running: called docker ps" "ps --filter" "$docker_calls"
 assert_contains "ensure-running: called docker compose up" "compose" "$docker_calls"
@@ -191,10 +198,32 @@ docker_calls=$(<"$DOCKER_CALLS_FILE")
 assert_not_contains "auto-start=0: did not call docker ps" "ps --filter" "$docker_calls"
 assert_not_contains "auto-start=0: did not call compose up" "compose" "$docker_calls"
 
+# Test: staleness warning when config.sh is newer than generated files
+# shellcheck disable=SC2317
+docker() {
+  echo "$*" >>"$DOCKER_CALLS_FILE"
+  if [ "${1:-}" = "ps" ]; then
+    echo "abc123def456" # simulate running container
+    return 0
+  fi
+  if [ "${1:-}" = "network" ]; then
+    return 0
+  fi
+  return 0
+}
+: >"$DOCKER_CALLS_FILE"
+# Touch config.sh to be newer than docker-compose.yaml
+sleep 1
+touch "$XCIND_PROXY_CONFIG_DIR/config.sh"
+staleness_stderr=$(__xcind-proxy-ensure-running 2>&1 1>/dev/null)
+assert_contains "staleness: warns when config.sh is newer" "config.sh changed since last init" "$staleness_stderr"
+
 unset -f docker
 export HOME="$REAL_HOME2"
-XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
-XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
 rm -rf "$MOCK_HOME2"
 
 # ======================================================================
@@ -270,8 +299,10 @@ if command -v yq &>/dev/null; then
   # Sandbox HOME so __xcind-proxy-ensure-init never writes to the real home dir
   _orig_HOME="$HOME"
   HOME=$(mktemp -d)
-  export XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
-  export XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+  export XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+  export XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
+  export XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+  export XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
 
   # Set up pipeline env vars
   export XCIND_APP="myapp"
@@ -579,7 +610,7 @@ YAML
   unset -f docker
   rm -rf "$HOOK_APP" "$HOME"
   HOME="$_orig_HOME"
-  unset XCIND_PROXY_DIR XCIND_PROXY_COMPOSE _orig_HOME
+  unset XCIND_PROXY_CONFIG_DIR XCIND_PROXY_STATE_DIR XCIND_PROXY_DIR XCIND_PROXY_COMPOSE _orig_HOME
 else
   echo "  (skipped proxy hook tests: yq not installed)"
 fi

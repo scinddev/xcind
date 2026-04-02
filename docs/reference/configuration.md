@@ -253,7 +253,7 @@ With `APP_ENV=dev`, xcind checks for `compose.dev.yaml` and `compose.dev.overrid
 
 ## Global Proxy Configuration
 
-`xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` with these defaults:
+`xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` (generated files in `~/.local/state/xcind/proxy/`) with these defaults:
 
 | Variable | Default | Description |
 |----------|---------|-------------|

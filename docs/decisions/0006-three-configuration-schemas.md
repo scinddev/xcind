@@ -11,7 +11,7 @@ Configuration could be in one monolithic file or separated by concern.
 ## Decision
 
 Three configuration levels that cascade:
-- **Proxy** (`~/.config/xcind/proxy/config.sh`): Global/per-user settings (domain, Traefik image, ports)
+- **Proxy** (`~/.config/xcind/proxy/config.sh`, generated files in `~/.local/state/xcind/proxy/`): Global/per-user settings (domain, Traefik image, ports)
 - **Workspace** (workspace `.xcind.sh` with `XCIND_IS_WORKSPACE=1`): Per-workspace settings (domain override, hooks)
 - **Application** (app `.xcind.sh`): Per-application settings (compose files, env files, proxy exports)
 

@@ -42,17 +42,23 @@ See [Docker Labels — Traefik Routing Labels](./docker-labels.md#traefik-routin
 
 ### `xcind-proxy init`
 
-Creates proxy infrastructure at `~/.config/xcind/proxy/`:
+Creates proxy infrastructure across two directories:
+
+- **Config** (`~/.config/xcind/proxy/`): user-editable `config.sh`
+- **State** (`~/.local/state/xcind/proxy/`): generated `docker-compose.yaml` and `traefik.yaml`
+
+Steps:
 
 1. Creates `config.sh` (only if it doesn't exist — never overwrites user config)
 2. Sources `config.sh` for variable expansion
-3. Generates `docker-compose.yaml` (always regenerated)
-4. Generates `traefik.yaml` (always regenerated)
-5. Creates `xcind-proxy` Docker network if it doesn't exist
+3. Generates `docker-compose.yaml` (always regenerated) in state dir
+4. Generates `traefik.yaml` (always regenerated) in state dir
+5. Removes any stale generated files from the config dir (migration cleanup)
+6. Creates `xcind-proxy` Docker network if it doesn't exist
 
 ### `xcind-proxy up`
 
-Starts the Traefik container. Uses `__xcind-proxy-ensure-running` which handles init, network creation, and container start.
+Always regenerates generated files from current `config.sh`, then starts the Traefik container via `__xcind-proxy-ensure-running`.
 
 With `--force`: tears down existing containers, removes the network, re-initializes, and starts fresh.
 
