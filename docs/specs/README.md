@@ -9,6 +9,7 @@ Detailed behavioral specifications for Xcind features. Adapted from the [Scind s
 - [Naming Conventions](./naming-conventions.md) — Hostname, alias, router, and variable naming patterns
 - [Proxy Infrastructure](./proxy-infrastructure.md) — Traefik reverse proxy architecture and configuration
 - [Docker Labels](./docker-labels.md) — Label conventions for service discovery and routing
+- [Hook Lifecycle](./hook-lifecycle.md) — Pipeline hook phases (GENERATE, EXECUTE, and future phases)
 - [Generated Override Files](./generated-override-files.md) — Hook-generated compose overlay files
 - [Port Types](./port-types.md) — Proxied vs. direct port exposure
 

@@ -92,7 +92,7 @@ For each configured file, Xcind checks for an `.override` variant. This enables 
 
 ### Hooks
 
-Post-resolution hooks generate additional compose files dynamically. Built-in hooks handle proxy labels (`xcind-proxy-hook`) and workspace networking (`xcind-workspace-hook`). Custom hooks can be added via `XCIND_HOOKS_POST_RESOLVE_GENERATE`.
+The pipeline exposes hook phases for extending behavior. GENERATE hooks produce compose overlay files (cached by SHA); EXECUTE hooks ensure runtime preconditions before `docker compose` runs. Built-in hooks handle naming, app env files, proxy labels, and workspace networking. Custom hooks can be added via `XCIND_HOOKS_GENERATE` and `XCIND_HOOKS_EXECUTE`. See [Hook Lifecycle](../specs/hook-lifecycle.md).
 
 ---
 

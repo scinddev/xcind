@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# xcind-proxy-lib.bash — Proxy hook and shared lifecycle functions
+# xcind-proxy-lib.bash — Proxy hooks and shared lifecycle functions
 #
-# Provides xcind-proxy-hook, a post-resolve-generate hook that generates
-# Traefik proxy configuration from XCIND_PROXY_EXPORTS declarations.
+# Provides two hooks:
+#   xcind-proxy-hook (GENERATE) — generates Traefik proxy configuration
+#   __xcind-proxy-execute-hook (EXECUTE) — ensures proxy is running
 #
-# Also provides __xcind-proxy-ensure-* functions used by both the hook
+# Also provides __xcind-proxy-ensure-* functions used by both the hooks
 # and the xcind-proxy CLI to manage proxy infrastructure.
 #
-# This file is auto-sourced by xcind-lib.bash. The hook is registered by
-# default — apps only need to declare XCIND_PROXY_EXPORTS to use it.
+# This file is auto-sourced by xcind-lib.bash. Hooks are registered by
+# default — apps only need to declare XCIND_PROXY_EXPORTS to use them.
 
 # --------------------------------------------------------------------------
 # Shared Constants
@@ -548,4 +549,21 @@ xcind-proxy-hook() {
 
   # Print compose flag to stdout
   echo "-f $XCIND_GENERATED_DIR/compose.proxy.yaml"
+}
+
+# --------------------------------------------------------------------------
+# Execute Hook
+# --------------------------------------------------------------------------
+
+# EXECUTE hook: ensure proxy is running before docker compose executes.
+# Runs on every invocation (not cached). Skips if XCIND_PROXY_EXPORTS is unset.
+__xcind-proxy-execute-hook() {
+  # shellcheck disable=SC2034  # app_root required by hook interface
+  local app_root="$1"
+
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  __xcind-proxy-ensure-running
 }

@@ -175,15 +175,21 @@ When xcind discovers an app inside this directory, it sources the workspace
 XCIND_IS_WORKSPACE=1
 ```
 
-### `XCIND_HOOKS_POST_RESOLVE_GENERATE`
+### `XCIND_HOOKS_GENERATE`
 
-Array of hook function names to execute after file resolution. Hooks can generate
-additional compose files dynamically. See [Hooks](#hooks).
+Array of hook function names that generate compose overlay files. Output is cached
+by SHA. See [Hooks](#hooks).
 
 **Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
 
-All four built-in hooks are registered automatically. Override to `()` in your
-`.xcind.sh` to disable all hook processing.
+### `XCIND_HOOKS_EXECUTE`
+
+Array of hook function names that ensure runtime preconditions before `docker compose`
+runs. These run on every invocation (not cached). Only applies to `xcind-compose`.
+
+**Default:** `("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")`
+
+Override either array to `()` in your `.xcind.sh` to disable the corresponding hooks.
 
 ### `XCIND_PROXY_EXPORTS`
 
@@ -333,7 +339,7 @@ sourcing or hook registration is needed.
 
 Hooks let xcind generate additional compose files dynamically after file
 resolution. The built-in proxy and workspace hooks are registered by default.
-Custom hooks can be added via `XCIND_HOOKS_POST_RESOLVE_GENERATE`.
+Custom hooks can be added via `XCIND_HOOKS_GENERATE` and `XCIND_HOOKS_EXECUTE`.
 
 ### How hooks work
 

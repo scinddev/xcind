@@ -160,6 +160,7 @@ Application compose files come first (resolved by xcind from `XCIND_COMPOSE_FILE
 
 ## Related Documents
 
+- [Hook Lifecycle](./hook-lifecycle.md) — Full hook phase specification (GENERATE, EXECUTE, and future phases)
 - [ADR-0003: Pure Overlay Design](../decisions/0003-pure-overlay-design.md) — Design rationale
 - [Docker Labels](./docker-labels.md) — Label conventions in generated files
 - [Naming Conventions](./naming-conventions.md) — Naming patterns used in generation

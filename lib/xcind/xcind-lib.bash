@@ -24,7 +24,8 @@ source "$__XCIND_LIB_DIR/xcind-proxy-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
 # --------------------------------------------------------------------------
 # Portable SHA-256 helper
@@ -995,7 +996,7 @@ __xcind-check-deps() {
 # Hook Execution
 # --------------------------------------------------------------------------
 
-# Run post-resolve-generate hooks with cache hit/miss logic.
+# Run GENERATE hooks with cache hit/miss logic.
 # On cache miss: runs hooks, persists output, appends to XCIND_DOCKER_COMPOSE_OPTS.
 # On cache hit: replays persisted output, validates referenced files.
 #
@@ -1005,9 +1006,9 @@ __xcind-run-hooks() {
   local app_root="$1"
 
   if [ -d "$XCIND_GENERATED_DIR" ]; then
-    # Cache hit — replay persisted hook output in XCIND_HOOKS_POST_RESOLVE_GENERATE order
+    # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order
     local hook_name
-    for hook_name in "${XCIND_HOOKS_POST_RESOLVE_GENERATE[@]}"; do
+    for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
       local hook_output_file="$XCIND_GENERATED_DIR/.hook-output-$hook_name"
       [ -f "$hook_output_file" ] || continue
 
@@ -1044,7 +1045,7 @@ __xcind-run-hooks() {
     mkdir -p "$XCIND_GENERATED_DIR"
 
     local hook_name
-    for hook_name in "${XCIND_HOOKS_POST_RESOLVE_GENERATE[@]}"; do
+    for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
       local output
       output=$("$hook_name" "$app_root") || {
         local rc=$?
@@ -1062,4 +1063,18 @@ __xcind-run-hooks() {
       fi
     done
   fi
+}
+
+# Run EXECUTE hooks unconditionally (no caching).
+# These ensure runtime preconditions before docker compose runs.
+#
+# Usage:
+#   __xcind-run-execute-hooks /path/to/app/root
+__xcind-run-execute-hooks() {
+  local app_root="$1"
+
+  local hook_name
+  for hook_name in "${XCIND_HOOKS_EXECUTE[@]}"; do
+    "$hook_name" "$app_root"
+  done
 }

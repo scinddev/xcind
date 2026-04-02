@@ -98,7 +98,7 @@ __xcind-resolve-url-templates
 __xcind-build-compose-opts "$app_root"
 
 # Steps 11-14: Only run when hooks are registered
-if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
+if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
   # Step 11: Compute SHA
   XCIND_SHA=$(__xcind-compute-sha "$app_root")
 
@@ -113,14 +113,14 @@ if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
   # Step 13: Populate cache
   __xcind-populate-cache "$app_root"
 
-  # Step 14: Run hooks (cache hit = replay, cache miss = execute)
+  # Step 14: Run GENERATE hooks (cache hit = replay, cache miss = execute)
   __xcind-run-hooks "$app_root"
 fi
 
-# Ensure proxy is running (independent of hook cache state)
-if [[ -n ${XCIND_PROXY_EXPORTS+set} && ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]]; then
-  __xcind-proxy-ensure-running
+# Step 15: Run EXECUTE hooks (always, not cached)
+if [[ ${#XCIND_HOOKS_EXECUTE[@]} -gt 0 ]]; then
+  __xcind-run-execute-hooks "$app_root"
 fi
 
-# Step 15: Execute docker compose with resolved options + passthrough args
+# Step 16: Execute docker compose with resolved options + passthrough args
 exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"

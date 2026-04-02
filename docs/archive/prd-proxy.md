@@ -94,7 +94,7 @@ A mechanism that allows commands (like `xcind-proxy`) to participate in the conf
 6. Returns exit code 0 on success, non-zero to abort.
 7. **Only called on cache miss** — stdout is persisted to `$XCIND_GENERATED_DIR/.hook-output-<hook_name>` and replayed on subsequent cache-hit runs.
 
-**Registration:** The built-in hooks (`xcind-proxy-hook` and `xcind-workspace-hook`) are auto-sourced and registered by default in `xcind-lib.bash`. Custom hooks can be added via `XCIND_HOOKS_POST_RESOLVE_GENERATE` in `.xcind.sh`. Setting the array to `()` disables all hook processing.
+**Registration:** The built-in hooks (`xcind-proxy-hook` and `xcind-workspace-hook`) are auto-sourced and registered by default in `xcind-lib.bash`. Custom hooks can be added via `XCIND_HOOKS_GENERATE` in `.xcind.sh`. Setting the array to `()` disables all hook processing.
 
 xcind's pipeline invokes hooks in order after resolution completes. Hooks are independent — they can run in any order and produce separate overlay files. Docker Compose merges all overlays at invocation time.
 
@@ -122,7 +122,7 @@ xcind's pipeline invokes hooks in order after resolution completes. Hooks are in
                                    and XCIND_WORKSPACE_SERVICE_TEMPLATE (see Section 4.7)
 7. __xcind-resolve-files         → resolved compose files & env files
 8. __xcind-build-compose-opts    → XCIND_DOCKER_COMPOSE_OPTS populated
-─── steps 9-12 only run if XCIND_HOOKS_POST_RESOLVE_GENERATE is non-empty ───
+─── steps 9-12 only run if XCIND_HOOKS_GENERATE is non-empty ───
 9. __xcind-compute-sha           → SHA from resolved file paths + content hashes
                                    (includes .xcind.sh and global config — see Section 6)
 10. export XCIND_SHA, XCIND_CACHE_DIR, XCIND_GENERATED_DIR
@@ -131,7 +131,7 @@ xcind's pipeline invokes hooks in order after resolution completes. Hooks are in
 12. ── post-resolve-generate hooks (CACHE MISS ONLY) ──
     if $XCIND_GENERATED_DIR does not exist:
       mkdir -p "$XCIND_GENERATED_DIR"
-      for each hook in XCIND_HOOKS_POST_RESOLVE_GENERATE:
+      for each hook in XCIND_HOOKS_GENERATE:
         output=$(hook "$app_root")
         echo "$output" > "$XCIND_GENERATED_DIR/.hook-output-$hook_name"
         append $output to XCIND_DOCKER_COMPOSE_OPTS
@@ -548,7 +548,7 @@ XCIND_APP="myapp"
 | `XCIND_WORKSPACE_SERVICE_TEMPLATE` | user | `{app}-{service}` | Template for workspace network aliases |
 | `XCIND_APP_URL_TEMPLATE` | computed | — | Resolved hostname template (from workspaceless or workspace variant) |
 | `XCIND_ROUTER_TEMPLATE` | computed | — | Resolved router name template (from workspaceless or workspace variant) |
-| `XCIND_HOOKS_POST_RESOLVE_GENERATE` | built-in | `("xcind-proxy-hook" "xcind-workspace-hook")` | Array of hook function/command names |
+| `XCIND_HOOKS_GENERATE` | built-in | `("xcind-proxy-hook" "xcind-workspace-hook")` | Array of hook function/command names |
 | `XCIND_SHA` | computed | — | SHA of resolved configuration inputs |
 | `XCIND_CACHE_DIR` | computed | — | Path to cache directory for current SHA |
 | `XCIND_GENERATED_DIR` | computed | — | Path to generated directory for current SHA |
