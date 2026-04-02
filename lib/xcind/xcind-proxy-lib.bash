@@ -154,7 +154,7 @@ __xcind-proxy-ensure-running() {
     # Warn if config.sh is newer than generated files (stale)
     if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f "$XCIND_PROXY_COMPOSE" ]] &&
       [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt "$XCIND_PROXY_COMPOSE" ]]; then
-      echo "xcind-proxy: config.sh changed since last init. Run 'xcind-proxy up' to apply." >&2
+      echo "xcind-proxy: config.sh changed since last xcind-proxy up. Run 'xcind-proxy up' to apply." >&2
     fi
     return 0
   fi
