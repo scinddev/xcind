@@ -100,9 +100,9 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
   },
   "appRoot": "/path/to/app",
   "configFiles": ["/path/to/workspace/.xcind.sh", "/path/to/app/.xcind.sh"],
-  "composeFiles": ["compose.yaml", "compose.override.yaml"],
-  "composeEnvFiles": [".env"],
-  "appEnvFiles": [".env.app"],
+  "composeFiles": ["/path/to/app/compose.yaml", "/path/to/app/compose.override.yaml"],
+  "composeEnvFiles": ["/path/to/app/.env"],
+  "appEnvFiles": ["/path/to/app/.env.app"],
   "bakeFiles": [],
   "tools": {
     "php": { "service": "app", "use": "exec" },
