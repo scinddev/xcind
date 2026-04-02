@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-02
+
+### Added
+
+- Refactor xcind-config CLI interface (#25) by @simensen in [#25](https://github.com/scinddev/xcind/pull/25)
+- docs: Add layered documentation system (LDS) (#24) by @simensen in [#24](https://github.com/scinddev/xcind/pull/24)
+- docs: Sync documentation with implementation audit by @simensen
+- Fix bugs and inconsistencies from code review (#29) by @simensen in [#29](https://github.com/scinddev/xcind/pull/29)
+- Add shell completion support for all xcind commands (#28) by @simensen in [#28](https://github.com/scinddev/xcind/pull/28)
+
+### Changed
+
+- docs: Sync reference docs with xcind-config implementation (#27) by @simensen in [#27](https://github.com/scinddev/xcind/pull/27)
+
+### Maintenance
+
+- Add IDE docker-compose config generation support (#22) by @simensen in [#22](https://github.com/scinddev/xcind/pull/22)
+- docs: Add pre-commit-check skill and update AGENTS.md (#23) by @simensen in [#23](https://github.com/scinddev/xcind/pull/23)
+- Add XCIND_TOOLS support for tool declarations and JSON output (#26) by @simensen in [#26](https://github.com/scinddev/xcind/pull/26)
+- Separate proxy config and state directories per XDG spec (#30) by @simensen in [#30](https://github.com/scinddev/xcind/pull/30)
+
+### Other
+
+- docs: Instructions for integrating with devcontainers by @simensen
 ## [0.2.0] - 2026-03-30
 
 ### Added
