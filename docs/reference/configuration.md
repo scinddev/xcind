@@ -94,7 +94,7 @@ Array of tool declarations for IDE and plugin integration. Each entry maps a too
 
 | Metadata Key | Default | Description |
 |--------------|---------|-------------|
-| `use` | `"exec"` | How the tool is invoked (e.g., `exec`) |
+| `use` | `"exec"` | How the tool is invoked: `exec` (default) attaches to an existing service container; `run` starts a new one-shot container. |
 | `path` | *(omitted)* | Path to the tool binary inside the container |
 
 First entry for a given tool name wins; subsequent duplicates are skipped.
