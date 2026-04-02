@@ -152,8 +152,8 @@ __xcind-proxy-ensure-running() {
   running=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
   if [ -n "$running" ]; then
     # Warn if config.sh is newer than generated files (stale)
-    if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f "$XCIND_PROXY_COMPOSE" ]] &&
-      [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt "$XCIND_PROXY_COMPOSE" ]]; then
+    if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f $XCIND_PROXY_COMPOSE ]] &&
+      [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt $XCIND_PROXY_COMPOSE ]]; then
       echo "xcind-proxy: config.sh changed; run 'xcind-proxy up' to apply." >&2
     fi
     return 0
@@ -388,9 +388,6 @@ xcind-proxy-hook() {
   if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
     return 0
   fi
-
-  # Ensure proxy is fully operational (init + network + Traefik)
-  __xcind-proxy-ensure-running
 
   # Default domain and source global config
   XCIND_PROXY_DOMAIN="${XCIND_PROXY_DOMAIN:-localhost}"

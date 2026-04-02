@@ -117,5 +117,10 @@ if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
   __xcind-run-hooks "$app_root"
 fi
 
+# Ensure proxy is running (independent of hook cache state)
+if [[ -n ${XCIND_PROXY_EXPORTS+set} && ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]]; then
+  __xcind-proxy-ensure-running
+fi
+
 # Step 15: Execute docker compose with resolved options + passthrough args
 exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
