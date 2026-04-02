@@ -38,3 +38,12 @@ XCIND_COMPOSE_FILES=(
 # XCIND_BAKE_FILES=(
 #     "docker-bake.hcl"
 # )
+
+# --- Tools ---
+# Declare which tools are available in which Compose service.
+# Format: name:service[;key=value…]
+# The first entry for a given tool name is the default.
+XCIND_TOOLS=(
+  "node:app"
+  "npm:app"
+)

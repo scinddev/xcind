@@ -36,6 +36,15 @@ Run `make check` and confirm it passes before marking the task complete.
 
 Run `make format` to auto-fix, then re-run `make check`.
 
+## If: shfmt or shellcheck Not Found
+
+The SessionStart hook (`.claude/hooks/session-start.sh`) normally installs these
+automatically. If they are still missing:
+
+```bash
+apt-get update -qq && apt-get install -y -qq shfmt shellcheck
+```
+
 ## Before Committing
 
 Always follow the pre-commit check procedure in
