@@ -835,7 +835,7 @@ __xcind-compute-sha() {
   done
 
   # Add global config if exists
-  local global_config="${HOME}/.config/xcind/proxy/config.sh"
+  local global_config="${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy/config.sh"
   if [ -f "$global_config" ]; then
     sha_input+=$(__xcind-sha256 "$global_config" | cut -d' ' -f1)
   fi

@@ -14,7 +14,7 @@ Xcind is stateless — all configuration is declarative (`.xcind.sh` files) and 
 | Workspace definition | `{workspace}/.xcind.sh` with `XCIND_IS_WORKSPACE=1` |
 | App configuration | `{app}/.xcind.sh` |
 | Running containers | Docker daemon |
-| Generated files | `.xcind/generated/{sha}/` (cached, regenerated on change) |
+| Generated files | `.xcind/generated/{sha}/` (per-app) and `~/.local/state/xcind/proxy/` (global) |
 
 This separation ensures configuration files are simple Bash scripts that can be version-controlled, while runtime state is ephemeral and derived from Docker.
 

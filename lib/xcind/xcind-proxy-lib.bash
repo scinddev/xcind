@@ -14,9 +14,13 @@
 # Shared Constants
 # --------------------------------------------------------------------------
 
-XCIND_PROXY_DIR="${HOME}/.config/xcind/proxy"
-XCIND_PROXY_COMPOSE="${XCIND_PROXY_DIR}/docker-compose.yaml"
+XCIND_PROXY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
 XCIND_PROXY_NETWORK="xcind-proxy"
+# Backward compat alias for messages and hook references
+# shellcheck disable=SC2034 # Used externally by tests and CLI
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
 
 # --------------------------------------------------------------------------
 # Proxy Lifecycle Functions
@@ -35,15 +39,16 @@ __xcind-proxy-ensure-network() {
   fi
 }
 
-# Ensure proxy infrastructure files exist in ~/.config/xcind/proxy/.
-# Creates config.sh (if missing), docker-compose.yaml, and traefik.yaml.
+# Ensure proxy infrastructure files exist.
+# Creates config.sh (if missing) in XCIND_PROXY_CONFIG_DIR,
+# docker-compose.yaml and traefik.yaml in XCIND_PROXY_STATE_DIR.
 # Calls __xcind-proxy-ensure-network after generating files.
 __xcind-proxy-ensure-init() {
-  mkdir -p "$XCIND_PROXY_DIR"
+  mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
 
   # Write config.sh only if it doesn't exist (never overwrite user config)
-  if [ ! -f "$XCIND_PROXY_DIR/config.sh" ]; then
-    cat >"$XCIND_PROXY_DIR/config.sh" <<'EOF'
+  if [ ! -f "$XCIND_PROXY_CONFIG_DIR/config.sh" ]; then
+    cat >"$XCIND_PROXY_CONFIG_DIR/config.sh" <<'EOF'
 # xcind-proxy global configuration
 # Domain suffix for generated hostnames (.localhost = zero DNS config, RFC 6761)
 XCIND_PROXY_DOMAIN="localhost"
@@ -64,7 +69,7 @@ EOF
 
   # Source config for variable expansion
   # shellcheck disable=SC1091
-  source "$XCIND_PROXY_DIR/config.sh"
+  source "$XCIND_PROXY_CONFIG_DIR/config.sh"
 
   # Write docker-compose.yaml (always regenerated)
   local dashboard_command=""
@@ -110,7 +115,7 @@ api:
   insecure: true"
   fi
 
-  cat >"$XCIND_PROXY_DIR/traefik.yaml" <<EOF
+  cat >"$XCIND_PROXY_STATE_DIR/traefik.yaml" <<EOF
 entryPoints:
   web:
     address: ":80"
@@ -123,6 +128,9 @@ providers:
 log:
   level: INFO${dashboard_config}
 EOF
+
+  # Migration: remove generated files from old location (config dir)
+  rm -f "$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml" "$XCIND_PROXY_CONFIG_DIR/traefik.yaml"
 
   # Create Docker network if it doesn't exist
   __xcind-proxy-ensure-network
@@ -143,12 +151,17 @@ __xcind-proxy-ensure-running() {
   local running
   running=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
   if [ -n "$running" ]; then
+    # Warn if config.sh is newer than generated files (stale)
+    if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f "$XCIND_PROXY_COMPOSE" ]] &&
+      [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt "$XCIND_PROXY_COMPOSE" ]]; then
+      echo "xcind-proxy: config.sh changed since last init. Run 'xcind-proxy up' to apply." >&2
+    fi
     return 0
   fi
 
   # Ensure init has been done
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
-    echo "xcind-proxy: Initializing proxy config at $XCIND_PROXY_DIR" >&2
+    echo "xcind-proxy: Initializing proxy config at $XCIND_PROXY_CONFIG_DIR" >&2
   fi
   __xcind-proxy-ensure-init
 
@@ -381,7 +394,7 @@ xcind-proxy-hook() {
 
   # Default domain and source global config
   XCIND_PROXY_DOMAIN="${XCIND_PROXY_DOMAIN:-localhost}"
-  local global_config="${XCIND_PROXY_DIR}/config.sh"
+  local global_config="${XCIND_PROXY_CONFIG_DIR}/config.sh"
   if [ -f "$global_config" ]; then
     # shellcheck disable=SC1090
     source "$global_config"
