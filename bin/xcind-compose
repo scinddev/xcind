@@ -35,8 +35,29 @@ XCIND_ROOT="$(cd "$(dirname "$(__xcind_resolve_link "${BASH_SOURCE[0]}")")" && c
 # shellcheck disable=SC1091
 source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
 
-if [[ ${1:-} == "--xcind-version" ]]; then
+if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]] || [[ ${1:-} == "--xcind-version" ]]; then
   echo "xcind-compose ${XCIND_VERSION}"
+  exit 0
+fi
+
+if [[ ${1:-} == "--help" ]] || [[ ${1:-} == "-h" ]]; then
+  cat <<'HELPEOF'
+Usage: xcind-compose [OPTIONS] [DOCKER COMPOSE ARGS...]
+
+Docker Compose wrapper that resolves application config from .xcind.sh.
+
+Options:
+  --version, -V  Show version
+  --help, -h     Show this help
+
+All other arguments are forwarded to docker compose after resolved flags.
+
+Examples:
+  xcind-compose up -d
+  xcind-compose build
+  xcind-compose exec php bash
+  xcind-compose ps
+HELPEOF
   exit 0
 fi
 
