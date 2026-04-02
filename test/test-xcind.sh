@@ -1238,68 +1238,87 @@ rm -rf "$CDEPS_STUBS" "$CDEPS_EMPTY"
 
 # ======================================================================
 echo ""
-echo "=== Test: --generate-ide-configuration ==="
+echo "=== Test: --generate-docker-compose-configuration ==="
 
 if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
 
-  IDE_TEST_APP=$(mktemp -d)
-  cat >"$IDE_TEST_APP/.xcind.sh" <<'XCINDEOF'
+  GCC_TEST_APP=$(mktemp -d)
+  cat >"$GCC_TEST_APP/.xcind.sh" <<'XCINDEOF'
 XCIND_COMPOSE_FILES=(compose.yaml)
 XCIND_COMPOSE_ENV_FILES=()
 XCINDEOF
-  cat >"$IDE_TEST_APP/compose.yaml" <<'COMPEOF'
+  cat >"$GCC_TEST_APP/compose.yaml" <<'COMPEOF'
 services:
   app:
     image: alpine
 COMPEOF
 
-  # 1. --generate-ide-configuration=DIR generates the file
-  IDE_OUT_DIR=$(mktemp -d)
-  (cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-    --generate-ide-configuration="$IDE_OUT_DIR" 2>&1) && ide_rc=0 || ide_rc=$?
-  assert_eq "generate-ide-configuration: exit code 0" "0" "$ide_rc"
-  assert_eq "generate-ide-configuration: compose.ide.yaml exists" "true" \
-    "$([ -f "$IDE_OUT_DIR/compose.ide.yaml" ] && echo true || echo false)"
-  ide_yaml_content=$(cat "$IDE_OUT_DIR/compose.ide.yaml" 2>/dev/null || true)
-  assert_contains "generate-ide-configuration: contains services key" "services:" "$ide_yaml_content"
-  rm -rf "$IDE_OUT_DIR"
+  # 1. --generate-docker-compose-configuration=FILE generates the file
+  GCC_OUT_FILE=$(mktemp -d)/compose.xcind.yaml
+  (cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --generate-docker-compose-configuration="$GCC_OUT_FILE") && gcc_rc=0 || gcc_rc=$?
+  assert_eq "generate-docker-compose-configuration: exit code 0" "0" "$gcc_rc"
+  assert_eq "generate-docker-compose-configuration: file exists" "true" \
+    "$([ -f "$GCC_OUT_FILE" ] && echo true || echo false)"
+  gcc_yaml_content=$(cat "$GCC_OUT_FILE" 2>/dev/null || true)
+  assert_contains "generate-docker-compose-configuration: contains services key" "services:" "$gcc_yaml_content"
+  rm -rf "$(dirname "$GCC_OUT_FILE")"
 
-  # 2. --generate-ide-configuration DIR (space-separated) generates in app root
-  (cd "$IDE_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-    --generate-ide-configuration "$IDE_TEST_APP" 2>&1) && ide_rc=0 || ide_rc=$?
-  assert_eq "generate-ide-configuration space form: exit code 0" "0" "$ide_rc"
-  assert_eq "generate-ide-configuration space form: compose.ide.yaml in app root" "true" \
-    "$([ -f "$IDE_TEST_APP/compose.ide.yaml" ] && echo true || echo false)"
-  rm -f "$IDE_TEST_APP/compose.ide.yaml"
+  # 2. --generate-docker-compose-configuration FILE (space-separated) works identically
+  GCC_OUT_FILE2=$(mktemp -d)/compose.xcind.yaml
+  (cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --generate-docker-compose-configuration "$GCC_OUT_FILE2") && gcc_rc=0 || gcc_rc=$?
+  assert_eq "generate-docker-compose-configuration space form: exit code 0" "0" "$gcc_rc"
+  assert_eq "generate-docker-compose-configuration space form: file exists" "true" \
+    "$([ -f "$GCC_OUT_FILE2" ] && echo true || echo false)"
+  rm -rf "$(dirname "$GCC_OUT_FILE2")"
 
-  # 3. --generate-ide-configuration fails gracefully on bad config
-  IDE_BAD_APP=$(mktemp -d)
-  cat >"$IDE_BAD_APP/.xcind.sh" <<'XCINDEOF'
+  # 3. --generate-docker-compose-configuration fails gracefully on bad config
+  GCC_BAD_APP=$(mktemp -d)
+  cat >"$GCC_BAD_APP/.xcind.sh" <<'XCINDEOF'
 XCIND_COMPOSE_FILES=(nonexistent.yaml)
 XCIND_COMPOSE_ENV_FILES=()
 XCINDEOF
-  IDE_BAD_OUT=$(mktemp -d)
-  (cd "$IDE_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-    --generate-ide-configuration="$IDE_BAD_OUT" 2>&1) && ide_bad_rc=0 || ide_bad_rc=$?
-  assert_eq "generate-ide-configuration bad config: non-zero exit" "true" \
-    "$([ "$ide_bad_rc" -ne 0 ] && echo true || echo false)"
-  assert_eq "generate-ide-configuration bad config: no compose.ide.yaml left behind" "false" \
-    "$([ -f "$IDE_BAD_OUT/compose.ide.yaml" ] && echo true || echo false)"
-  rm -rf "$IDE_BAD_APP" "$IDE_BAD_OUT"
+  GCC_BAD_OUT=$(mktemp -d)/compose.xcind.yaml
+  (cd "$GCC_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --generate-docker-compose-configuration="$GCC_BAD_OUT" 2>&1) && gcc_bad_rc=0 || gcc_bad_rc=$?
+  assert_eq "generate-docker-compose-configuration bad config: non-zero exit" "true" \
+    "$([ "$gcc_bad_rc" -ne 0 ] && echo true || echo false)"
+  assert_eq "generate-docker-compose-configuration bad config: no file left behind" "false" \
+    "$([ -f "$GCC_BAD_OUT" ] && echo true || echo false)"
+  rm -rf "$GCC_BAD_APP" "$(dirname "$GCC_BAD_OUT")"
 
-  rm -rf "$IDE_TEST_APP"
+  # 4. --generate-docker-compose-configuration (stdout mode) outputs content
+  gcc_stdout_result=$(cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --generate-docker-compose-configuration) && gcc_stdout_rc=0 || gcc_stdout_rc=$?
+  assert_eq "generate-docker-compose-configuration stdout: exit code 0" "0" "$gcc_stdout_rc"
+  assert_contains "generate-docker-compose-configuration stdout: contains services key" \
+    "services:" "$gcc_stdout_result"
+
+  # 5. --generate-docker-compose-configuration=FILE --json succeeds (file + JSON to stdout)
+  GCC_COMBINED_FILE=$(mktemp -d)/compose.xcind.yaml
+  gcc_combined_result=$(cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+    --generate-docker-compose-configuration="$GCC_COMBINED_FILE" --json) && gcc_combined_rc=0 || gcc_combined_rc=$?
+  assert_eq "generate-docker-compose-configuration + json: exit code 0" "0" "$gcc_combined_rc"
+  assert_eq "generate-docker-compose-configuration + json: file exists" "true" \
+    "$([ -f "$GCC_COMBINED_FILE" ] && echo true || echo false)"
+  assert_contains "generate-docker-compose-configuration + json: JSON output" \
+    "composeFiles" "$gcc_combined_result"
+  rm -rf "$(dirname "$GCC_COMBINED_FILE")"
+
+  rm -rf "$GCC_TEST_APP"
 
 else
   echo "  (skipped: docker compose not available)"
 fi
 
-# 4. --generate-ide-configuration without dir argument errors (no docker needed)
-ide_nodir_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
-  --generate-ide-configuration 2>&1) && ide_nodir_rc=0 || ide_nodir_rc=$?
-assert_eq "--generate-ide-configuration without dir: non-zero exit" "true" \
-  "$([ "$ide_nodir_rc" -ne 0 ] && echo true || echo false)"
-assert_contains "--generate-ide-configuration without dir: error message" \
-  "--generate-ide-configuration requires a directory argument" "$ide_nodir_result"
+# 6. --generate-docker-compose-configuration (stdout) + --json conflicts (no docker needed)
+gcc_conflict_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-compose-configuration --json 2>&1) && gcc_conflict_rc=0 || gcc_conflict_rc=$?
+assert_eq "generate-docker-compose-configuration stdout + json: non-zero exit" "true" \
+  "$([ "$gcc_conflict_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "generate-docker-compose-configuration stdout + json: error message" \
+  "stdout" "$gcc_conflict_result"
 
 # ======================================================================
 echo ""

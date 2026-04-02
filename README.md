@@ -464,7 +464,7 @@ xcind-config --preview                                 # Show the docker compose
 xcind-config --check                                   # Check system dependencies
 xcind-config --generate-docker-wrapper                 # Generate a POSIX docker wrapper script
 xcind-config --generate-docker-compose-wrapper         # Generate a POSIX docker-compose wrapper script
-xcind-config --generate-ide-configuration=DIR          # Generate compose.ide.yaml in DIR
+xcind-config --generate-docker-compose-configuration[=FILE]  # Generate resolved compose config
 xcind-config --version                                 # Show version
 xcind-config completion bash                           # Output bash completions
 xcind-config completion zsh                            # Output zsh completions

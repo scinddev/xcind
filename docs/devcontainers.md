@@ -16,20 +16,20 @@ configurations. A `devcontainer.json` file points at one or more compose files,
 names the service to develop inside, and declares the workspace folder within
 that container.
 
-Xcind's `--generate-ide-configuration` flag already produces a fully-resolved,
-flattened `compose.ide.yaml` (equivalent to `xcind-compose config` output). A
+Xcind's `--generate-docker-compose-configuration` flag produces a fully-resolved,
+flattened compose configuration (equivalent to `xcind-compose config` output). A
 Dev Container configuration can reference this file directly — no plugins, no
 wrappers, no runtime resolution needed.
 
 ## Setup
 
-### 1. Generate `compose.ide.yaml` into `.devcontainer/`
+### 1. Generate the compose configuration into `.devcontainer/`
 
 ```bash
-xcind-config --generate-ide-configuration=$PWD/.devcontainer
+xcind-config --generate-docker-compose-configuration=.devcontainer/compose.xcind.yaml
 ```
 
-This creates `.devcontainer/compose.ide.yaml` containing the fully-merged
+This creates `.devcontainer/compose.xcind.yaml` containing the fully-merged
 compose configuration for your application, with all xcind-resolved compose
 files, environment files, and hook-generated overlays baked in.
 
@@ -40,7 +40,7 @@ Create `.devcontainer/devcontainer.json` alongside the generated compose file:
 ```jsonc
 {
   "name": "My App",
-  "dockerComposeFile": "compose.ide.yaml",
+  "dockerComposeFile": "compose.xcind.yaml",
   "service": "php",
   "workspaceFolder": "/var/www/html"
 }
@@ -56,12 +56,12 @@ Adjust these values for your application:
 
 ### 3. Add to `.gitignore`
 
-The generated `compose.ide.yaml` is a snapshot specific to your local
+The generated compose configuration is a snapshot specific to your local
 environment. It should not be committed:
 
 ```gitignore
 # in .gitignore
-.devcontainer/compose.ide.yaml
+.devcontainer/compose.xcind.yaml
 ```
 
 You may choose to commit `devcontainer.json` itself if the service name and
@@ -80,14 +80,15 @@ When your xcind configuration changes — new compose files, updated environment
 variables, changed hooks — regenerate the snapshot:
 
 ```bash
-xcind-config --generate-ide-configuration=$PWD/.devcontainer
+xcind-config --generate-docker-compose-configuration=.devcontainer/compose.xcind.yaml
 ```
 
 Then rebuild the Dev Container in VS Code (command palette → **Dev Containers:
 Rebuild Container**).
 
 The underlying compose stack must be working before you generate. If
-`xcind-compose up` fails, `--generate-ide-configuration` will also fail.
+`xcind-compose up` fails, `--generate-docker-compose-configuration` will also
+fail.
 
 ## Customizing the Dev Container
 
@@ -97,7 +98,7 @@ compose file reference. Common additions:
 ```jsonc
 {
   "name": "My App",
-  "dockerComposeFile": "compose.ide.yaml",
+  "dockerComposeFile": "compose.xcind.yaml",
   "service": "php",
   "workspaceFolder": "/var/www/html",
 
@@ -132,13 +133,13 @@ for the full set of available properties.
 - **Manual regeneration required.** Unlike the JetBrains plugin or a wrapper
   script approach, the Dev Container configuration does not automatically
   reflect changes to `.xcind.sh`. You must re-run
-  `--generate-ide-configuration` and rebuild the container.
+  `--generate-docker-compose-configuration` and rebuild the container.
 
 - **Single service.** Dev Containers are opinionated about one service being the
   development target. If you regularly work across multiple services, the
   standard `xcind-compose exec <service> bash` workflow may be more practical.
 
-- **Flattened configuration.** The generated `compose.ide.yaml` is a merged
+- **Flattened configuration.** The generated compose configuration is a merged
   snapshot. Xcind's layered compose file structure, override variants, and hook
   overlays are baked in at generation time. The dynamic resolution that
   `xcind-compose` provides at runtime does not apply.

@@ -131,7 +131,7 @@ _xcind-config() {
     '--preview:Show docker compose command'
     '--generate-docker-wrapper:Generate docker wrapper script'
     '--generate-docker-compose-wrapper:Generate docker-compose wrapper script'
-    '--generate-ide-configuration:Generate compose.ide.yaml in DIR'
+    '--generate-docker-compose-configuration:Generate resolved compose config'
     'completion:Output shell completion script'
   )
 
@@ -142,11 +142,7 @@ _xcind-config() {
     _describe 'shell' shells
     return
     ;;
-  --generate-ide-configuration)
-    _directories
-    return
-    ;;
-  --generate-docker-wrapper | --generate-docker-compose-wrapper)
+  --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration)
     _files
     return
     ;;

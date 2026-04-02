@@ -216,7 +216,7 @@ docker() {
 sleep 1
 touch "$XCIND_PROXY_CONFIG_DIR/config.sh"
 staleness_stderr=$(__xcind-proxy-ensure-running 2>&1 1>/dev/null)
-assert_contains "staleness: warns when config.sh is newer" "config.sh changed since last init" "$staleness_stderr"
+assert_contains "staleness: warns when config.sh is newer" "config.sh changed; run 'xcind-proxy up' to apply" "$staleness_stderr"
 
 unset -f docker
 export HOME="$REAL_HOME2"
