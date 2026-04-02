@@ -135,12 +135,12 @@ logs)
   echo "  init          Create proxy infrastructure files in ~/.config/xcind/proxy/"
   echo "  up [--force]  Start the shared Traefik proxy (--force recreates network)"
   echo "  down          Stop the shared Traefik proxy"
-  echo "  status        Show proxy state (running/stopped, port, URL)"
+  echo "  status        Show proxy state (running/stopped, image, port, network)"
   echo "  logs [OPTS]   Show Traefik proxy logs (supports docker compose logs flags)"
   echo ""
   echo "Options:"
-  echo "  --version  Show version"
-  echo "  --help     Show this help"
+  echo "  --version, -V  Show version"
+  echo "  --help, -h     Show this help"
   exit 0
   ;;
 "")

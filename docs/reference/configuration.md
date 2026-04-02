@@ -217,7 +217,7 @@ Set an apex template to an empty string to disable apex URL generation.
 
 For each file pattern, xcind also checks for an `.override` variant.
 
-**Extension-aware insertion** — for files with a recognized extension (`.yaml`, `.yml`, `.json`, `.hcl`, `.toml`), `.override` is inserted before the extension:
+**Extension-aware insertion** — for files with a recognized extension (`.yaml`, `.yml`, `.json`, `.hcl`, `.toml`, `.sh`), `.override` is inserted before the extension:
 
 | Base File | Override Variant |
 |-----------|-----------------|

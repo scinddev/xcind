@@ -2,7 +2,7 @@
 
 > **Origin**: This decision originates from the [Scind specification](https://github.com/scinddev/scind/blob/main/docs/decisions/0009-flexible-tls-configuration.md).
 
-**Status**: Accepted
+**Status**: Proposed
 
 ## Context
 
