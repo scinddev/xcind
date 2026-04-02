@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# xcind-workspace-lib.bash — Workspace networking hook for generating compose.workspace.yaml
+# xcind-workspace-lib.bash — Workspace networking hooks
 #
-# Provides xcind-workspace-hook, a post-resolve-generate hook that generates
-# workspace network aliases for all compose services.
+# Provides two hooks:
+#   xcind-workspace-hook (GENERATE) — generates compose.workspace.yaml with network aliases
+#   __xcind-workspace-execute-hook (EXECUTE) — ensures workspace network exists
 #
-# This file is auto-sourced by xcind-lib.bash. The hook is registered by
-# default and activates automatically for apps inside a workspace.
+# This file is auto-sourced by xcind-lib.bash. Hooks are registered by
+# default and activate automatically for apps inside a workspace.
 
 # Per-service snippet template for workspace networking
 XCIND_WORKSPACE_SERVICE_SNIPPET='  {service}:
@@ -38,9 +39,6 @@ xcind-workspace-hook() {
 
   local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
   local network="${XCIND_WORKSPACE}-internal"
-
-  # Ensure workspace network exists (lazy, idempotent)
-  docker network create "$network" >/dev/null 2>&1 || true
 
   # Enumerate all compose services
   local services
@@ -82,4 +80,22 @@ xcind-workspace-hook() {
 
   # Print compose flag to stdout
   echo "-f $XCIND_GENERATED_DIR/compose.workspace.yaml"
+}
+
+# --------------------------------------------------------------------------
+# Execute Hook
+# --------------------------------------------------------------------------
+
+# EXECUTE hook: ensure workspace network exists before docker compose executes.
+# Runs on every invocation (not cached). Skips if not in workspace mode.
+__xcind-workspace-execute-hook() {
+  # shellcheck disable=SC2034  # app_root required by hook interface
+  local app_root="$1"
+
+  if [[ ${XCIND_WORKSPACELESS:-1} == "1" ]]; then
+    return 0
+  fi
+
+  local network="${XCIND_WORKSPACE}-internal"
+  docker network create "$network" >/dev/null 2>&1 || true
 }

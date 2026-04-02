@@ -102,14 +102,21 @@ For bootstrap procedures and lifecycle management, see [Proxy Infrastructure Spe
 
 Xcind generates Docker Compose override files via hooks that extend application compose files without modifying them. This implements the pure overlay design (see [ADR-0003](../decisions/0003-pure-overlay-design.md)).
 
-For each application, the registered hooks can generate:
+The pipeline uses two hook phases (see [Hook Lifecycle Spec](../specs/hook-lifecycle.md)):
 
-- **`xcind-naming-hook`**: Sets the Docker Compose project `name:` to prevent container/volume/network collisions (e.g., `dev-frontend` in workspace mode, `frontend` in workspaceless mode)
+**GENERATE hooks** (`XCIND_HOOKS_GENERATE`) — produce compose overlay files, cached by SHA:
+
+- **`xcind-naming-hook`**: Sets the Docker Compose project `name:` to prevent container/volume/network collisions
 - **`xcind-app-env-hook`**: Injects `XCIND_APP_ENV_FILES` into services via `env_file:` directives
-- **`xcind-proxy-hook`**: Generates Traefik labels, `xcind-proxy` network attachment, and context/export labels based on `XCIND_PROXY_EXPORTS`
-- **`xcind-workspace-hook`**: Generates workspace network aliases so services across apps can reach each other via the `{workspace}-internal` network
+- **`xcind-proxy-hook`**: Generates Traefik labels, `xcind-proxy` network attachment, and context/export labels
+- **`xcind-workspace-hook`**: Generates workspace network aliases for inter-app communication
 
-See [Generated Override Files Spec](../specs/generated-override-files.md) for complete details.
+**EXECUTE hooks** (`XCIND_HOOKS_EXECUTE`) — ensure runtime preconditions, never cached:
+
+- **`__xcind-proxy-execute-hook`**: Ensures Traefik proxy is running (if `XCIND_PROXY_EXPORTS` is set)
+- **`__xcind-workspace-execute-hook`**: Ensures workspace network exists (if in workspace mode)
+
+See [Generated Override Files Spec](../specs/generated-override-files.md) for overlay details.
 
 ---
 
@@ -182,7 +189,7 @@ Xcind sources `.xcind.sh` files (not YAML configuration) and uses hook functions
 
 ### Caching
 
-Hook output is cached using a SHA-256 hash computed from compose file paths and content, `.xcind.sh` content, workspace `.xcind.sh` content (if present), and global proxy config. On subsequent runs with the same hash, xcind replays the cached output instead of re-running hooks. The cache lives at `$XCIND_APP_ROOT/.xcind/generated/`.
+GENERATE hook output is cached using a SHA-256 hash computed from compose file paths and content, `.xcind.sh` content, workspace `.xcind.sh` content (if present), and global proxy config. On subsequent runs with the same hash, xcind replays the cached output instead of re-running GENERATE hooks. EXECUTE hooks always run regardless of cache state. The cache lives at `$XCIND_APP_ROOT/.xcind/generated/`.
 
 ---
 

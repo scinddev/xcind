@@ -206,7 +206,7 @@ Docker Compose **appends** `env_file:` lists when merging override files. If the
 The hook is registered in the default hooks array alongside the existing hooks:
 
 ```bash
-XCIND_HOOKS_POST_RESOLVE_GENERATE=(
+XCIND_HOOKS_GENERATE=(
   "xcind-app-env-hook"
   "xcind-proxy-hook"
   "xcind-workspace-hook"

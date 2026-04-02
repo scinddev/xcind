@@ -272,7 +272,7 @@ __xcind-resolve-url-templates
 __xcind-build-compose-opts "$app_root"
 
 # Steps 11-14: Only run when hooks are registered
-if [[ ${#XCIND_HOOKS_POST_RESOLVE_GENERATE[@]} -gt 0 ]]; then
+if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
   # Step 11: Compute SHA
   XCIND_SHA=$(__xcind-compute-sha "$app_root")
 

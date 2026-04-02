@@ -158,6 +158,7 @@ docker() {
 
 # Test: ensure-running auto-inits and starts when nothing exists
 : >"$DOCKER_CALLS_FILE"
+# shellcheck disable=SC2218
 __xcind-proxy-ensure-running 2>/dev/null
 assert_file_exists "ensure-running: config.sh created" "$MOCK_HOME2/.config/xcind/proxy/config.sh"
 assert_file_exists "ensure-running: docker-compose.yaml created" "$MOCK_HOME2/.local/state/xcind/proxy/docker-compose.yaml"
@@ -180,6 +181,7 @@ docker() {
   return 0
 }
 : >"$DOCKER_CALLS_FILE"
+# shellcheck disable=SC2218
 __xcind-proxy-ensure-running 2>/dev/null
 docker_calls=$(<"$DOCKER_CALLS_FILE")
 assert_contains "ensure-running already-running: checked docker ps" "ps --filter" "$docker_calls"
@@ -195,6 +197,7 @@ docker() {
   return 0
 }
 : >"$DOCKER_CALLS_FILE"
+# shellcheck disable=SC2218
 XCIND_PROXY_AUTO_START=0 __xcind-proxy-ensure-running 2>/dev/null
 docker_calls=$(<"$DOCKER_CALLS_FILE")
 assert_not_contains "auto-start=0: did not call docker ps" "ps --filter" "$docker_calls"
@@ -749,6 +752,59 @@ YAML
 else
   echo "  (skipped workspace hook tests: yq not installed)"
 fi
+
+# ======================================================================
+echo ""
+echo "=== Test: XCIND_HOOKS_EXECUTE registration ==="
+
+# Check registration before any test overrides the array
+HOOKS_STR="${XCIND_HOOKS_EXECUTE[*]}"
+assert_contains "proxy execute hook registered" "__xcind-proxy-execute-hook" "$HOOKS_STR"
+assert_contains "workspace execute hook registered" "__xcind-workspace-execute-hook" "$HOOKS_STR"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-proxy-execute-hook ==="
+
+# Should call ensure-running when XCIND_PROXY_EXPORTS is set
+PROXY_EXEC_CALLED=""
+__xcind-proxy-ensure-running() { PROXY_EXEC_CALLED="yes"; }
+XCIND_PROXY_EXPORTS=("web")
+__xcind-proxy-execute-hook "/tmp/test-app"
+assert_eq "execute hook: calls ensure-running" "yes" "$PROXY_EXEC_CALLED"
+
+# Should skip when XCIND_PROXY_EXPORTS is empty
+PROXY_EXEC_CALLED=""
+XCIND_PROXY_EXPORTS=()
+__xcind-proxy-execute-hook "/tmp/test-app"
+assert_eq "execute hook: skips when exports empty" "" "$PROXY_EXEC_CALLED"
+
+# Should skip when XCIND_PROXY_EXPORTS is unset
+PROXY_EXEC_CALLED=""
+unset XCIND_PROXY_EXPORTS
+__xcind-proxy-execute-hook "/tmp/test-app"
+assert_eq "execute hook: skips when exports unset" "" "$PROXY_EXEC_CALLED"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-workspace-execute-hook ==="
+
+# Should create network when in workspace mode
+DOCKER_CMDS=""
+# shellcheck disable=SC2317
+docker() { DOCKER_CMDS+="$* "; }
+export -f docker
+XCIND_WORKSPACELESS="0"
+XCIND_WORKSPACE="dev"
+__xcind-workspace-execute-hook "/tmp/test-app"
+assert_contains "workspace execute hook: creates network" "network create dev-internal" "$DOCKER_CMDS"
+
+# Should skip when workspaceless
+DOCKER_CMDS=""
+XCIND_WORKSPACELESS="1"
+__xcind-workspace-execute-hook "/tmp/test-app"
+assert_eq "workspace execute hook: skips when workspaceless" "" "$DOCKER_CMDS"
+unset -f docker
 
 # ======================================================================
 echo ""

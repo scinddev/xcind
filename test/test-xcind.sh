@@ -611,7 +611,7 @@ stub_hook() {
   echo "-f $XCIND_GENERATED_DIR/compose.stub.yaml"
   touch "$XCIND_GENERATED_DIR/compose.stub.yaml"
 }
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("stub_hook")
+XCIND_HOOKS_GENERATE=("stub_hook")
 
 # Build base opts
 unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
@@ -635,7 +635,7 @@ assert_contains "hook output replayed (cache hit)" "compose.stub.yaml" "$opts2"
 
 # ======================================================================
 echo ""
-echo "=== Test: __xcind-run-hooks ordering (cache hit preserves XCIND_HOOKS_POST_RESOLVE_GENERATE order) ==="
+echo "=== Test: __xcind-run-hooks ordering (cache hit preserves XCIND_HOOKS_GENERATE order) ==="
 
 ORDER_APP=$(mktemp -d)
 echo '# order test' >"$ORDER_APP/.xcind.sh"
@@ -656,7 +656,7 @@ hook_beta() {
 }
 # Register beta before alpha to verify order is preserved (not lexicographic)
 # shellcheck disable=SC2034 # consumed by __xcind-run-hooks
-XCIND_HOOKS_POST_RESOLVE_GENERATE=("hook_beta" "hook_alpha")
+XCIND_HOOKS_GENERATE=("hook_beta" "hook_alpha")
 
 unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
 __xcind-load-config "$ORDER_APP"
@@ -684,6 +684,37 @@ assert_eq "cache hit: hook_beta before hook_alpha (order preserved)" "true" "$([
 rm -rf "$ORDER_APP"
 
 rm -rf "$HOOK_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-run-execute-hooks ==="
+
+EXEC_HOOK_CALLED=""
+stub_execute_hook() {
+  EXEC_HOOK_CALLED="yes:$1"
+}
+XCIND_HOOKS_EXECUTE=("stub_execute_hook")
+
+__xcind-run-execute-hooks "/tmp/test-app"
+assert_eq "execute hook called with app_root" "yes:/tmp/test-app" "$EXEC_HOOK_CALLED"
+
+# Verify execute hooks always run (no caching)
+EXEC_HOOK_COUNT=0
+counting_execute_hook() {
+  EXEC_HOOK_COUNT=$((EXEC_HOOK_COUNT + 1))
+}
+XCIND_HOOKS_EXECUTE=("counting_execute_hook")
+
+__xcind-run-execute-hooks "/tmp/test-app"
+__xcind-run-execute-hooks "/tmp/test-app"
+__xcind-run-execute-hooks "/tmp/test-app"
+assert_eq "execute hooks run every invocation (not cached)" "3" "$EXEC_HOOK_COUNT"
+
+# Verify empty hooks array is safe
+# shellcheck disable=SC2034 # consumed by __xcind-run-execute-hooks
+XCIND_HOOKS_EXECUTE=()
+__xcind-run-execute-hooks "/tmp/test-app"
+assert_eq "empty execute hooks: no error" "0" "$?"
 
 # ======================================================================
 echo ""
