@@ -187,10 +187,10 @@ config:
 ```
 
 This registers completions for `xcind-compose`, `xcind-config`, and
-`xcind-proxy`. For `xcind-compose`, completions delegate to Docker's built-in
-`_docker` completion function so you get the same experience as
-`docker compose`. If Docker's completion is not loaded, a hardcoded fallback
-list of common subcommands is used.
+`xcind-proxy`. For `xcind-compose`, completions invoke Docker's
+`docker compose __complete` mechanism directly so you get the same experience
+as `docker compose` without requiring Docker's shell completion to be loaded.
+If that subprocess is unavailable or returns no suggestions, a hardcoded fallback list of common subcommands is used.
 
 ---
 

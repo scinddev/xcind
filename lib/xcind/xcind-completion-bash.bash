@@ -17,19 +17,25 @@
 # Docker's completion functions across different environments.
 
 _xcind_compose_completions() {
-  local cur requestComp out directive
+  local cur out directive
   cur="${COMP_WORDS[COMP_CWORD]}"
 
   # Build the completion request as if the user typed "docker compose ..."
-  requestComp="docker __complete compose ${COMP_WORDS[*]:1}"
+  local -a args
+  args=(docker __complete compose)
+  # Append all words after the command itself, preserving quoting/spacing
+  local i
+  for i in "${COMP_WORDS[@]:1}"; do
+    args+=("$i")
+  done
 
   # If completing a new word (cursor after a space), add an empty arg
   if [[ -z $cur ]]; then
-    requestComp="$requestComp \"\""
+    args+=("")
   fi
 
   # Get completions from Docker's Cobra mechanism
-  out=$(eval "$requestComp" 2>/dev/null)
+  out=$("${args[@]}" 2>/dev/null)
 
   if [[ -z $out ]]; then
     # docker __complete not available — use hardcoded fallback
@@ -43,7 +49,7 @@ _xcind_compose_completions() {
   lastLine=$(printf "%s\n" "$out" | tail -1)
   if [[ ${lastLine:0:1} == ":" ]]; then
     directive=${lastLine:1}
-    out=$(printf "%s\n" "$out" | head -n -1)
+    out=$(printf "%s\n" "$out" | sed '$d')
   fi
 
   # Directive bit 1 = error
