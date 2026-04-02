@@ -424,7 +424,7 @@ __xcind-resolve-tools() {
 # Output the resolved configuration as JSON.
 # Convert a bash array to a JSON array string.
 # Requires jq.
-__to_json_array() {
+__xcind-to-json-array() {
   if [ $# -eq 0 ]; then
     echo "[]"
   else
@@ -506,11 +506,11 @@ __xcind-resolve-json() {
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
-    --argjson config_files "$(__to_json_array ${__XCIND_SOURCED_CONFIG_FILES[@]+"${__XCIND_SOURCED_CONFIG_FILES[@]}"})" \
-    --argjson compose_files "$(__to_json_array ${compose_files[@]+"${compose_files[@]}"})" \
-    --argjson compose_env_files "$(__to_json_array ${compose_env_files[@]+"${compose_env_files[@]}"})" \
-    --argjson app_env_files "$(__to_json_array ${app_env_files[@]+"${app_env_files[@]}"})" \
-    --argjson bake_files "$(__to_json_array ${bake_files[@]+"${bake_files[@]}"})" \
+    --argjson config_files "$(__xcind-to-json-array ${__XCIND_SOURCED_CONFIG_FILES[@]+"${__XCIND_SOURCED_CONFIG_FILES[@]}"})" \
+    --argjson compose_files "$(__xcind-to-json-array ${compose_files[@]+"${compose_files[@]}"})" \
+    --argjson compose_env_files "$(__xcind-to-json-array ${compose_env_files[@]+"${compose_env_files[@]}"})" \
+    --argjson app_env_files "$(__xcind-to-json-array ${app_env_files[@]+"${app_env_files[@]}"})" \
+    --argjson bake_files "$(__xcind-to-json-array ${bake_files[@]+"${bake_files[@]}"})" \
     --argjson tools "$tools_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
@@ -867,8 +867,15 @@ __xcind-populate-cache() {
 
   mkdir -p "$XCIND_CACHE_DIR"
 
-  # Write resolved-config.yaml via docker compose config
-  docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$XCIND_CACHE_DIR/resolved-config.yaml" || return 1
+  # Write resolved-config.yaml via docker compose config (use temp file to avoid
+  # leaving a corrupt cache file if the command fails)
+  local _resolved_tmp="$XCIND_CACHE_DIR/resolved-config.yaml.tmp"
+  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$_resolved_tmp"; then
+    mv -- "$_resolved_tmp" "$XCIND_CACHE_DIR/resolved-config.yaml"
+  else
+    rm -f -- "$_resolved_tmp"
+    return 1
+  fi
 
   # Write config.json (matching xcind-config format)
   if command -v jq &>/dev/null; then
