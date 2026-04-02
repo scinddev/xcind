@@ -49,7 +49,7 @@ __xcind-proxy-up() {
     force=true
   fi
 
-  if [ "$force" = true ]; then
+  if [[ $force == true ]]; then
     # Tear down existing containers so the network can be recreated
     docker compose -f "$XCIND_PROXY_COMPOSE" down 2>/dev/null || true
     docker network rm "$XCIND_PROXY_NETWORK" 2>/dev/null || true
@@ -59,7 +59,7 @@ __xcind-proxy-up() {
   __xcind-proxy-ensure-init
 
   if [ "$force" = true ]; then
-    docker compose -f "$XCIND_PROXY_COMPOSE" up -d
+    docker compose -f "$XCIND_PROXY_COMPOSE" up -d || return $?
   else
     # Start if not already running
     XCIND_PROXY_AUTO_START=1 __xcind-proxy-ensure-running

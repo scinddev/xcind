@@ -48,6 +48,8 @@ Options:
   --generate-docker-compose-wrapper[=FILE]     Generate docker-compose wrapper script
   --generate-ide-configuration=DIR             Generate compose.ide.yaml in DIR
 
+  completion {bash|zsh}                        Output shell completion script
+
 Multiple --generate-* flags may be combined when each specifies a file/dir.
 Combine with --json to also output JSON to stdout.
 HELPEOF
@@ -80,6 +82,7 @@ _do_gen_compose_wrapper=false
 _gen_compose_wrapper_file=""
 _do_gen_ide_config=false
 _gen_ide_config_dir=""
+_do_completion=""
 _stdout_claim=""
 _action_count=0
 PREVIEW_EXTRA_ARGS=()
@@ -156,6 +159,16 @@ while [[ $# -gt 0 ]]; do
       __xcind_config_die "--generate-ide-configuration requires a directory argument"
     fi
     ;;
+  completion)
+    shift
+    case "${1:-}" in
+    bash) _do_completion="bash" ;;
+    zsh) _do_completion="zsh" ;;
+    "") __xcind_config_die "completion requires a shell argument: bash or zsh" ;;
+    *) __xcind_config_die "unsupported shell: $1 (expected bash or zsh)" ;;
+    esac
+    _action_count=$((_action_count + 1))
+    ;;
   --)
     shift
     PREVIEW_EXTRA_ARGS=("$@")
@@ -191,6 +204,9 @@ fi
 if [[ $_do_preview == true && $_action_count -gt 1 ]]; then
   __xcind_config_die "--preview cannot be combined with other options"
 fi
+if [[ -n $_do_completion && $_action_count -gt 1 ]]; then
+  __xcind_config_die "completion cannot be combined with other options"
+fi
 
 # -- args only valid with --preview
 if [[ ${#PREVIEW_EXTRA_ARGS[@]} -gt 0 && $_do_preview != true ]]; then
@@ -217,6 +233,11 @@ fi
 if [[ $_do_check == true ]]; then
   __xcind-check-deps
   exit $?
+fi
+
+if [[ -n $_do_completion ]]; then
+  cat "$XCIND_ROOT/lib/xcind/xcind-completion-${_do_completion}.bash"
+  exit 0
 fi
 
 # --- Main pipeline (steps 1-14) ---

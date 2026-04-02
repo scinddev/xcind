@@ -33,3 +33,8 @@ trim_trailing_whitespace = false
 
 [test/fixtures/bats/*_no_shellcheck.bats]
 ignore = true
+
+# Zsh completion file uses .bash extension for manifest tracking but contains
+# zsh syntax that shfmt cannot parse correctly
+[lib/xcind/xcind-completion-zsh.bash]
+ignore = true

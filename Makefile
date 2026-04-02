@@ -3,6 +3,8 @@ SHELL_FILES = \
 	bin/xcind-config \
 	bin/xcind-proxy \
 	lib/xcind/xcind-app-env-lib.bash \
+	lib/xcind/xcind-completion-bash.bash \
+	lib/xcind/xcind-completion-zsh.bash \
 	lib/xcind/xcind-lib.bash \
 	lib/xcind/xcind-proxy-lib.bash \
 	lib/xcind/xcind-workspace-lib.bash \

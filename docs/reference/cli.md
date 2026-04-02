@@ -39,11 +39,7 @@ XCIND_APP_ROOT=/path/to/app xcind-compose up -d
 
 ### Tab Completion
 
-Reuse Docker Compose's built-in completion:
-
-```bash
-complete -F _docker_compose xcind-compose 2>/dev/null
-```
+See [Shell Completions](#shell-completions) below.
 
 ### Version
 
@@ -68,6 +64,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 | `--generate-docker-wrapper[=FILE]` | Generate a POSIX `docker` wrapper script |
 | `--generate-docker-compose-wrapper[=FILE]` | Generate a POSIX `docker-compose` wrapper script |
 | `--generate-ide-configuration=DIR` | Generate `compose.ide.yaml` in DIR |
+| `completion {bash\|zsh}` | Output shell completion script for all xcind commands |
 | `--version`, `-V` | Show version |
 | `--help`, `-h` | Show usage help |
 
@@ -85,6 +82,8 @@ xcind-config --generate-docker-wrapper=bin/docker   # Generate docker wrapper to
 xcind-config --generate-docker-compose-wrapper     # Generate docker-compose wrapper to stdout
 xcind-config --generate-ide-configuration=.idea    # Generate compose.ide.yaml in .idea/
 xcind-config --version                             # Show version
+xcind-config completion bash                       # Output bash completions
+xcind-config completion zsh                        # Output zsh completions
 ```
 
 ### JSON Output Contract
@@ -178,6 +177,27 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 |------|---------|------------------------|
 | `docker-compose.yaml` | Traefik service definition | Yes (always regenerated) |
 | `traefik.yaml` | Traefik static configuration | Yes (always regenerated) |
+
+---
+
+## Shell Completions
+
+Xcind provides tab completions for all commands. Add one line to your shell
+config:
+
+```bash
+# Bash (~/.bashrc)
+. <(xcind-config completion bash)
+
+# Zsh (~/.zshrc)
+. <(xcind-config completion zsh)
+```
+
+This registers completions for `xcind-compose`, `xcind-config`, and
+`xcind-proxy`. For `xcind-compose`, completions invoke Docker's
+`docker compose __complete` mechanism directly so you get the same experience
+as `docker compose` without requiring Docker's shell completion to be loaded.
+If that subprocess is unavailable or returns no suggestions, a hardcoded fallback list of common subcommands is used.
 
 ---
 
