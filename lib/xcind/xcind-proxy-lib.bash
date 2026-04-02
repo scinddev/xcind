@@ -152,9 +152,9 @@ __xcind-proxy-ensure-running() {
   running=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
   if [ -n "$running" ]; then
     # Warn if config.sh is newer than generated files (stale)
-    if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f "$XCIND_PROXY_COMPOSE" ]] &&
-      [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt "$XCIND_PROXY_COMPOSE" ]]; then
-      echo "xcind-proxy: config.sh changed since last xcind-proxy up. Run 'xcind-proxy up' to apply." >&2
+    if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f $XCIND_PROXY_COMPOSE ]] &&
+      [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt $XCIND_PROXY_COMPOSE ]]; then
+      echo "xcind-proxy: config.sh changed; run 'xcind-proxy up' to apply." >&2
     fi
     return 0
   fi
