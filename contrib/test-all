@@ -9,7 +9,7 @@ PROJECT_ROOT=$(cd "$DIR/.." && pwd)
 SHFMT_IMAGE="mvdan/shfmt:v3.10.0"
 SHELLCHECK_IMAGE="koalaman/shellcheck:v0.11.0"
 BASH_VERSIONS=("3.2" "4.0" "4.4" "5.0" "5.1" "5" "latest")
-SHELL_FILES=(bin/xcind-compose bin/xcind-config bin/xcind-proxy lib/xcind/xcind-app-env-lib.bash lib/xcind/xcind-lib.bash lib/xcind/xcind-naming-lib.bash lib/xcind/xcind-proxy-lib.bash lib/xcind/xcind-workspace-lib.bash test/test-xcind.sh test/test-xcind-proxy.sh install.sh uninstall.sh)
+SHELL_FILES=(bin/xcind-compose bin/xcind-config bin/xcind-proxy lib/xcind/xcind-app-env-lib.bash lib/xcind/xcind-completion-bash.bash lib/xcind/xcind-completion-zsh.bash lib/xcind/xcind-lib.bash lib/xcind/xcind-naming-lib.bash lib/xcind/xcind-proxy-lib.bash lib/xcind/xcind-workspace-lib.bash test/test-xcind.sh test/test-xcind-proxy.sh install.sh uninstall.sh)
 
 # --- Color support ---
 

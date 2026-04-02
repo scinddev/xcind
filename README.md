@@ -427,13 +427,19 @@ XCIND_APP_ROOT=/path/to/app xcind-compose up
 
 ## Tab Completion
 
-Since `xcind-compose` passes everything through to `docker compose`, you can
-reuse Docker Compose's completion. Add to your shell config:
+Xcind provides shell completions for all commands (`xcind-compose`,
+`xcind-config`, `xcind-proxy`). Add one line to your shell config:
 
 ```bash
-# If using the Docker CLI's built-in completion:
-complete -F _docker_compose xcind-compose 2>/dev/null
+# Bash (~/.bashrc)
+. <(xcind-config completion bash)
+
+# Zsh (~/.zshrc)
+. <(xcind-config completion zsh)
 ```
+
+For `xcind-compose`, completions are delegated to Docker's built-in completion
+so you get the same experience as `docker compose`.
 
 ## Direnv Integration
 
