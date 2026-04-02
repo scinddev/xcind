@@ -1333,6 +1333,56 @@ assert_contains "stdout conflict: error message" "stdout" "$stdout_result"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-config completion subcommand ==="
+
+# 1. completion bash produces output
+comp_bash_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  completion bash 2>&1) && comp_bash_rc=0 || comp_bash_rc=$?
+assert_eq "completion bash: exit code 0" "0" "$comp_bash_rc"
+assert_contains "completion bash: registers xcind-compose" \
+  "complete -F _xcind_compose_completions xcind-compose" "$comp_bash_result"
+assert_contains "completion bash: registers xcind-config" \
+  "complete -F _xcind_config_completions xcind-config" "$comp_bash_result"
+assert_contains "completion bash: registers xcind-proxy" \
+  "complete -F _xcind_proxy_completions xcind-proxy" "$comp_bash_result"
+
+# 2. completion zsh produces output
+comp_zsh_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  completion zsh 2>&1) && comp_zsh_rc=0 || comp_zsh_rc=$?
+assert_eq "completion zsh: exit code 0" "0" "$comp_zsh_rc"
+assert_contains "completion zsh: registers xcind-compose" \
+  "compdef _xcind-compose xcind-compose" "$comp_zsh_result"
+assert_contains "completion zsh: registers xcind-config" \
+  "compdef _xcind-config xcind-config" "$comp_zsh_result"
+assert_contains "completion zsh: registers xcind-proxy" \
+  "compdef _xcind-proxy xcind-proxy" "$comp_zsh_result"
+
+# 3. completion with no arg fails
+comp_noarg_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  completion 2>&1) && comp_noarg_rc=0 || comp_noarg_rc=$?
+assert_eq "completion no arg: non-zero exit" "true" \
+  "$([ "$comp_noarg_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "completion no arg: error message" \
+  "completion requires a shell argument" "$comp_noarg_result"
+
+# 4. completion with unsupported shell fails
+comp_fish_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  completion fish 2>&1) && comp_fish_rc=0 || comp_fish_rc=$?
+assert_eq "completion fish: non-zero exit" "true" \
+  "$([ "$comp_fish_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "completion fish: error message" \
+  "unsupported shell" "$comp_fish_result"
+
+# 5. completion cannot combine with other options
+comp_combine_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  completion bash --json 2>&1) && comp_combine_rc=0 || comp_combine_rc=$?
+assert_eq "completion combined: non-zero exit" "true" \
+  "$([ "$comp_combine_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "completion combined: error message" \
+  "cannot be combined" "$comp_combine_result"
+
+# ======================================================================
+echo ""
 echo "=== Test: XCIND_TOOLS parsing and JSON output ==="
 
 if command -v jq &>/dev/null; then
@@ -1452,6 +1502,7 @@ EOF
   __xcind-build-compose-opts "$TOOLS_APP"
   sha1=$(__xcind-compute-sha "$TOOLS_APP")
 
+  # shellcheck disable=SC2034  # read by __xcind-compute-sha
   XCIND_TOOLS=("php:app" "npm:app")
   sha2=$(__xcind-compute-sha "$TOOLS_APP")
 
