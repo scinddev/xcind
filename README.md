@@ -124,6 +124,47 @@ use. Currently tracked in `xcind-config` JSON output but not passed to `docker c
 XCIND_BAKE_FILES=("docker-bake.hcl")
 ```
 
+### `XCIND_TOOLS`
+
+Array of tool declarations for IDE and plugin integration. Each entry maps a
+tool name to a Docker Compose service, with optional metadata. The resolved
+tools appear in `xcind-config --json` output under the `tools` key.
+
+**Default:** `()` (empty)
+
+Format: `name:service[;key=value[;key=value…]]`
+
+Supported metadata keys:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `use` | `exec` | `exec` attaches to a running container; `run` starts a one-shot container |
+| `path` | *(none)* | Path to the tool binary inside the container |
+
+When the same tool name appears more than once, the first entry wins.
+
+```bash
+XCIND_TOOLS=(
+    "node:app"
+    "npm:app"
+    "composer:app;path=/usr/bin/composer"
+    "phpunit:app;use=run;path=vendor/bin/phpunit"
+)
+```
+
+### `XCIND_ADDITIONAL_CONFIG_FILES`
+
+Array of additional shell scripts to source after `.xcind.sh`. This allows
+splitting configuration across multiple files. Paths are resolved relative to
+the app root (and the workspace root, if in workspace mode). For each file,
+an `.override` variant is also checked.
+
+**Default:** `()` (empty)
+
+```bash
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind-tools.sh" ".xcind-proxy.sh")
+```
+
 ### `XCIND_IS_WORKSPACE`
 
 Set to `1` in a workspace root's `.xcind.sh` to mark the directory as a workspace.
@@ -139,9 +180,9 @@ XCIND_IS_WORKSPACE=1
 Array of hook function names to execute after file resolution. Hooks can generate
 additional compose files dynamically. See [Hooks](#hooks).
 
-**Default:** `("xcind-proxy-hook" "xcind-workspace-hook")`
+**Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
 
-Both built-in hooks are registered automatically. Override to `()` in your
+All four built-in hooks are registered automatically. Override to `()` in your
 `.xcind.sh` to disable all hook processing.
 
 ### `XCIND_PROXY_EXPORTS`
@@ -184,9 +225,17 @@ Defaults are provided for both workspaceless and workspace modes.
 | `XCIND_WORKSPACELESS_ROUTER_TEMPLATE` | `{app}-{export}-{protocol}` | No workspace |
 | `XCIND_WORKSPACE_ROUTER_TEMPLATE` | `{workspace}-{app}-{export}-{protocol}` | In workspace |
 | `XCIND_WORKSPACE_SERVICE_TEMPLATE` | `{app}-{service}` | Workspace networking |
+| `XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE` | `{app}.{domain}` | No workspace (apex) |
+| `XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE` | `{workspace}-{app}.{domain}` | In workspace (apex) |
+| `XCIND_WORKSPACELESS_APEX_ROUTER_TEMPLATE` | `{app}-{protocol}` | No workspace (apex) |
+| `XCIND_WORKSPACE_APEX_ROUTER_TEMPLATE` | `{workspace}-{app}-{protocol}` | In workspace (apex) |
 
 Placeholders (`{app}`, `{workspace}`, `{export}`, `{domain}`, `{protocol}`, `{service}`)
 are replaced at runtime.
+
+Apex templates generate shorter hostnames without the `{export}` segment (e.g.,
+`myapp.localhost` instead of `myapp-web.localhost`). Set an apex template to an
+empty string to disable apex hostname generation.
 
 ## Override Resolution
 
@@ -306,6 +355,19 @@ of re-running hooks. The cache lives at `$XCIND_APP_ROOT/.xcind/generated/`.
 
 ### Built-in hooks
 
+**`xcind-naming-hook`** (from `lib/xcind/xcind-naming-lib.bash`)
+
+Generates `compose.naming.yaml` with a top-level `name:` field to prevent
+container/volume/network name collisions across workspaces with
+identically-named app directories. In workspace mode the name is
+`{workspace}-{app}`; otherwise it is `{app}`.
+
+**`xcind-app-env-hook`** (from `lib/xcind/xcind-app-env-lib.bash`)
+
+Generates a compose override that adds `env_file:` entries to every service,
+making `XCIND_APP_ENV_FILES` available inside running containers. Requires
+`yq`. Only active when `XCIND_APP_ENV_FILES` is non-empty.
+
 **`xcind-proxy-hook`** (from `lib/xcind/xcind-proxy-lib.bash`)
 
 Generates `compose.proxy.yaml` with Traefik labels and network configuration
@@ -372,6 +434,7 @@ XCIND_PROXY_IMAGE="traefik:v3"         # Traefik Docker image
 XCIND_PROXY_HTTP_PORT="80"             # Host port for HTTP traffic
 XCIND_PROXY_DASHBOARD="false"          # Enable Traefik dashboard
 XCIND_PROXY_DASHBOARD_PORT="8080"      # Dashboard port (if enabled)
+XCIND_PROXY_AUTO_START="1"             # Auto-start Traefik on compose up (0 to disable)
 ```
 
 Edit this file to customize the proxy. Run `xcind-proxy up` to regenerate
@@ -403,6 +466,8 @@ xcind-config --generate-docker-wrapper                 # Generate a POSIX docker
 xcind-config --generate-docker-compose-wrapper         # Generate a POSIX docker-compose wrapper script
 xcind-config --generate-ide-configuration=DIR          # Generate compose.ide.yaml in DIR
 xcind-config --version                                 # Show version
+xcind-config completion bash                           # Output bash completions
+xcind-config completion zsh                            # Output zsh completions
 ```
 
 ### `xcind-proxy`
@@ -410,11 +475,13 @@ xcind-config --version                                 # Show version
 Manages the shared Traefik reverse proxy infrastructure.
 
 ```bash
-xcind-proxy init      # Create proxy config and generated files
-xcind-proxy up        # Start the proxy
-xcind-proxy down      # Stop the proxy
-xcind-proxy status    # Show proxy state (running/stopped, port, network)
-xcind-proxy --version # Show version
+xcind-proxy init        # Create proxy config and generated files
+xcind-proxy up          # Start the proxy
+xcind-proxy up --force  # Recreate proxy containers and Docker network
+xcind-proxy down        # Stop the proxy
+xcind-proxy status      # Show proxy state (running/stopped, port, network)
+xcind-proxy logs [OPTS] # Show Traefik proxy logs (supports docker compose logs flags)
+xcind-proxy --version   # Show version
 ```
 
 ## Environment Variable Override
@@ -613,37 +680,51 @@ MIT — see [LICENSE](LICENSE) for details.
 ```
 xcind/
 ├── bin/
-│   ├── xcind-compose          # Main executable — wraps docker compose
-│   ├── xcind-config           # Config dump — JSON, preview, code generation
-│   └── xcind-proxy            # Manages shared Traefik proxy infrastructure
+│   ├── xcind-compose              # Main executable — wraps docker compose
+│   ├── xcind-config               # Config dump — JSON, preview, code generation
+│   └── xcind-proxy                # Manages shared Traefik proxy infrastructure
 ├── lib/xcind/
-│   ├── xcind-lib.bash         # Shared library (sourced by other scripts)
-│   ├── xcind-proxy-lib.bash   # Proxy hook — generates compose.proxy.yaml
-│   └── xcind-workspace-lib.bash  # Workspace hook — generates compose.workspace.yaml
+│   ├── xcind-lib.bash             # Shared library (sourced by other scripts)
+│   ├── xcind-app-env-lib.bash     # App env hook — generates env_file: overrides
+│   ├── xcind-naming-lib.bash      # Naming hook — generates compose.naming.yaml
+│   ├── xcind-proxy-lib.bash       # Proxy hook — generates compose.proxy.yaml
+│   ├── xcind-workspace-lib.bash   # Workspace hook — generates compose.workspace.yaml
+│   ├── xcind-completion-bash.bash # Bash tab-completion script
+│   └── xcind-completion-zsh.bash  # Zsh tab-completion script
 ├── test/
-│   ├── test-xcind.sh          # Core test suite
-│   └── test-xcind-proxy.sh    # Proxy test suite
+│   ├── test-xcind.sh              # Core test suite
+│   └── test-xcind-proxy.sh        # Proxy test suite
 ├── examples/
 │   ├── workspaceless/
-│   │   ├── acmeapps/          # Simple example (nginx, env files)
-│   │   └── advanced/          # Variable expansion, multi-compose, traefik
+│   │   ├── acmeapps/              # Simple example (nginx, env files)
+│   │   └── advanced/              # Variable expansion, multi-compose, traefik
 │   └── workspaces/
-│       └── dev/               # Workspace with frontend + backend apps
+│       └── dev/                   # Workspace with frontend + backend apps
 ├── contrib/
-│   ├── release                # Release helper script
-│   └── test-all               # Full test runner (Docker + unit)
-├── docs/
-│   └── releasing.md           # Release process documentation
-├── compose.yaml               # Default Docker Compose configuration
-├── compose.override.dist      # Compose override template
-├── Dockerfile                 # Container image build
-├── flake.nix                  # Nix flake (package + overlay)
-├── flake.lock                 # Nix flake lock file
-├── install.sh                 # Install to a PREFIX
-├── uninstall.sh               # Remove from a PREFIX
-├── package.json               # npm package manifest
-├── cliff.toml                 # Changelog generation config (git-cliff)
-├── CHANGELOG.md               # Release changelog
-├── LICENSE                    # MIT license
+│   ├── check-file-manifest        # Verify files are registered in all manifests
+│   ├── release                    # Release helper script
+│   └── test-all                   # Full test runner (Docker + unit)
+├── docs/                          # Project documentation
+│   ├── architecture/              # System design and structure
+│   ├── behaviors/                 # Runtime behavior documentation
+│   ├── decisions/                 # Architecture decision records
+│   ├── implementation/            # Implementation details
+│   ├── maintenance/               # Maintenance and operations
+│   ├── product/                   # Product-level documentation
+│   ├── reference/                 # Configuration and CLI reference
+│   ├── specs/                     # Feature specifications
+│   └── releasing.md               # Release process documentation
+├── compose.yaml                   # Default Docker Compose configuration
+├── compose.override.dist          # Compose override template
+├── Dockerfile                     # Container image build
+├── Makefile                       # Build targets (test, lint, format, check)
+├── flake.nix                      # Nix flake (package + overlay)
+├── flake.lock                     # Nix flake lock file
+├── install.sh                     # Install to a PREFIX
+├── uninstall.sh                   # Remove from a PREFIX
+├── package.json                   # npm package manifest
+├── cliff.toml                     # Changelog generation config (git-cliff)
+├── CHANGELOG.md                   # Release changelog
+├── LICENSE                        # MIT license
 └── README.md
 ```
