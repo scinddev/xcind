@@ -5,7 +5,7 @@
 #   xcind-proxy init      Create proxy infrastructure files
 #   xcind-proxy up        Start the shared Traefik proxy
 #   xcind-proxy down      Stop the shared Traefik proxy
-#   xcind-proxy status    Show proxy state
+#   xcind-proxy status [--json]  Show proxy state
 #   xcind-proxy logs      Show Traefik proxy logs
 
 set -euo pipefail

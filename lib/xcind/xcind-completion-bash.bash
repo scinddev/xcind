@@ -143,6 +143,12 @@ _xcind_proxy_completions() {
     return
   fi
 
+  # After "status", offer --json
+  if [[ $prev == "status" ]]; then
+    COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    return
+  fi
+
   # After "logs", offer common docker compose logs flags
   if [[ $prev == "logs" ]]; then
     COMPREPLY=($(compgen -W "-f --follow --tail --timestamps -t --no-color --since --until" -- "$cur"))

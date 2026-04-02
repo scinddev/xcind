@@ -479,7 +479,7 @@ xcind-proxy init        # Create proxy config and generated files
 xcind-proxy up          # Start the proxy
 xcind-proxy up --force  # Recreate proxy containers and Docker network
 xcind-proxy down        # Stop the proxy
-xcind-proxy status      # Show proxy state (running/stopped, port, network)
+xcind-proxy status [--json]  # Show proxy state (running/stopped, port, network)
 xcind-proxy logs [OPTS] # Show Traefik proxy logs (supports docker compose logs flags)
 xcind-proxy --version   # Show version
 ```

@@ -66,7 +66,7 @@ With `--force`: tears down existing containers, removes the network, re-initiali
 
 Stops the Traefik container via `docker compose down`.
 
-### `xcind-proxy status`
+### `xcind-proxy status [--json]`
 
 Reports:
 - Running/stopped state
@@ -74,6 +74,8 @@ Reports:
 - HTTP port
 - Dashboard URL (if enabled)
 - Network existence
+
+With `--json`: outputs a flat JSON object for machine consumption.
 
 ### Auto-Start
 
