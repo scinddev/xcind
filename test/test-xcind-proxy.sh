@@ -68,6 +68,7 @@ MOCK_HOME=$(mktemp -d)
 export HOME="$MOCK_HOME"
 
 # Mock docker command to avoid real Docker calls
+REAL_PATH="$PATH"
 export PATH="$MOCK_HOME/bin:$PATH"
 mkdir -p "$MOCK_HOME/bin"
 cat >"$MOCK_HOME/bin/docker" <<'MOCKEOF'
@@ -116,6 +117,7 @@ config_after=$(<"$PROXY_CONFIG_DIR/config.sh")
 assert_contains "config.sh preserved on re-init" "user customization" "$config_after"
 
 export HOME="$REAL_HOME"
+export PATH="$REAL_PATH"
 rm -rf "$MOCK_HOME"
 
 # ======================================================================
@@ -283,6 +285,7 @@ MOCK_HOME_JSON2=$(mktemp -d)
 REAL_HOME_JSON2="$HOME"
 export HOME="$MOCK_HOME_JSON2"
 
+REAL_PATH_JSON2="$PATH"
 export PATH="$MOCK_HOME_JSON2/bin:$PATH"
 mkdir -p "$MOCK_HOME_JSON2/bin"
 cat >"$MOCK_HOME_JSON2/bin/docker" <<'MOCKEOF'
@@ -315,6 +318,7 @@ assert_contains "text has Status: running" "Status: running" "$text_result"
 assert_contains "text has Image:" "Image:" "$text_result"
 
 export HOME="$REAL_HOME_JSON2"
+export PATH="$REAL_PATH_JSON2"
 rm -rf "$MOCK_HOME_JSON2"
 
 # ======================================================================
