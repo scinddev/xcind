@@ -12,20 +12,22 @@
 # Cobra's zsh autoload self-call pattern).
 
 _xcind-compose() {
-  local requestComp out directive lastLine comp
+  local out directive lastLine comp
   local -a completions
 
   # Build the completion request as if the user typed "docker compose ..."
   # words[1] is "xcind-compose"; words[2..] are the user's arguments
-  requestComp="docker __complete compose ${words[@]:1}"
+  local -a args
+  args=(docker __complete compose)
+  args+=("${words[@]:1}")
 
   # If completing a new word (cursor after a space), add an empty arg
   if [[ ${words[CURRENT]} == "" ]]; then
-    requestComp="${requestComp} \"\""
+    args+=("")
   fi
 
   # Get completions from Docker's Cobra mechanism
-  out=$(eval ${requestComp} 2>/dev/null)
+  out=$("${args[@]}" 2>/dev/null)
 
   if [[ -z $out ]]; then
     # docker __complete not available — use hardcoded fallback
@@ -65,14 +67,12 @@ _xcind-compose() {
   done < <(printf "%s\n" "${out[@]}")
 
   if ((${#completions})); then
-    local noSpace=""
-    local keepOrder=""
-    # Directive bit 2 = no space after completion
-    ((directive & 2)) && noSpace="-S ''"
+    local -a desc_args
     # Directive bit 32 = keep order
-    ((directive & 32)) && keepOrder="-V"
-
-    if eval _describe $keepOrder "'docker compose'" completions $noSpace; then
+    ((directive & 32)) && desc_args+=(-V)
+    # Directive bit 2 = no space after completion
+    ((directive & 2)) && desc_args+=(-S '')
+    if _describe "${desc_args[@]}" 'docker compose' completions; then
       return
     fi
   fi
