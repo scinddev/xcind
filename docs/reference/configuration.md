@@ -84,6 +84,31 @@ Array of Docker Bake file patterns, relative to the app root. Reserved for futur
 XCIND_BAKE_FILES=("docker-bake.hcl")
 ```
 
+### `XCIND_TOOLS`
+
+Array of tool declarations for IDE and plugin integration. Each entry maps a tool name to a compose service, with optional metadata. Declared tools appear in the `tools` object of the [`xcind-config --json`](./cli.md#json-output-contract) output.
+
+**Default:** `()` (empty)
+
+**Format:** `name:service[;key=value[;key=value…]]`
+
+| Metadata Key | Default | Description |
+|--------------|---------|-------------|
+| `use` | `"exec"` | How the tool is invoked: `exec` (default) attaches to an existing service container; `run` starts a new one-shot container. |
+| `path` | *(omitted)* | Path to the tool binary inside the container |
+
+First entry for a given tool name wins; subsequent duplicates are skipped.
+
+```bash
+XCIND_TOOLS=(
+    "php:app"
+    "npm:app"
+    "composer:app;path=/usr/bin/composer"
+)
+```
+
+Changes to `XCIND_TOOLS` affect the configuration SHA, triggering cache invalidation.
+
 ### `XCIND_IS_WORKSPACE`
 
 Set to `1` in a workspace root's `.xcind.sh` to mark the directory as a workspace. When xcind discovers an app inside this directory, it sources the workspace `.xcind.sh` first.

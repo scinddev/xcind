@@ -61,30 +61,35 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 
 | Flag | Output |
 |------|--------|
-| *(none)* | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`) |
-| `--preview` | The `docker compose` command line that would run |
-| `--files` | Resolved file paths, one per line, grouped by type |
+| *(none)* | Show usage help |
+| `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `tools`) |
+| `--preview [-- ARGS...]` | The `docker compose` command line that would run |
 | `--check` | Check whether required and optional dependencies are available |
-| `--dump-docker-wrapper` | Generate a POSIX `docker` wrapper script |
-| `--dump-docker-compose-wrapper` | Generate a POSIX `docker-compose` wrapper script |
+| `--generate-docker-wrapper[=FILE]` | Generate a POSIX `docker` wrapper script |
+| `--generate-docker-compose-wrapper[=FILE]` | Generate a POSIX `docker-compose` wrapper script |
+| `--generate-ide-configuration=DIR` | Generate `compose.ide.yaml` in DIR |
 | `--version`, `-V` | Show version |
 | `--help`, `-h` | Show usage help |
+
+Multiple `--generate-*` flags may be combined in a single invocation when each specifies a file or directory. Combine with `--json` to also output JSON to stdout.
 
 ### Usage
 
 ```bash
-xcind-config                            # JSON output
-xcind-config --preview                  # Show the docker compose command line
-xcind-config --files                    # List resolved files
-xcind-config --check                    # Check dependencies
-xcind-config --dump-docker-wrapper      # Generate a docker wrapper script
-xcind-config --dump-docker-compose-wrapper  # Generate a docker-compose wrapper script
-xcind-config --version                  # Show version
+xcind-config                                       # Show help
+xcind-config --json                                # JSON output
+xcind-config --preview                             # Show the docker compose command line
+xcind-config --check                               # Check dependencies
+xcind-config --generate-docker-wrapper             # Generate docker wrapper to stdout
+xcind-config --generate-docker-wrapper=bin/docker   # Generate docker wrapper to file
+xcind-config --generate-docker-compose-wrapper     # Generate docker-compose wrapper to stdout
+xcind-config --generate-ide-configuration=.idea    # Generate compose.ide.yaml in .idea/
+xcind-config --version                             # Show version
 ```
 
 ### JSON Output Contract
 
-The default JSON output follows the contract expected by the xcind JetBrains plugin:
+The `--json` output follows the contract expected by the xcind JetBrains plugin:
 
 ```json
 {
@@ -95,12 +100,18 @@ The default JSON output follows the contract expected by the xcind JetBrains plu
   },
   "appRoot": "/path/to/app",
   "configFiles": ["/path/to/workspace/.xcind.sh", "/path/to/app/.xcind.sh"],
-  "composeFiles": ["compose.yaml", "compose.override.yaml"],
-  "composeEnvFiles": [".env"],
-  "appEnvFiles": [".env.app"],
-  "bakeFiles": []
+  "composeFiles": ["/path/to/app/compose.yaml", "/path/to/app/compose.override.yaml"],
+  "composeEnvFiles": ["/path/to/app/.env"],
+  "appEnvFiles": ["/path/to/app/.env.app"],
+  "bakeFiles": [],
+  "tools": {
+    "php": { "service": "app", "use": "exec" },
+    "npm": { "service": "app", "use": "exec" }
+  }
 }
 ```
+
+The `tools` object is keyed by tool name. Each entry includes `service`, `use` (default `"exec"`), and optionally `path`. See [`XCIND_TOOLS`](./configuration.md#xcind_tools) for the declaration format.
 
 ### `--check` Mode
 
