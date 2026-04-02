@@ -213,7 +213,7 @@ docker() {
 }
 : >"$DOCKER_CALLS_FILE"
 # Touch config.sh to be newer than docker-compose.yaml
-sleep 0.1
+sleep 1
 touch "$XCIND_PROXY_CONFIG_DIR/config.sh"
 staleness_stderr=$(__xcind-proxy-ensure-running 2>&1 1>/dev/null)
 assert_contains "staleness: warns when config.sh is newer" "config.sh changed since last init" "$staleness_stderr"
