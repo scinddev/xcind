@@ -369,7 +369,7 @@ __xcind-resolve-tools() {
     remainder="${entry#*:}"
     service="${remainder%%;*}"
     meta=""
-    if [[ "$remainder" == *";"* ]]; then
+    if [[ $remainder == *";"* ]]; then
       meta="${remainder#*;}"
     fi
 
@@ -382,7 +382,7 @@ __xcind-resolve-tools() {
     # Parse metadata key=value pairs
     use="exec"
     path=""
-    if [[ -n "$meta" ]]; then
+    if [[ -n $meta ]]; then
       local IFS=';'
       local pairs
       # shellcheck disable=SC2206
@@ -406,7 +406,7 @@ __xcind-resolve-tools() {
       printf ','
     fi
 
-    if [[ -n "$path" ]]; then
+    if [[ -n $path ]]; then
       printf '%s:%s' \
         "$(printf '%s' "$name" | jq -R .)" \
         "$(jq -n --arg s "$service" --arg u "$use" --arg p "$path" \
@@ -422,6 +422,16 @@ __xcind-resolve-tools() {
 }
 
 # Output the resolved configuration as JSON.
+# Convert a bash array to a JSON array string.
+# Requires jq.
+__to_json_array() {
+  if [ $# -eq 0 ]; then
+    echo "[]"
+  else
+    printf '%s\n' "$@" | jq -R . | jq -s .
+  fi
+}
+
 # Requires jq to be installed.
 #
 # Usage:
@@ -483,15 +493,6 @@ __xcind-resolve-json() {
   while IFS= read -r bake_file; do
     bake_files+=("$bake_file")
   done < <(__xcind-resolve-files "$app_root" ${XCIND_BAKE_FILES[@]+"${XCIND_BAKE_FILES[@]}"})
-
-  # Helper: convert a bash array to a JSON array string
-  __to_json_array() {
-    if [ $# -eq 0 ]; then
-      echo "[]"
-    else
-      printf '%s\n' "$@" | jq -R . | jq -s .
-    fi
-  }
 
   # Metadata
   local _ws_name="${XCIND_WORKSPACE:-}"
@@ -618,7 +619,7 @@ __xcind-preview-command() {
   fi
 
   echo "# Working directory: $app_root"
-  echo "docker compose ${XCIND_DOCKER_COMPOSE_OPTS[*]} $*"
+  printf 'docker compose %s %s\n' "${XCIND_DOCKER_COMPOSE_OPTS[*]}" "$*"
 }
 
 # --------------------------------------------------------------------------
@@ -867,7 +868,7 @@ __xcind-populate-cache() {
   mkdir -p "$XCIND_CACHE_DIR"
 
   # Write resolved-config.yaml via docker compose config
-  docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$XCIND_CACHE_DIR/resolved-config.yaml"
+  docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$XCIND_CACHE_DIR/resolved-config.yaml" || return 1
 
   # Write config.json (matching xcind-config format)
   if command -v jq &>/dev/null; then
