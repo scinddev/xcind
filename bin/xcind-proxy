@@ -5,7 +5,7 @@
 #   xcind-proxy init      Create proxy infrastructure files
 #   xcind-proxy up        Start the shared Traefik proxy
 #   xcind-proxy down      Stop the shared Traefik proxy
-#   xcind-proxy status    Show proxy state
+#   xcind-proxy status [--json]  Show proxy state
 #   xcind-proxy logs      Show Traefik proxy logs
 
 set -euo pipefail
@@ -75,7 +75,7 @@ __xcind-proxy-down() {
   fi
 
   if [ ! -f "$compose_file" ]; then
-    echo "Proxy not initialized. Run 'xcind-proxy init' first." >&2
+    echo "Proxy not initialized. Run 'xcind-proxy init' to set up proxy infrastructure." >&2
     exit 1
   fi
 
@@ -83,9 +83,19 @@ __xcind-proxy-down() {
 }
 
 __xcind-proxy-status() {
+  local json_mode=false
+  if [[ ${1:-} == "--json" ]]; then
+    json_mode=true
+  fi
+
+  # Not initialized
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
-    echo "Status: not initialized"
-    echo "Run 'xcind-proxy init' to set up proxy infrastructure."
+    if [ "$json_mode" = true ]; then
+      printf '{"initialized":false,"status":"not_initialized"}\n'
+    else
+      echo "Status: not initialized"
+      echo "Run 'xcind-proxy init' to set up proxy infrastructure."
+    fi
     return 0
   fi
 
@@ -94,45 +104,85 @@ __xcind-proxy-status() {
   source "$XCIND_PROXY_CONFIG_DIR/config.sh"
 
   # Check if running
-  local running
-  running=$(docker compose -f "$XCIND_PROXY_COMPOSE" ps --format json 2>/dev/null | head -1) || true
-
-  if [ -n "$running" ]; then
-    echo "Status: running"
-  else
-    echo "Status: stopped"
+  local running_raw
+  running_raw=$(docker compose -f "$XCIND_PROXY_COMPOSE" ps --format json 2>/dev/null | head -1) || true
+  local running_status="stopped"
+  if [ -n "$running_raw" ]; then
+    running_status="running"
   fi
 
-  # Show config staleness
-  if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f "$XCIND_PROXY_COMPOSE" ]] &&
-    [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt "$XCIND_PROXY_COMPOSE" ]]; then
-    echo "Config: stale (run 'xcind-proxy up' to regenerate)"
-  else
-    echo "Config: current"
+  # Check config staleness
+  local config_status="current"
+  if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" && -f $XCIND_PROXY_COMPOSE ]] &&
+    [[ "$XCIND_PROXY_CONFIG_DIR/config.sh" -nt $XCIND_PROXY_COMPOSE ]]; then
+    config_status="stale"
   fi
 
-  echo "Image: ${XCIND_PROXY_IMAGE:-traefik:v3}"
-  echo "HTTP port: ${XCIND_PROXY_HTTP_PORT:-80}"
-
+  local image="${XCIND_PROXY_IMAGE:-traefik:v3}"
+  local http_port="${XCIND_PROXY_HTTP_PORT:-80}"
+  local dashboard_enabled=false
+  local dashboard_url=""
   if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
-    echo "Dashboard: http://localhost:${XCIND_PROXY_DASHBOARD_PORT:-8080}"
+    dashboard_enabled=true
+    dashboard_url="http://localhost:${XCIND_PROXY_DASHBOARD_PORT:-8080}"
   fi
 
-  # Check network
+  local network_name="$XCIND_PROXY_NETWORK"
+  local network_exists=false
   if docker network inspect "$XCIND_PROXY_NETWORK" &>/dev/null; then
-    echo "Network: $XCIND_PROXY_NETWORK (exists)"
+    network_exists=true
+  fi
+
+  # Output
+  if [ "$json_mode" = true ]; then
+    printf '{"initialized":true,"status":"%s","config":"%s","image":"%s","http_port":%s,"dashboard_enabled":%s,"dashboard_url":"%s","network_name":"%s","network_exists":%s}\n' \
+      "$running_status" "$config_status" "$image" "$http_port" "$dashboard_enabled" "$dashboard_url" "$network_name" "$network_exists"
   else
-    echo "Network: $XCIND_PROXY_NETWORK (missing)"
+    echo "Status: $running_status"
+    if [ "$config_status" = "stale" ]; then
+      echo "Config: stale (run 'xcind-proxy up' to regenerate)"
+    else
+      echo "Config: current"
+    fi
+    echo "Image: $image"
+    echo "HTTP port: $http_port"
+    if [ "$dashboard_enabled" = true ]; then
+      echo "Dashboard: $dashboard_url"
+    fi
+    if [ "$network_exists" = true ]; then
+      echo "Network: $network_name (exists)"
+    else
+      echo "Network: $network_name (missing)"
+    fi
   fi
 }
 
 __xcind-proxy-logs() {
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
-    echo "Proxy not initialized. Run 'xcind-proxy init' first." >&2
+    echo "Proxy not initialized. Run 'xcind-proxy init' to set up proxy infrastructure." >&2
     exit 1
   fi
 
   docker compose -f "$XCIND_PROXY_COMPOSE" logs "$@"
+}
+
+# --------------------------------------------------------------------------
+# Help
+# --------------------------------------------------------------------------
+
+__xcind-proxy-help() {
+  echo "Usage: xcind-proxy <subcommand>"
+  echo ""
+  echo "Subcommands:"
+  echo "  init               Create proxy infrastructure files"
+  echo "  up [--force]       Start the shared Traefik proxy (--force recreates network)"
+  echo "  down               Stop the shared Traefik proxy"
+  echo "  status [--json]    Show proxy state (running/stopped, image, port, network)"
+  echo "  logs [OPTS]        Show Traefik proxy logs (supports docker compose logs flags)"
+  echo ""
+  echo "Options:"
+  echo "  --version, -V  Show version"
+  echo "  --help, -h     Show this help"
 }
 
 # --------------------------------------------------------------------------
@@ -143,29 +193,21 @@ case "${1:-}" in
 init) __xcind-proxy-init ;;
 up) __xcind-proxy-up "${2:-}" ;;
 down) __xcind-proxy-down ;;
-status) __xcind-proxy-status ;;
+status)
+  shift
+  __xcind-proxy-status "$@"
+  ;;
 logs)
   shift
   __xcind-proxy-logs "$@"
   ;;
 --help | -h)
-  echo "Usage: xcind-proxy <subcommand>"
-  echo ""
-  echo "Subcommands:"
-  echo "  init          Create proxy infrastructure files"
-  echo "  up [--force]  Start the shared Traefik proxy (--force recreates network)"
-  echo "  down          Stop the shared Traefik proxy"
-  echo "  status        Show proxy state (running/stopped, image, port, network)"
-  echo "  logs [OPTS]   Show Traefik proxy logs (supports docker compose logs flags)"
-  echo ""
-  echo "Options:"
-  echo "  --version, -V  Show version"
-  echo "  --help, -h     Show this help"
+  __xcind-proxy-help
   exit 0
   ;;
 "")
-  echo "Error: No subcommand specified. Run 'xcind-proxy --help' for usage." >&2
-  exit 1
+  __xcind-proxy-help
+  exit 0
   ;;
 *)
   echo "Error: Unknown subcommand '$1'. Run 'xcind-proxy --help' for usage." >&2

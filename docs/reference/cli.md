@@ -133,7 +133,7 @@ Manages the shared Traefik reverse proxy infrastructure.
 | `init` | Create proxy infrastructure files |
 | `up [--force]` | Start the shared Traefik proxy (`--force` recreates the network) |
 | `down` | Stop the shared Traefik proxy |
-| `status` | Show proxy state (running/stopped, image, port, network) |
+| `status [--json]` | Show proxy state (running/stopped, image, port, network) |
 | `logs [OPTS]` | Show Traefik proxy logs (supports `docker compose logs` flags) |
 
 ### Options
@@ -151,6 +151,7 @@ xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy
 xcind-proxy status        # Show proxy state
+xcind-proxy status --json # Show proxy state as JSON
 xcind-proxy logs          # Show logs
 xcind-proxy logs -f       # Follow logs
 xcind-proxy --version     # Show version

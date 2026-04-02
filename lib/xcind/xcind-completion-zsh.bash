@@ -175,6 +175,11 @@ _xcind-proxy() {
     _describe 'up option' up_opts
     return
     ;;
+  status)
+    local -a status_opts=('--json:Output status as JSON')
+    _describe 'status option' status_opts
+    return
+    ;;
   logs)
     local -a log_opts=(
       '-f:Follow log output'
