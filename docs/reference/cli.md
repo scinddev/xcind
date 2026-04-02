@@ -63,12 +63,12 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 | `--check` | Check whether required and optional dependencies are available |
 | `--generate-docker-wrapper[=FILE]` | Generate a POSIX `docker` wrapper script |
 | `--generate-docker-compose-wrapper[=FILE]` | Generate a POSIX `docker-compose` wrapper script |
-| `--generate-ide-configuration=DIR` | Generate `compose.ide.yaml` in DIR |
+| `--generate-docker-compose-configuration[=FILE]` | Generate resolved compose config |
 | `completion {bash\|zsh}` | Output shell completion script for all xcind commands |
 | `--version`, `-V` | Show version |
 | `--help`, `-h` | Show usage help |
 
-Multiple `--generate-*` flags may be combined in a single invocation when each specifies a file or directory. Combine with `--json` to also output JSON to stdout.
+Multiple `--generate-*` flags may be combined in a single invocation when each specifies a file. Combine with `--json` to also output JSON to stdout.
 
 ### Usage
 
@@ -80,7 +80,8 @@ xcind-config --check                               # Check dependencies
 xcind-config --generate-docker-wrapper             # Generate docker wrapper to stdout
 xcind-config --generate-docker-wrapper=bin/docker   # Generate docker wrapper to file
 xcind-config --generate-docker-compose-wrapper     # Generate docker-compose wrapper to stdout
-xcind-config --generate-ide-configuration=.idea    # Generate compose.ide.yaml in .idea/
+xcind-config --generate-docker-compose-configuration        # Generate resolved compose config to stdout
+xcind-config --generate-docker-compose-configuration=FILE   # Generate resolved compose config to file
 xcind-config --version                             # Show version
 xcind-config completion bash                       # Output bash completions
 xcind-config completion zsh                        # Output zsh completions

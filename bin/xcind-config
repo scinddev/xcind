@@ -8,7 +8,7 @@
 #   xcind-config --check                                   Check system dependencies
 #   xcind-config --generate-docker-wrapper[=FILE]          Generate a POSIX docker wrapper
 #   xcind-config --generate-docker-compose-wrapper[=FILE]  Generate a POSIX docker-compose wrapper
-#   xcind-config --generate-ide-configuration=DIR          Generate compose.ide.yaml in DIR
+#   xcind-config --generate-docker-compose-configuration[=FILE]  Generate resolved compose config
 
 set -euo pipefail
 
@@ -46,11 +46,11 @@ Options:
 
   --generate-docker-wrapper[=FILE]             Generate docker wrapper script
   --generate-docker-compose-wrapper[=FILE]     Generate docker-compose wrapper script
-  --generate-ide-configuration=DIR             Generate compose.ide.yaml in DIR
+  --generate-docker-compose-configuration[=FILE]  Generate resolved compose config
 
   completion {bash|zsh}                        Output shell completion script
 
-Multiple --generate-* flags may be combined when each specifies a file/dir.
+Multiple --generate-* flags may be combined when each specifies a file.
 Combine with --json to also output JSON to stdout.
 HELPEOF
 }
@@ -80,8 +80,8 @@ _do_gen_docker_wrapper=false
 _gen_docker_wrapper_file=""
 _do_gen_compose_wrapper=false
 _gen_compose_wrapper_file=""
-_do_gen_ide_config=false
-_gen_ide_config_dir=""
+_do_gen_compose_config=false
+_gen_compose_config_file=""
 _do_completion=""
 _stdout_claim=""
 _action_count=0
@@ -143,21 +143,21 @@ while [[ $# -gt 0 ]]; do
     fi
     _action_count=$((_action_count + 1))
     ;;
-  --generate-ide-configuration=*)
-    _do_gen_ide_config=true
-    _gen_ide_config_dir="${1#*=}"
+  --generate-docker-compose-configuration=*)
+    _do_gen_compose_config=true
+    _gen_compose_config_file="${1#*=}"
     _action_count=$((_action_count + 1))
     ;;
-  --generate-ide-configuration)
-    # Next arg must be the directory (required)
+  --generate-docker-compose-configuration)
+    _do_gen_compose_config=true
+    # Check if next arg is a value (not a flag)
     if [[ $# -ge 2 && ${2:0:1} != "-" ]]; then
       shift
-      _do_gen_ide_config=true
-      _gen_ide_config_dir="$1"
-      _action_count=$((_action_count + 1))
+      _gen_compose_config_file="$1"
     else
-      __xcind_config_die "--generate-ide-configuration requires a directory argument"
+      __xcind_config_claim_stdout "generate-docker-compose-configuration"
     fi
+    _action_count=$((_action_count + 1))
     ;;
   completion)
     shift
@@ -211,11 +211,6 @@ fi
 # -- args only valid with --preview
 if [[ ${#PREVIEW_EXTRA_ARGS[@]} -gt 0 && $_do_preview != true ]]; then
   __xcind_config_die "extra arguments after -- are only valid with --preview"
-fi
-
-# IDE configuration dir must not be empty
-if [[ $_do_gen_ide_config == true && -z $_gen_ide_config_dir ]]; then
-  __xcind_config_die "--generate-ide-configuration requires a directory argument"
 fi
 
 # --- Standalone early-exit actions ---
@@ -331,8 +326,19 @@ if [[ $_do_gen_compose_wrapper == true ]]; then
   fi
 fi
 
-if [[ $_do_gen_ide_config == true ]]; then
-  __xcind-generate-ide-configuration "$_gen_ide_config_dir" || exit 1
+if [[ $_do_gen_compose_config == true ]]; then
+  if [[ -n $_gen_compose_config_file ]]; then
+    _tmp_file="${_gen_compose_config_file}.tmp"
+    mkdir -p -- "$(dirname "$_gen_compose_config_file")"
+    if __xcind-dump-docker-compose-configuration >"$_tmp_file"; then
+      mv -- "$_tmp_file" "$_gen_compose_config_file"
+    else
+      rm -f -- "$_tmp_file"
+      exit 1
+    fi
+  else
+    __xcind-dump-docker-compose-configuration
+  fi
 fi
 
 if [[ $_do_json == true ]]; then

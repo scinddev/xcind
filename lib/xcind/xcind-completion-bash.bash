@@ -113,23 +113,18 @@ _xcind_config_completions() {
     return
   fi
 
-  # After --generate-ide-configuration, complete directories
-  if [[ $prev == "--generate-ide-configuration" ]]; then
-    COMPREPLY=($(compgen -d -- "$cur"))
-    return
-  fi
-
-  # After --generate-docker-wrapper or --generate-docker-compose-wrapper,
-  # complete files (optional output path)
+  # After --generate-docker-wrapper, --generate-docker-compose-wrapper, or
+  # --generate-docker-compose-configuration, complete files (optional output path)
   if [[ $prev == "--generate-docker-wrapper" ]] ||
-    [[ $prev == "--generate-docker-compose-wrapper" ]]; then
+    [[ $prev == "--generate-docker-compose-wrapper" ]] ||
+    [[ $prev == "--generate-docker-compose-configuration" ]]; then
     COMPREPLY=($(compgen -f -- "$cur"))
     return
   fi
 
   local opts="--help -h --version -V --check --json --preview
     --generate-docker-wrapper --generate-docker-compose-wrapper
-    --generate-ide-configuration completion"
+    --generate-docker-compose-configuration completion"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

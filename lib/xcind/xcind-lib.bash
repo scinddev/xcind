@@ -585,20 +585,12 @@ fi
 EOF
 }
 
-# Generate compose.ide.yaml for IDE integration.
+# Dump the fully resolved Docker Compose configuration to stdout.
 #
 # Usage:
-#   __xcind-generate-ide-configuration /path/to/output/dir
-__xcind-generate-ide-configuration() {
-  local out_dir="$1"
-  mkdir -p -- "$out_dir"
-  if xcind-compose config >"$out_dir/compose.ide.yaml.tmp" 2>/dev/null; then
-    mv -- "$out_dir/compose.ide.yaml.tmp" "$out_dir/compose.ide.yaml"
-  else
-    rm -f -- "$out_dir/compose.ide.yaml.tmp"
-    echo "Error: failed to generate compose.ide.yaml" >&2
-    return 1
-  fi
+#   __xcind-dump-docker-compose-configuration
+__xcind-dump-docker-compose-configuration() {
+  xcind-compose config
 }
 
 # --------------------------------------------------------------------------
