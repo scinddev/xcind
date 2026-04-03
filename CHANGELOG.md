@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-03
+
+### Added
+
+- Improve xcind-proxy UX: no-args help, status --json, consistent messages (#33) by @simensen in [#33](https://github.com/scinddev/xcind/pull/33)
+
+### Changed
+
+- Replace --generate-ide-configuration with --generate-docker-compose-configuration (#32) by @simensen in [#32](https://github.com/scinddev/xcind/pull/32)
+
+### Fixed
+
+- docs: update README with missing features and fix outdated content (#31) by @simensen in [#31](https://github.com/scinddev/xcind/pull/31)
+- Fix proxy not auto-starting on hook cache hit by @simensen
+
+### Maintenance
+
+- Introduce hook lifecycle system with GENERATE and EXECUTE phases (#34) by @simensen in [#34](https://github.com/scinddev/xcind/pull/34)
 ## [0.3.0] - 2026-04-02
 
 ### Added
