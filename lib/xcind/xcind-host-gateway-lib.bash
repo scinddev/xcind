@@ -124,6 +124,15 @@ __xcind-service-has-host-docker-internal() {
   [[ -n "$has_mapping" ]]
 }
 
+# Prints existing extra_hosts entries for a service, one per line.
+__xcind-service-existing-extra-hosts() {
+  local service="$1"
+  local resolved_config="$2"
+
+  yq -r ".services.\"$service\".extra_hosts // [] | .[]" \
+    "$resolved_config" 2>/dev/null
+}
+
 # --------------------------------------------------------------------------
 # Hook Function
 # --------------------------------------------------------------------------
@@ -148,10 +157,10 @@ xcind-host-gateway-hook() {
     return 0
   fi
 
-  # Require yq for service enumeration and extra_hosts checking
+  # yq is optional for this default-enabled hook; if unavailable, warn and no-op
   if ! command -v yq &>/dev/null; then
-    echo "Error: yq is required for host-gateway hook but was not found." >&2
-    return 1
+    echo "Warning: skipping host-gateway hook because yq was not found." >&2
+    return 0
   fi
 
   local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
@@ -179,12 +188,20 @@ xcind-host-gateway-hook() {
     return 0
   fi
 
-  # Build output
+  # Build output — preserve existing extra_hosts entries for each service
   local output="services:"
   for service_name in "${needs_mapping[@]}"; do
     output+=$'\n'
     output+=$'\n'"  ${service_name}:"
     output+=$'\n'"    extra_hosts:"
+
+    # Carry forward existing entries so the overlay merges rather than replaces
+    local existing_host
+    while IFS= read -r existing_host; do
+      [[ -z "$existing_host" ]] && continue
+      output+=$'\n'"      - \"${existing_host}\""
+    done < <(__xcind-service-existing-extra-hosts "$service_name" "$resolved_config")
+
     output+=$'\n'"      - \"host.docker.internal:${host_gateway}\""
   done
 

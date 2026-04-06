@@ -19,6 +19,8 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0009](./0009-flexible-tls-configuration.md) | Flexible TLS Configuration | Accepted |
 | [0010](./0010-up-down-command-semantics.md) | up/down Command Semantics | Accepted |
 | [0011](./0011-layered-documentation-system.md) | Layered Documentation System | Accepted |
+| [0012](./0012-unified-generate-flag-semantics.md) | Unified Generate Flag Semantics | Accepted |
+| [0013](./0013-host-docker-internal-normalization.md) | Automatic `host.docker.internal` Normalization | Accepted |
 
 ## ADR Format
 
