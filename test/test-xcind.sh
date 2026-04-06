@@ -1881,6 +1881,69 @@ else
 fi
 
 # ======================================================================
+echo ""
+echo "=== Test: __xcind-detect-host-gateway-wsl2 mirrored mode returns LAN IP ==="
+
+# Mock wslinfo and hostname to simulate WSL2 mirrored mode
+MOCK_BIN=$(mktemp -d)
+cat >"$MOCK_BIN/wslinfo" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "mirrored"
+SCRIPT
+chmod +x "$MOCK_BIN/wslinfo"
+
+cat >"$MOCK_BIN/hostname" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ "$1" == "-I" ]]; then
+  echo "10.52.19.121 fd12::1"
+else
+  command hostname "$@"
+fi
+SCRIPT
+chmod +x "$MOCK_BIN/hostname"
+
+# Put mocks first in PATH so they shadow system commands
+OLD_PATH="$PATH"
+export PATH="$MOCK_BIN:$PATH"
+
+mirrored_result=$(__xcind-detect-host-gateway-wsl2 2>/dev/null)
+assert_eq "mirrored mode returns LAN IP" "10.52.19.121" "$mirrored_result"
+
+# Also test virtioproxy mode
+cat >"$MOCK_BIN/wslinfo" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "virtioproxy"
+SCRIPT
+chmod +x "$MOCK_BIN/wslinfo"
+
+virtioproxy_result=$(__xcind-detect-host-gateway-wsl2 2>/dev/null)
+assert_eq "virtioproxy mode returns LAN IP" "10.52.19.121" "$virtioproxy_result"
+
+# Test fallback when hostname -I returns empty
+cat >"$MOCK_BIN/hostname" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ "$1" == "-I" ]]; then
+  echo ""
+else
+  command hostname "$@"
+fi
+SCRIPT
+chmod +x "$MOCK_BIN/hostname"
+
+# Reset wslinfo to mirrored
+cat >"$MOCK_BIN/wslinfo" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "mirrored"
+SCRIPT
+chmod +x "$MOCK_BIN/wslinfo"
+
+fallback_result=$(__xcind-detect-host-gateway-wsl2 2>/dev/null)
+assert_eq "mirrored mode falls back to host-gateway when no LAN IP" "host-gateway" "$fallback_result"
+
+export PATH="$OLD_PATH"
+rm -rf "$MOCK_BIN"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 
