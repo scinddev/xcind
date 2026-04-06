@@ -379,7 +379,8 @@ making `XCIND_APP_ENV_FILES` available inside running containers. Requires
 Generates `compose.host-gateway.yaml` with `extra_hosts` entries mapping
 `host.docker.internal` to the developer's workstation for every service that
 doesn't already define the mapping. Handles platform detection automatically
-(Docker Desktop, native Linux, WSL2 NAT/mirrored modes). Disable with
+(Docker Desktop, native Linux, WSL2 NAT/mirrored modes). Requires `yq`;
+if `yq` is unavailable, the hook is skipped with a warning. Disable with
 `XCIND_HOST_GATEWAY_ENABLED=0` in `.xcind.sh`. Override the detected value
 with `XCIND_HOST_GATEWAY=<value>`.
 

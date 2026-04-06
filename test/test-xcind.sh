@@ -1730,6 +1730,48 @@ fi
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-host-gateway-hook preserves existing extra_hosts ==="
+
+if command -v yq &>/dev/null; then
+  HGW_MERGE=$(mktemp -d)
+  export XCIND_SHA="hgwmerge"
+  export XCIND_CACHE_DIR="$HGW_MERGE/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_MERGE/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    extra_hosts:
+      - "myhost:10.0.0.1"
+      - "otherhost:10.0.0.2"
+  worker:
+    image: alpine
+YAML
+
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="host-gateway"
+  hook_output=$(xcind-host-gateway-hook "$HGW_MERGE")
+
+  assert_contains "host-gateway merge hook returns -f flag" \
+    "-f $XCIND_GENERATED_DIR/compose.host-gateway.yaml" "$hook_output"
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
+  assert_contains "generated YAML preserves myhost entry" "myhost:10.0.0.1" "$generated"
+  assert_contains "generated YAML preserves otherhost entry" "otherhost:10.0.0.2" "$generated"
+  assert_contains "generated YAML has host.docker.internal mapping" \
+    "host.docker.internal:host-gateway" "$generated"
+  assert_contains "generated YAML has worker service" "worker:" "$generated"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_MERGE"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-host-gateway-hook uses XCIND_HOST_GATEWAY override ==="
 
 if command -v yq &>/dev/null; then

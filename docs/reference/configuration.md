@@ -137,6 +137,11 @@ Override the auto-detected host gateway value. When set, this value is used dire
 XCIND_HOST_GATEWAY="192.168.1.100"
 ```
 
+> The host-gateway hook requires `yq`. If `yq` is not installed, the hook is
+> skipped with a warning. The hook's generated output is cached by SHA; changes
+> to `XCIND_HOST_GATEWAY` or `XCIND_HOST_GATEWAY_ENABLED` automatically
+> invalidate the cache.
+>
 > For details on platform detection logic, see the [Scind specification for host.docker.internal normalization](https://github.com/scinddev/scind).
 
 ### `XCIND_HOOKS_GENERATE`

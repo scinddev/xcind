@@ -849,6 +849,12 @@ __xcind-compute-sha() {
   sha_input+="XCIND_WORKSPACELESS=${XCIND_WORKSPACELESS:-}
 "
 
+  # Add host-gateway variables so env changes invalidate the cache
+  sha_input+="XCIND_HOST_GATEWAY_ENABLED=${XCIND_HOST_GATEWAY_ENABLED:-}
+"
+  sha_input+="XCIND_HOST_GATEWAY=${XCIND_HOST_GATEWAY:-}
+"
+
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
