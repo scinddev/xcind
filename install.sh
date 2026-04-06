@@ -18,6 +18,7 @@ install -m 644 "$XCIND_ROOT/lib/xcind/xcind-naming-lib.bash" "$PREFIX/lib/xcind/
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-proxy-lib.bash" "$PREFIX/lib/xcind/xcind-proxy-lib.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-workspace-lib.bash" "$PREFIX/lib/xcind/xcind-workspace-lib.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-app-env-lib.bash" "$PREFIX/lib/xcind/xcind-app-env-lib.bash"
+install -m 644 "$XCIND_ROOT/lib/xcind/xcind-host-gateway-lib.bash" "$PREFIX/lib/xcind/xcind-host-gateway-lib.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-completion-bash.bash" "$PREFIX/lib/xcind/xcind-completion-bash.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-completion-zsh.bash" "$PREFIX/lib/xcind/xcind-completion-zsh.bash"
 

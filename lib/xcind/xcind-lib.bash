@@ -22,9 +22,11 @@ source "$__XCIND_LIB_DIR/xcind-app-env-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-proxy-lib.bash"
 # shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-host-gateway-lib.bash"
+# shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 
-XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
 # --------------------------------------------------------------------------

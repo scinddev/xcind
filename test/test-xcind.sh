@@ -1567,6 +1567,278 @@ else
 fi
 
 # ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook no-op when disabled ==="
+
+HGW_NOOP=$(mktemp -d)
+export XCIND_SHA="hgwnoop"
+export XCIND_CACHE_DIR="$HGW_NOOP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$HGW_NOOP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+# shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+XCIND_HOST_GATEWAY_ENABLED=0
+hook_output=$(xcind-host-gateway-hook "$HGW_NOOP")
+assert_eq "host-gateway hook no-op when disabled: no output" "" "$hook_output"
+assert_eq "host-gateway hook no-op when disabled: no file" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.host-gateway.yaml" ] && echo true || echo false)"
+
+unset XCIND_HOST_GATEWAY_ENABLED
+rm -rf "$HGW_NOOP"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook no-op when no services ==="
+
+if command -v yq &>/dev/null; then
+  HGW_EMPTY=$(mktemp -d)
+  export XCIND_SHA="hgwempty"
+  export XCIND_CACHE_DIR="$HGW_EMPTY/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_EMPTY/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  # Empty resolved config (no services)
+  echo "services:" >"$XCIND_CACHE_DIR/resolved-config.yaml"
+
+  # Force a known value so detection doesn't depend on environment
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="host-gateway"
+  hook_output=$(xcind-host-gateway-hook "$HGW_EMPTY")
+  assert_eq "host-gateway hook no-op when no services: no output" "" "$hook_output"
+  assert_eq "host-gateway hook no-op when no services: no file" "false" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.host-gateway.yaml" ] && echo true || echo false)"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_EMPTY"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook generates for all services ==="
+
+if command -v yq &>/dev/null; then
+  HGW_ALL=$(mktemp -d)
+  export XCIND_SHA="hgwall"
+  export XCIND_CACHE_DIR="$HGW_ALL/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_ALL/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+  worker:
+    image: alpine
+YAML
+
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="host-gateway"
+  hook_output=$(xcind-host-gateway-hook "$HGW_ALL")
+
+  assert_contains "host-gateway hook returns -f flag" \
+    "-f $XCIND_GENERATED_DIR/compose.host-gateway.yaml" "$hook_output"
+  assert_eq "compose.host-gateway.yaml was created" "true" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.host-gateway.yaml" ] && echo true || echo false)"
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
+  assert_contains "generated YAML has web service" "web:" "$generated"
+  assert_contains "generated YAML has worker service" "worker:" "$generated"
+  assert_contains "generated YAML has host.docker.internal mapping" \
+    "host.docker.internal:host-gateway" "$generated"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_ALL"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook skips services with existing mapping ==="
+
+if command -v yq &>/dev/null; then
+  HGW_SKIP=$(mktemp -d)
+  export XCIND_SHA="hgwskip"
+  export XCIND_CACHE_DIR="$HGW_SKIP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_SKIP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  worker:
+    image: alpine
+YAML
+
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="host-gateway"
+  hook_output=$(xcind-host-gateway-hook "$HGW_SKIP")
+
+  assert_contains "host-gateway hook returns -f flag (partial)" \
+    "-f $XCIND_GENERATED_DIR/compose.host-gateway.yaml" "$hook_output"
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
+  assert_not_contains "generated YAML does not have web service (already mapped)" "web:" "$generated"
+  assert_contains "generated YAML has worker service" "worker:" "$generated"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_SKIP"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook skips all when all have mapping ==="
+
+if command -v yq &>/dev/null; then
+  HGW_ALLSKIP=$(mktemp -d)
+  export XCIND_SHA="hgwallskip"
+  export XCIND_CACHE_DIR="$HGW_ALLSKIP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_ALLSKIP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  worker:
+    image: alpine
+    extra_hosts:
+      - "host.docker.internal:192.168.1.1"
+YAML
+
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="host-gateway"
+  hook_output=$(xcind-host-gateway-hook "$HGW_ALLSKIP")
+  assert_eq "host-gateway hook no-op when all mapped: no output" "" "$hook_output"
+  assert_eq "host-gateway hook no-op when all mapped: no file" "false" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.host-gateway.yaml" ] && echo true || echo false)"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_ALLSKIP"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook uses XCIND_HOST_GATEWAY override ==="
+
+if command -v yq &>/dev/null; then
+  HGW_OVERRIDE=$(mktemp -d)
+  export XCIND_SHA="hgwoverride"
+  export XCIND_CACHE_DIR="$HGW_OVERRIDE/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_OVERRIDE/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+YAML
+
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="192.168.1.100"
+  hook_output=$(xcind-host-gateway-hook "$HGW_OVERRIDE")
+
+  assert_contains "host-gateway hook returns -f flag (override)" \
+    "-f $XCIND_GENERATED_DIR/compose.host-gateway.yaml" "$hook_output"
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
+  assert_contains "generated YAML uses override value" \
+    "host.docker.internal:192.168.1.100" "$generated"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_OVERRIDE"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-detect-host-gateway defaults to host-gateway ==="
+
+# On non-WSL2 Linux (the CI environment), should return "host-gateway"
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+  # Not WSL2 and not Docker Desktop (CI) — should get "host-gateway"
+  unset XCIND_HOST_GATEWAY
+  detected=$(__xcind-detect-host-gateway 2>/dev/null || true)
+  # Docker Desktop detection may vary, but on native Linux CI we expect host-gateway
+  if [[ "$detected" == "host-gateway" ]]; then
+    echo "  ✓ detect-host-gateway returns host-gateway on native Linux"
+    PASS=$((PASS + 1))
+  elif [[ -z "$detected" ]]; then
+    # Docker Desktop detected (or docker not available) — also acceptable in CI
+    echo "  ✓ detect-host-gateway returns empty (Docker Desktop or docker unavailable)"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ detect-host-gateway unexpected value: '$detected'"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  (skipped: running in WSL2)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-is-wsl2 returns false on Linux ==="
+
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+  if __xcind-is-wsl2; then
+    echo "  ✗ __xcind-is-wsl2 returned true on non-WSL2 system"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ __xcind-is-wsl2 correctly returns false on non-WSL2"
+    PASS=$((PASS + 1))
+  fi
+else
+  echo "  (skipped: running in WSL2)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook handles equals separator in extra_hosts ==="
+
+if command -v yq &>/dev/null; then
+  HGW_EQ=$(mktemp -d)
+  export XCIND_SHA="hgweq"
+  export XCIND_CACHE_DIR="$HGW_EQ/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$HGW_EQ/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    extra_hosts:
+      - "host.docker.internal=host-gateway"
+  worker:
+    image: alpine
+YAML
+
+  # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+  XCIND_HOST_GATEWAY="host-gateway"
+  hook_output=$(xcind-host-gateway-hook "$HGW_EQ")
+
+  generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
+  assert_not_contains "equals separator: web skipped (already mapped)" "web:" "$generated"
+  assert_contains "equals separator: worker gets mapping" "worker:" "$generated"
+
+  unset XCIND_HOST_GATEWAY
+  rm -rf "$HGW_EQ"
+else
+  echo "  (skipped: yq not installed)"
+fi
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 
