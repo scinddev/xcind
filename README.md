@@ -180,7 +180,7 @@ XCIND_IS_WORKSPACE=1
 Array of hook function names that generate compose overlay files. Output is cached
 by SHA. See [Hooks](#hooks).
 
-**Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
+**Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
 
 ### `XCIND_HOOKS_EXECUTE`
 
@@ -373,6 +373,15 @@ identically-named app directories. In workspace mode the name is
 Generates a compose override that adds `env_file:` entries to every service,
 making `XCIND_APP_ENV_FILES` available inside running containers. Requires
 `yq`. Only active when `XCIND_APP_ENV_FILES` is non-empty.
+
+**`xcind-host-gateway-hook`** (from `lib/xcind/xcind-host-gateway-lib.bash`)
+
+Generates `compose.host-gateway.yaml` with `extra_hosts` entries mapping
+`host.docker.internal` to the developer's workstation for every service that
+doesn't already define the mapping. Handles platform detection automatically
+(Docker Desktop, native Linux, WSL2 NAT/mirrored modes). Disable with
+`XCIND_HOST_GATEWAY_ENABLED=0` in `.xcind.sh`. Override the detected value
+with `XCIND_HOST_GATEWAY=<value>`.
 
 **`xcind-proxy-hook`** (from `lib/xcind/xcind-proxy-lib.bash`)
 
@@ -692,6 +701,7 @@ xcind/
 ├── lib/xcind/
 │   ├── xcind-lib.bash             # Shared library (sourced by other scripts)
 │   ├── xcind-app-env-lib.bash     # App env hook — generates env_file: overrides
+│   ├── xcind-host-gateway-lib.bash # Host gateway hook — generates extra_hosts overrides
 │   ├── xcind-naming-lib.bash      # Naming hook — generates compose.naming.yaml
 │   ├── xcind-proxy-lib.bash       # Proxy hook — generates compose.proxy.yaml
 │   ├── xcind-workspace-lib.bash   # Workspace hook — generates compose.workspace.yaml

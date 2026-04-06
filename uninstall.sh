@@ -14,6 +14,7 @@ rm -f "$PREFIX/lib/xcind/xcind-naming-lib.bash"
 rm -f "$PREFIX/lib/xcind/xcind-proxy-lib.bash"
 rm -f "$PREFIX/lib/xcind/xcind-workspace-lib.bash"
 rm -f "$PREFIX/lib/xcind/xcind-app-env-lib.bash"
+rm -f "$PREFIX/lib/xcind/xcind-host-gateway-lib.bash"
 rm -f "$PREFIX/lib/xcind/xcind-completion-bash.bash"
 rm -f "$PREFIX/lib/xcind/xcind-completion-zsh.bash"
 

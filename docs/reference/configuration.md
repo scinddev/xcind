@@ -117,11 +117,33 @@ Set to `1` in a workspace root's `.xcind.sh` to mark the directory as a workspac
 XCIND_IS_WORKSPACE=1
 ```
 
+### `XCIND_HOST_GATEWAY_ENABLED`
+
+Controls whether the host gateway hook runs. Set to `0` to disable automatic `host.docker.internal` normalization.
+
+**Default:** `1` (enabled)
+
+```bash
+XCIND_HOST_GATEWAY_ENABLED=0  # disable host gateway hook
+```
+
+### `XCIND_HOST_GATEWAY`
+
+Override the auto-detected host gateway value. When set, this value is used directly as the `extra_hosts` target for `host.docker.internal` without platform detection.
+
+**Default:** *(unset — auto-detect)*
+
+```bash
+XCIND_HOST_GATEWAY="192.168.1.100"
+```
+
+> For details on platform detection logic, see the [Scind specification for host.docker.internal normalization](https://github.com/scinddev/scind).
+
 ### `XCIND_HOOKS_GENERATE`
 
 Array of hook function names that generate compose overlay files. Hooks run after file resolution and their output is cached by SHA.
 
-**Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
+**Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
 
 All built-in hooks are registered automatically. Override to `()` to disable all generation hooks.
 
