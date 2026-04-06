@@ -59,10 +59,18 @@ __xcind-detect-host-gateway-wsl2() {
 
   case "$networking_mode" in
   mirrored | virtioproxy)
-    # In mirrored mode with docker-ce (not Docker Desktop — already returned
-    # early above), host-gateway resolves to the Docker bridge gateway which
-    # can reach the host via mirrored interfaces.
-    echo "host-gateway"
+    # In mirrored mode, Docker's host-gateway resolves to the Docker
+    # bridge gateway inside the WSL2 VM — NOT the Windows host.
+    # We need the actual LAN IP, which WSL2 shares with Windows
+    # in mirrored mode. This IP is reachable from containers.
+    local lan_ip
+    lan_ip=$(hostname -I | awk '{print $1}')
+    if [[ -n "$lan_ip" ]]; then
+      echo "$lan_ip"
+    else
+      # Last resort fallback
+      echo "host-gateway"
+    fi
     ;;
   nat | *)
     # NAT mode: the default gateway IS the Windows host
