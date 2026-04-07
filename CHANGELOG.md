@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-04-07
+
+### Added
+
+- Add xcind-host-gateway-hook for host.docker.internal normalization (#35) by @simensen in [#35](https://github.com/scinddev/xcind/pull/35)
+
+### Fixed
+
+- Fix host-gateway hook: graceful yq handling, extra_hosts merging, cache invalidation (#36) by @simensen in [#36](https://github.com/scinddev/xcind/pull/36)
+- fix: use LAN IP instead of host-gateway for WSL2 mirrored mode (#37) by @simensen in [#37](https://github.com/scinddev/xcind/pull/37)
+
+### Maintenance
+
+- chore: Update .gitignore
 ## [0.4.0] - 2026-04-03
 
 ### Added
