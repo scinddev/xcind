@@ -27,7 +27,7 @@
           wrapProgram "$out/bin/xcind-proxy" \
             --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.docker pkgs.yq ]}
           wrapProgram "$out/bin/xcind-workspace" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils ]}
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.jq ]}
         '';
         meta = with pkgs.lib; {
           description = "Docker Compose environment manager";

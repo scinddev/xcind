@@ -67,11 +67,13 @@ EOF
 # Ensure proxy infrastructure files exist.
 # Creates config.sh (if missing) in XCIND_PROXY_CONFIG_DIR,
 # docker-compose.yaml and traefik.yaml in XCIND_PROXY_STATE_DIR.
+# Note: xcind-proxy init may regenerate config.sh explicitly via
+# __xcind-proxy-write-config when CLI flags are passed.
 # Calls __xcind-proxy-ensure-network after generating files.
 __xcind-proxy-ensure-init() {
   mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
 
-  # Write config.sh only if it doesn't exist (never overwrite user config)
+  # Write config.sh only if it doesn't exist (preserves user edits)
   if [ ! -f "$XCIND_PROXY_CONFIG_DIR/config.sh" ]; then
     __xcind-proxy-write-config
   fi

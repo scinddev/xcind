@@ -185,7 +185,7 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 
 | File | Purpose | Overwritten on re-init? |
 |------|---------|------------------------|
-| `config.sh` | Proxy configuration | Yes, when flags are passed (existing values preserved) |
+| `config.sh` | Proxy configuration | Yes (always regenerated; existing values preserved) |
 
 **State** (`~/.local/state/xcind/proxy/`):
 
