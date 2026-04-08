@@ -170,6 +170,22 @@ _xcind-proxy() {
 
   # Context-sensitive completion
   case "${words[CURRENT - 1]}" in
+  init)
+    local -a init_opts=(
+      '--proxy-domain:Set domain suffix for hostnames'
+      '--http-port:Set HTTP port'
+      '--image:Set Traefik Docker image'
+      '--dashboard:Enable Traefik dashboard'
+      '--dashboard-port:Set dashboard port'
+    )
+    _describe 'init option' init_opts
+    return
+    ;;
+  --dashboard)
+    local -a bool_vals=('true:Enable' 'false:Disable')
+    _describe 'boolean' bool_vals
+    return
+    ;;
   up)
     local -a up_opts=('--force:Tear down and recreate')
     _describe 'up option' up_opts
@@ -200,9 +216,46 @@ _xcind-proxy() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-workspace: native completion
+# -----------------------------------------------------------------------------
+
+_xcind-workspace() {
+  local -a main_commands=(
+    'init:Initialize a workspace directory'
+    'status:Show workspace-wide status'
+    '--help:Show help'
+    '-h:Show help'
+    '--version:Show version'
+    '-V:Show version'
+  )
+
+  # Context-sensitive completion
+  case "${words[CURRENT - 1]}" in
+  init)
+    local -a init_opts=(
+      '--name:Set workspace name'
+      '--proxy-domain:Set proxy domain'
+    )
+    _describe 'init option' init_opts
+    _files -/
+    return
+    ;;
+  status)
+    local -a status_opts=('--json:Output structured JSON')
+    _describe 'status option' status_opts
+    _files -/
+    return
+    ;;
+  esac
+
+  _describe 'xcind-workspace command' main_commands
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
 compdef _xcind-compose xcind-compose
 compdef _xcind-config xcind-config
 compdef _xcind-proxy xcind-proxy
+compdef _xcind-workspace xcind-workspace

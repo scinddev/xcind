@@ -1395,6 +1395,10 @@ assert_contains "completion bash: registers xcind-config" \
   "complete -F _xcind_config_completions xcind-config" "$comp_bash_result"
 assert_contains "completion bash: registers xcind-proxy" \
   "complete -F _xcind_proxy_completions xcind-proxy" "$comp_bash_result"
+assert_contains "completion bash: registers xcind-workspace" \
+  "complete -F _xcind_workspace_completions xcind-workspace" "$comp_bash_result"
+assert_contains "completion bash: has proxy init flags" \
+  "--proxy-domain" "$comp_bash_result"
 
 # 2. completion zsh produces output
 comp_zsh_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -1406,6 +1410,10 @@ assert_contains "completion zsh: registers xcind-config" \
   "compdef _xcind-config xcind-config" "$comp_zsh_result"
 assert_contains "completion zsh: registers xcind-proxy" \
   "compdef _xcind-proxy xcind-proxy" "$comp_zsh_result"
+assert_contains "completion zsh: registers xcind-workspace" \
+  "compdef _xcind-workspace xcind-workspace" "$comp_zsh_result"
+assert_contains "completion zsh: has workspace init command" \
+  "init:Initialize a workspace directory" "$comp_zsh_result"
 
 # 3. completion with no arg fails
 comp_noarg_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
