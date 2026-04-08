@@ -871,6 +871,63 @@ rm -rf "$WS_INIT_DIR"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-workspace status ==="
+
+WS_STATUS_DIR=$(mktemp -d)
+REAL_PATH_STATUS="$PATH"
+
+# Create a workspace with two apps
+mkdir -p "$WS_STATUS_DIR/myws/app1" "$WS_STATUS_DIR/myws/app2" "$WS_STATUS_DIR/myws/notanapp"
+echo 'XCIND_IS_WORKSPACE=1' >"$WS_STATUS_DIR/myws/.xcind.sh"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_STATUS_DIR/myws/app1/.xcind.sh"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_STATUS_DIR/myws/app2/.xcind.sh"
+
+# Mock docker to return no containers
+mkdir -p "$WS_STATUS_DIR/bin"
+cat >"$WS_STATUS_DIR/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker — return empty for all queries
+exit 0
+MOCKEOF
+chmod +x "$WS_STATUS_DIR/bin/docker"
+export PATH="$WS_STATUS_DIR/bin:$REAL_PATH_STATUS"
+
+# Test: status from workspace root
+ws_status_out=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS_DIR/myws")
+assert_contains "ws status: shows workspace name" "Workspace: myws" "$ws_status_out"
+assert_contains "ws status: shows root" "Root:" "$ws_status_out"
+assert_contains "ws status: lists app1" "app1/" "$ws_status_out"
+assert_contains "ws status: lists app2" "app2/" "$ws_status_out"
+assert_not_contains "ws status: excludes non-app dir" "notanapp" "$ws_status_out"
+assert_contains "ws status: shows network" "myws-internal" "$ws_status_out"
+assert_contains "ws status: shows proxy" "Proxy:" "$ws_status_out"
+
+# Test: status from app directory discovers workspace
+ws_status_from_app=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS_DIR/myws/app1")
+assert_contains "ws status from app: shows workspace" "Workspace: myws" "$ws_status_from_app"
+
+# Test: status with --json
+if command -v jq &>/dev/null; then
+  ws_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS_DIR/myws" --json)
+  ws_name_json=$(echo "$ws_json" | jq -r '.workspace')
+  assert_eq "ws status json: workspace name" "myws" "$ws_name_json"
+  ws_apps_count=$(echo "$ws_json" | jq '.apps | length')
+  assert_eq "ws status json: apps count" "2" "$ws_apps_count"
+  ws_net_name=$(echo "$ws_json" | jq -r '.network.name')
+  assert_eq "ws status json: network name" "myws-internal" "$ws_net_name"
+else
+  echo "  (skipped json tests: jq not installed)"
+fi
+
+# Test: error when not in a workspace
+ws_no_ws_err=$("$XCIND_ROOT/bin/xcind-workspace" status /tmp 2>&1 || true)
+assert_contains "ws status: error when not in workspace" "Not inside a workspace" "$ws_no_ws_err"
+
+export PATH="$REAL_PATH_STATUS"
+rm -rf "$WS_STATUS_DIR"
+
+# ======================================================================
+echo ""
 echo "=== Test: XCIND_HOOKS_EXECUTE registration ==="
 
 # Check registration before any test overrides the array

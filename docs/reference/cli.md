@@ -233,9 +233,18 @@ xcind-workspace status --json                # JSON output
 
 ### Behavior
 
+**Init:**
+
 - `DIR` defaults to `.` (current directory).
 - If `.xcind.sh` already exists with `XCIND_IS_WORKSPACE=1`, re-running with flags updates the config; without flags reports "already initialized".
 - If `.xcind.sh` exists without `XCIND_IS_WORKSPACE=1` (an app config), the command prints a helpful error suggesting the correct workspace directory.
+
+**Status:**
+
+- Discovers the workspace root from the given `DIR` or current directory by walking up to find `.xcind.sh` with `XCIND_IS_WORKSPACE=1`.
+- Lists all apps (subdirectories with `.xcind.sh`) with running/stopped container counts.
+- Shows workspace network and proxy status.
+- With `--json`, outputs structured JSON with per-app service details.
 
 ---
 
