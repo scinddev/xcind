@@ -8,7 +8,7 @@ Xcind uses Docker labels for service discovery, workspace identification, and Tr
 
 ## Context Labels
 
-Applied to containers by the proxy hook for app and workspace discovery:
+Applied to all containers for app and workspace discovery. App labels are applied by the `xcind-app-hook` to every service; workspace labels are applied by the `xcind-workspace-hook` when in workspace mode:
 
 | Label | Description | Example |
 |-------|-------------|---------|

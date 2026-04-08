@@ -2,6 +2,7 @@ SHELL_FILES = \
 	bin/xcind-compose \
 	bin/xcind-config \
 	bin/xcind-proxy \
+	lib/xcind/xcind-app-lib.bash \
 	lib/xcind/xcind-app-env-lib.bash \
 	lib/xcind/xcind-completion-bash.bash \
 	lib/xcind/xcind-completion-zsh.bash \
