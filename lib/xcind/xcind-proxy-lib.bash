@@ -179,7 +179,9 @@ __xcind-proxy-ensure-running() {
 # YAML Templates
 # --------------------------------------------------------------------------
 
-# Per-service YAML snippet template (without workspace labels)
+# Per-service YAML snippet template
+# Context labels (xcind.app.*, xcind.workspace.*) are now handled by
+# dedicated hooks (xcind-app-hook, xcind-workspace-hook).
 # shellcheck disable=SC2016 # Template placeholders, not shell expansions
 XCIND_PROXY_SERVICE_TEMPLATE='  {compose_service}:
     networks:
@@ -192,28 +194,6 @@ XCIND_PROXY_SERVICE_TEMPLATE='  {compose_service}:
       - "traefik.http.routers.{router}.entrypoints=web"
       - "traefik.http.routers.{router}.service={router}"
       - "traefik.http.services.{router}.loadbalancer.server.port={port}"
-      - "xcind.app.name={app}"
-      - "xcind.app.path={app_path}"
-      - "xcind.export.{export}.host={hostname}"
-      - "xcind.export.{export}.url=http://{hostname}"'
-
-# Per-service YAML snippet template (with workspace labels)
-# shellcheck disable=SC2016
-XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE='  {compose_service}:
-    networks:
-      default: {}
-      xcind-proxy: {}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=xcind-proxy"
-      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
-      - "traefik.http.routers.{router}.entrypoints=web"
-      - "traefik.http.routers.{router}.service={router}"
-      - "traefik.http.services.{router}.loadbalancer.server.port={port}"
-      - "xcind.app.name={app}"
-      - "xcind.app.path={app_path}"
-      - "xcind.workspace.name={workspace}"
-      - "xcind.workspace.path={workspace_path}"
       - "xcind.export.{export}.host={hostname}"
       - "xcind.export.{export}.url=http://{hostname}"'
 
@@ -226,7 +206,7 @@ XCIND_PROXY_LABELS_TEMPLATE='      - "traefik.http.routers.{router}.rule=Host(`{
       - "xcind.export.{export}.host={hostname}"
       - "xcind.export.{export}.url=http://{hostname}"'
 
-# Per-service YAML snippet template with apex URL (without workspace labels)
+# Per-service YAML snippet template with apex URL
 # shellcheck disable=SC2016
 XCIND_PROXY_SERVICE_TEMPLATE_APEX='  {compose_service}:
     networks:
@@ -243,34 +223,6 @@ XCIND_PROXY_SERVICE_TEMPLATE_APEX='  {compose_service}:
       - "traefik.http.routers.{apex_router}.entrypoints=web"
       - "traefik.http.routers.{apex_router}.service={apex_router}"
       - "traefik.http.services.{apex_router}.loadbalancer.server.port={port}"
-      - "xcind.app.name={app}"
-      - "xcind.app.path={app_path}"
-      - "xcind.export.{export}.host={hostname}"
-      - "xcind.export.{export}.url=http://{hostname}"
-      - "xcind.apex.host={apex_hostname}"
-      - "xcind.apex.url=http://{apex_hostname}"'
-
-# Per-service YAML snippet template with apex URL (with workspace labels)
-# shellcheck disable=SC2016
-XCIND_PROXY_SERVICE_TEMPLATE_APEX_WORKSPACE='  {compose_service}:
-    networks:
-      default: {}
-      xcind-proxy: {}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=xcind-proxy"
-      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
-      - "traefik.http.routers.{router}.entrypoints=web"
-      - "traefik.http.routers.{router}.service={router}"
-      - "traefik.http.services.{router}.loadbalancer.server.port={port}"
-      - "traefik.http.routers.{apex_router}.rule=Host(`{apex_hostname}`)"
-      - "traefik.http.routers.{apex_router}.entrypoints=web"
-      - "traefik.http.routers.{apex_router}.service={apex_router}"
-      - "traefik.http.services.{apex_router}.loadbalancer.server.port={port}"
-      - "xcind.app.name={app}"
-      - "xcind.app.path={app_path}"
-      - "xcind.workspace.name={workspace}"
-      - "xcind.workspace.path={workspace_path}"
       - "xcind.export.{export}.host={hostname}"
       - "xcind.export.{export}.url=http://{hostname}"
       - "xcind.apex.host={apex_hostname}"
@@ -406,19 +358,11 @@ xcind-proxy-hook() {
 
   local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
 
-  # Select service template based on workspace mode
-  local service_template
+  # Select service template (apex variant when apex URL is configured)
+  local service_template="$XCIND_PROXY_SERVICE_TEMPLATE"
   local apex_service_template=""
-  if [[ ${XCIND_WORKSPACELESS:-1} == "1" ]]; then
-    service_template="$XCIND_PROXY_SERVICE_TEMPLATE"
-    if [[ -n ${XCIND_APP_APEX_URL_TEMPLATE:-} ]]; then
-      apex_service_template="$XCIND_PROXY_SERVICE_TEMPLATE_APEX"
-    fi
-  else
-    service_template="$XCIND_PROXY_SERVICE_TEMPLATE_WORKSPACE"
-    if [[ -n ${XCIND_APP_APEX_URL_TEMPLATE:-} ]]; then
-      apex_service_template="$XCIND_PROXY_SERVICE_TEMPLATE_APEX_WORKSPACE"
-    fi
+  if [[ -n ${XCIND_APP_APEX_URL_TEMPLATE:-} ]]; then
+    apex_service_template="$XCIND_PROXY_SERVICE_TEMPLATE_APEX"
   fi
 
   # Parse all export entries and group by compose service

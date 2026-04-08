@@ -116,7 +116,7 @@ Services that already have a `host.docker.internal` entry in `extra_hosts` (usin
 
 ### `compose.proxy.yaml`
 
-Generated when `XCIND_PROXY_EXPORTS` is configured. Contains Traefik routing labels, network attachments, and context labels:
+Generated when `XCIND_PROXY_EXPORTS` is configured. Contains Traefik routing labels, network attachments, and export labels. Context labels (`xcind.app.*`, `xcind.workspace.*`) are handled by the dedicated app and workspace hooks:
 
 ```yaml
 services:
@@ -136,10 +136,6 @@ services:
       - "traefik.http.routers.dev-frontend-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
       - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
-      - "xcind.app.name=frontend"
-      - "xcind.app.path=/Users/beau/dev/frontend"
-      - "xcind.workspace.name=dev"
-      - "xcind.workspace.path=/Users/beau/dev"
       - "xcind.export.web.host=dev-frontend-web.localhost"
       - "xcind.export.web.url=http://dev-frontend-web.localhost"
       - "xcind.apex.host=dev-frontend.localhost"

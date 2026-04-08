@@ -440,7 +440,7 @@ YAML
   assert_contains "yaml has port 80" "server.port=80" "$proxy_yaml"
   assert_contains "yaml has port 3000" "server.port=3000" "$proxy_yaml"
   assert_contains "yaml has port 5432" "server.port=5432" "$proxy_yaml"
-  assert_contains "yaml has xcind.app.name label" "xcind.app.name=myapp" "$proxy_yaml"
+  assert_not_contains "yaml has no xcind.app.name (moved to app hook)" "xcind.app.name" "$proxy_yaml"
   assert_contains "yaml has xcind.export.web.host" "xcind.export.web.host=myapp-web.localhost" "$proxy_yaml"
   assert_contains "yaml has xcind.export.db.host" "xcind.export.db.host=myapp-db.localhost" "$proxy_yaml"
   assert_contains "yaml has xcind-proxy network" "xcind-proxy:" "$proxy_yaml"
@@ -460,8 +460,8 @@ YAML
 
   proxy_yaml_ws=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
   assert_contains "workspace yaml has dev-myapp-web.localhost" "dev-myapp-web.localhost" "$proxy_yaml_ws"
-  assert_contains "workspace yaml has workspace.name label" "xcind.workspace.name=dev" "$proxy_yaml_ws"
-  assert_contains "workspace yaml has workspace.path label" "xcind.workspace.path=/workspaces/dev" "$proxy_yaml_ws"
+  assert_not_contains "workspace yaml has no workspace.name (moved to ws hook)" "xcind.workspace.name" "$proxy_yaml_ws"
+  assert_not_contains "workspace yaml has no workspace.path (moved to ws hook)" "xcind.workspace.path" "$proxy_yaml_ws"
 
   # Test: port inference (single port)
   rm -rf "$XCIND_GENERATED_DIR"
@@ -583,7 +583,7 @@ YAML
 
   assert_contains "apex ws: has dev-myapp.localhost" "dev-myapp.localhost" "$ws_apex_yaml"
   assert_contains "apex ws: has xcind.apex.host" "xcind.apex.host=dev-myapp.localhost" "$ws_apex_yaml"
-  assert_contains "apex ws: has workspace.name label" "xcind.workspace.name=dev" "$ws_apex_yaml"
+  assert_not_contains "apex ws: no workspace.name (moved to ws hook)" "xcind.workspace.name" "$ws_apex_yaml"
 
   # Test: grouped exports with apex — two exports on same compose service
   rm -rf "$XCIND_GENERATED_DIR"

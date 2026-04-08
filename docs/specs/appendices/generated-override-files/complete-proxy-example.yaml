@@ -4,6 +4,9 @@
 #   XCIND_PROXY_EXPORTS=("web:80" "api=app:3000")
 # Domain: localhost
 #
+# Note: Context labels (xcind.app.*, xcind.workspace.*) are now applied by
+# the dedicated xcind-app-hook and xcind-workspace-hook respectively.
+#
 # Parent: ../../generated-override-files.md
 
 services:
@@ -23,10 +26,6 @@ services:
       - "traefik.http.routers.dev-frontend-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
       - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
-      - "xcind.app.name=frontend"
-      - "xcind.app.path=/Users/beau/dev/frontend"
-      - "xcind.workspace.name=dev"
-      - "xcind.workspace.path=/Users/beau/dev"
       - "xcind.export.web.host=dev-frontend-web.localhost"
       - "xcind.export.web.url=http://dev-frontend-web.localhost"
       - "xcind.apex.host=dev-frontend.localhost"
@@ -43,10 +42,6 @@ services:
       - "traefik.http.routers.dev-frontend-api-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-api-http.service=dev-frontend-api-http"
       - "traefik.http.services.dev-frontend-api-http.loadbalancer.server.port=3000"
-      - "xcind.app.name=frontend"
-      - "xcind.app.path=/Users/beau/dev/frontend"
-      - "xcind.workspace.name=dev"
-      - "xcind.workspace.path=/Users/beau/dev"
       - "xcind.export.api.host=dev-frontend-api.localhost"
       - "xcind.export.api.url=http://dev-frontend-api.localhost"
 

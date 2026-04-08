@@ -107,7 +107,10 @@ Workspaceless app with a single proxy export `web` on port 3000:
 
 ```yaml
 labels:
-  # Traefik routing
+  # Context labels (from xcind-app-hook)
+  - "xcind.app.name=myapp"
+  - "xcind.app.path=/Users/beau/myapp"
+  # Traefik routing (from xcind-proxy-hook)
   - "traefik.enable=true"
   - "traefik.docker.network=xcind-proxy"
   - "traefik.http.routers.myapp-web-http.rule=Host(`myapp-web.localhost`)"
@@ -119,9 +122,6 @@ labels:
   - "traefik.http.routers.myapp-http.entrypoints=web"
   - "traefik.http.routers.myapp-http.service=myapp-http"
   - "traefik.http.services.myapp-http.loadbalancer.server.port=3000"
-  # Context labels
-  - "xcind.app.name=myapp"
-  - "xcind.app.path=/Users/beau/myapp"
   # Export labels
   - "xcind.export.web.host=myapp-web.localhost"
   - "xcind.export.web.url=http://myapp-web.localhost"
