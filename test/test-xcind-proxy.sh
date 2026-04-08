@@ -731,6 +731,8 @@ YAML
   assert_contains "ws yaml has frontend-postgres alias" "frontend-postgres" "$ws_yaml"
   assert_contains "ws yaml has dev-internal network" "dev-internal:" "$ws_yaml"
   assert_contains "ws yaml has external network" "external: true" "$ws_yaml"
+  assert_contains "ws yaml has xcind.workspace.name label" "xcind.workspace.name=dev" "$ws_yaml"
+  assert_contains "ws yaml has xcind.workspace.path label" "xcind.workspace.path=/workspaces/dev" "$ws_yaml"
 
   # Test: custom service template
   rm -rf "$XCIND_GENERATED_DIR"

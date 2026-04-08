@@ -154,12 +154,15 @@ For a complete unabridged example, see the [Generated Override Files Appendix](.
 
 ### `compose.workspace.yaml`
 
-Generated only in workspace mode. Connects all services to the workspace internal network with aliases:
+Generated only in workspace mode. Applies `xcind.workspace.name` and `xcind.workspace.path` labels and connects all services to the workspace internal network with aliases:
 
 ```yaml
 services:
 
   web:
+    labels:
+      - "xcind.workspace.name=dev"
+      - "xcind.workspace.path=/Users/beau/dev"
     networks:
       default: {}
       dev-internal:
@@ -167,6 +170,9 @@ services:
           - frontend-web
 
   db:
+    labels:
+      - "xcind.workspace.name=dev"
+      - "xcind.workspace.path=/Users/beau/dev"
     networks:
       default: {}
       dev-internal:
