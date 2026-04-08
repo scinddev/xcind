@@ -110,15 +110,69 @@ assert_contains "traefik has web entrypoint" "web:" "$traefik_content"
 assert_contains "traefik has docker provider" "docker:" "$traefik_content"
 assert_contains "traefik has exposedByDefault false" "exposedByDefault: false" "$traefik_content"
 
-# Test idempotency — config.sh should not be overwritten
-echo "# user customization" >>"$PROXY_CONFIG_DIR/config.sh"
+# Test idempotency — config values should be preserved on re-init
 "$XCIND_ROOT/bin/xcind-proxy" init
 config_after=$(<"$PROXY_CONFIG_DIR/config.sh")
-assert_contains "config.sh preserved on re-init" "user customization" "$config_after"
+assert_contains "config values preserved on re-init" "XCIND_PROXY_DOMAIN" "$config_after"
 
 export HOME="$REAL_HOME"
 export PATH="$REAL_PATH"
 rm -rf "$MOCK_HOME"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy init flags ==="
+
+MOCK_HOME2=$(mktemp -d)
+export HOME="$MOCK_HOME2"
+export PATH="$MOCK_HOME2/bin:$REAL_PATH"
+mkdir -p "$MOCK_HOME2/bin"
+cat >"$MOCK_HOME2/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+exit 0
+MOCKEOF
+chmod +x "$MOCK_HOME2/bin/docker"
+
+PROXY_CONFIG_DIR2="${MOCK_HOME2}/.config/xcind/proxy"
+PROXY_STATE_DIR2="${MOCK_HOME2}/.local/state/xcind/proxy"
+
+# Test: init with --proxy-domain flag creates config with that domain
+"$XCIND_ROOT/bin/xcind-proxy" init --proxy-domain xcind.localhost
+config2=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "flag: proxy-domain set" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config2"
+assert_contains "flag: other defaults preserved (image)" 'XCIND_PROXY_IMAGE="traefik:v3"' "$config2"
+assert_contains "flag: other defaults preserved (port)" 'XCIND_PROXY_HTTP_PORT="80"' "$config2"
+
+# Test: re-init with --http-port changes only port, preserves domain
+"$XCIND_ROOT/bin/xcind-proxy" init --http-port 8081
+config3=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "flag: http-port updated" 'XCIND_PROXY_HTTP_PORT="8081"' "$config3"
+assert_contains "flag: domain preserved" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config3"
+
+# Test: multiple flags in one invocation
+"$XCIND_ROOT/bin/xcind-proxy" init --image traefik:v3.2 --dashboard true --dashboard-port 9090
+config4=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "multi-flag: image updated" 'XCIND_PROXY_IMAGE="traefik:v3.2"' "$config4"
+assert_contains "multi-flag: dashboard enabled" 'XCIND_PROXY_DASHBOARD="true"' "$config4"
+assert_contains "multi-flag: dashboard-port updated" 'XCIND_PROXY_DASHBOARD_PORT="9090"' "$config4"
+assert_contains "multi-flag: domain still preserved" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config4"
+assert_contains "multi-flag: port still preserved" 'XCIND_PROXY_HTTP_PORT="8081"' "$config4"
+
+# Test: re-init with no flags preserves all values
+"$XCIND_ROOT/bin/xcind-proxy" init
+config5=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "no-flag reinit: domain preserved" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config5"
+assert_contains "no-flag reinit: port preserved" 'XCIND_PROXY_HTTP_PORT="8081"' "$config5"
+assert_contains "no-flag reinit: image preserved" 'XCIND_PROXY_IMAGE="traefik:v3.2"' "$config5"
+
+# Test: generated docker-compose.yaml reflects updated config
+compose2=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+assert_contains "compose reflects updated port" "8081:80" "$compose2"
+assert_contains "compose reflects updated image" "traefik:v3.2" "$compose2"
+
+export HOME="$REAL_HOME"
+export PATH="$REAL_PATH"
+rm -rf "$MOCK_HOME2"
 
 # ======================================================================
 echo ""

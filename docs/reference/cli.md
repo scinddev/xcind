@@ -130,11 +130,23 @@ Manages the shared Traefik reverse proxy infrastructure.
 
 | Subcommand | Description |
 |------------|-------------|
-| `init` | Create proxy infrastructure files |
+| `init [OPTIONS]` | Create proxy infrastructure files (with optional configuration) |
 | `up [--force]` | Start the shared Traefik proxy (`--force` recreates the network) |
 | `down` | Stop the shared Traefik proxy |
 | `status [--json]` | Show proxy state (running/stopped, image, port, network) |
 | `logs [OPTS]` | Show Traefik proxy logs (supports `docker compose logs` flags) |
+
+### Init Options
+
+| Option | Config Variable | Default |
+|--------|----------------|---------|
+| `--proxy-domain DOMAIN` | `XCIND_PROXY_DOMAIN` | `localhost` |
+| `--http-port PORT` | `XCIND_PROXY_HTTP_PORT` | `80` |
+| `--image IMAGE` | `XCIND_PROXY_IMAGE` | `traefik:v3` |
+| `--dashboard BOOL` | `XCIND_PROXY_DASHBOARD` | `false` |
+| `--dashboard-port PORT` | `XCIND_PROXY_DASHBOARD_PORT` | `8080` |
+
+Flags set-and-persist: values are merged with any existing `config.sh` and written back.
 
 ### Options
 
@@ -146,7 +158,9 @@ Manages the shared Traefik reverse proxy infrastructure.
 ### Usage
 
 ```bash
-xcind-proxy init          # Create proxy config and generated files
+xcind-proxy init          # Create proxy config with defaults
+xcind-proxy init --proxy-domain xcind.localhost  # Set domain
+xcind-proxy init --http-port 8081 --dashboard true  # Multiple flags
 xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy
@@ -171,7 +185,7 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 
 | File | Purpose | Overwritten on re-init? |
 |------|---------|------------------------|
-| `config.sh` | User-editable proxy configuration | No (never overwritten) |
+| `config.sh` | Proxy configuration | Yes, when flags are passed (existing values preserved) |
 
 **State** (`~/.local/state/xcind/proxy/`):
 
