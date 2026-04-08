@@ -811,6 +811,66 @@ fi
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-workspace init ==="
+
+WS_INIT_DIR=$(mktemp -d)
+
+# Test: init creates directory and .xcind.sh
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws" >/dev/null
+assert_file_exists "ws init creates .xcind.sh" "$WS_INIT_DIR/newws/.xcind.sh"
+ws_config=$(<"$WS_INIT_DIR/newws/.xcind.sh")
+assert_contains "ws init has XCIND_IS_WORKSPACE=1" "XCIND_IS_WORKSPACE=1" "$ws_config"
+
+# Test: init with --proxy-domain
+rm -rf "$WS_INIT_DIR/flagws"
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/flagws" --proxy-domain xcind.localhost >/dev/null
+ws_config2=$(<"$WS_INIT_DIR/flagws/.xcind.sh")
+assert_contains "ws init --proxy-domain" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$ws_config2"
+
+# Test: init with --name
+rm -rf "$WS_INIT_DIR/namews"
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/namews" --name myws >/dev/null
+ws_config3=$(<"$WS_INIT_DIR/namews/.xcind.sh")
+assert_contains "ws init --name" 'XCIND_WORKSPACE="myws"' "$ws_config3"
+
+# Test: re-run with no flags prints "already initialized"
+ws_reinit_out=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws")
+assert_contains "ws reinit no flags" "already initialized" "$ws_reinit_out"
+
+# Test: re-run with --proxy-domain updates the file
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws" --proxy-domain new.localhost >/dev/null
+ws_config4=$(<"$WS_INIT_DIR/newws/.xcind.sh")
+assert_contains "ws reinit updates domain" 'XCIND_PROXY_DOMAIN="new.localhost"' "$ws_config4"
+
+# Test: running from an app directory produces error
+mkdir -p "$WS_INIT_DIR/appdir"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_INIT_DIR/appdir/.xcind.sh"
+ws_app_err=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/appdir" 2>&1 || true)
+assert_contains "ws init from app dir: error" "app configuration" "$ws_app_err"
+
+# Test: running from app inside workspace reports already initialized
+mkdir -p "$WS_INIT_DIR/existingws/myapp"
+echo 'XCIND_IS_WORKSPACE=1' >"$WS_INIT_DIR/existingws/.xcind.sh"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_INIT_DIR/existingws/myapp/.xcind.sh"
+ws_nested_err=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/existingws/myapp" 2>&1 || true)
+assert_contains "ws init from app in workspace: mentions workspace" "already initialized" "$ws_nested_err"
+
+# Test: version flag
+ws_ver=$("$XCIND_ROOT/bin/xcind-workspace" --version)
+assert_contains "ws version output" "xcind-workspace" "$ws_ver"
+
+# Test: help flag
+ws_help=$("$XCIND_ROOT/bin/xcind-workspace" --help)
+assert_contains "ws help mentions init" "init" "$ws_help"
+
+# Test: unknown subcommand
+ws_unknown=$("$XCIND_ROOT/bin/xcind-workspace" badcmd 2>&1 || true)
+assert_contains "ws unknown subcommand error" "Unknown command" "$ws_unknown"
+
+rm -rf "$WS_INIT_DIR"
+
+# ======================================================================
+echo ""
 echo "=== Test: XCIND_HOOKS_EXECUTE registration ==="
 
 # Check registration before any test overrides the array

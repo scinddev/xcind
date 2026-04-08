@@ -196,6 +196,49 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 
 ---
 
+## `xcind-workspace`
+
+Manages xcind workspaces.
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `init [DIR] [OPTIONS]` | Initialize a workspace directory |
+| `status [DIR] [OPTIONS]` | Show workspace-wide status |
+
+### Init Options
+
+| Option | Description |
+|--------|-------------|
+| `--name NAME` | Set `XCIND_WORKSPACE` explicitly (default: directory name) |
+| `--proxy-domain DOMAIN` | Set `XCIND_PROXY_DOMAIN` in workspace config |
+
+### Status Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output structured JSON |
+
+### Usage
+
+```bash
+xcind-workspace init                         # Initialize current directory
+xcind-workspace init ~/Workspaces/dev        # Initialize specific directory
+xcind-workspace init --proxy-domain xcind.localhost  # With proxy domain
+xcind-workspace init --name myws             # With explicit workspace name
+xcind-workspace status                       # Show workspace status
+xcind-workspace status --json                # JSON output
+```
+
+### Behavior
+
+- `DIR` defaults to `.` (current directory).
+- If `.xcind.sh` already exists with `XCIND_IS_WORKSPACE=1`, re-running with flags updates the config; without flags reports "already initialized".
+- If `.xcind.sh` exists without `XCIND_IS_WORKSPACE=1` (an app config), the command prints a helpful error suggesting the correct workspace directory.
+
+---
+
 ## Shell Completions
 
 Xcind provides tab completions for all commands. Add one line to your shell
@@ -209,8 +252,8 @@ config:
 . <(xcind-config completion zsh)
 ```
 
-This registers completions for `xcind-compose`, `xcind-config`, and
-`xcind-proxy`. For `xcind-compose`, completions invoke Docker's
+This registers completions for `xcind-compose`, `xcind-config`,
+`xcind-proxy`, and `xcind-workspace`. For `xcind-compose`, completions invoke Docker's
 `docker compose __complete` mechanism directly so you get the same experience
 as `docker compose` without requiring Docker's shell completion to be loaded.
 If that subprocess is unavailable or returns no suggestions, a hardcoded fallback list of common subcommands is used.

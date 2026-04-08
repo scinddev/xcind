@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# xcind-workspace — Manage xcind workspaces
+#
+# Usage:
+#   xcind-workspace init [DIR] [OPTIONS]   Initialize a workspace directory
+#   xcind-workspace status [DIR] [OPTIONS] Show workspace-wide status
+
+set -euo pipefail
+
+# Resolve the real path of this script, following symlinks
+__xcind_resolve_link() {
+  local target="$1"
+  while [ -L "$target" ]; do
+    local dir
+    dir=$(cd "$(dirname "$target")" && pwd)
+    target=$(readlink "$target")
+    [[ $target != /* ]] && target="$dir/$target"
+  done
+  echo "$(cd "$(dirname "$target")" && pwd)/$(basename "$target")"
+}
+
+XCIND_ROOT="$(cd "$(dirname "$(__xcind_resolve_link "${BASH_SOURCE[0]}")")" && cd .. && pwd)"
+
+# Source the shared library
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
+
+if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
+  echo "xcind-workspace ${XCIND_VERSION}"
+  exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Init
+# --------------------------------------------------------------------------
+
+__xcind-workspace-write-config() {
+  local dir="$1"
+  local ws_name="${2:-}"
+  local proxy_domain="${3:-}"
+
+  local content='# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_IS_WORKSPACE=1'
+
+  if [[ -n "$ws_name" ]]; then
+    content+=$'\n'"XCIND_WORKSPACE=\"$ws_name\""
+  fi
+  if [[ -n "$proxy_domain" ]]; then
+    content+=$'\n'"XCIND_PROXY_DOMAIN=\"$proxy_domain\""
+  fi
+
+  echo "$content" >"$dir/.xcind.sh"
+}
+
+__xcind-workspace-init() {
+  local dir="."
+  local _flag_proxy_domain=""
+  local _flag_name=""
+
+  # Parse arguments: optional positional DIR followed by flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --proxy-domain)
+      _flag_proxy_domain="$2"
+      shift 2
+      ;;
+    --name)
+      _flag_name="$2"
+      shift 2
+      ;;
+    -*)
+      echo "Error: Unknown option for init: $1" >&2
+      exit 1
+      ;;
+    *)
+      dir="$1"
+      shift
+      ;;
+    esac
+  done
+
+  # Resolve to absolute path
+  mkdir -p "$dir"
+  dir=$(cd "$dir" && pwd)
+
+  # Check if .xcind.sh exists
+  if [[ -f "$dir/.xcind.sh" ]]; then
+    # Source it to check XCIND_IS_WORKSPACE
+    local _is_workspace=""
+    local _existing_ws=""
+    local _existing_domain=""
+    # shellcheck disable=SC1091,SC2034
+    _is_workspace=$(XCIND_IS_WORKSPACE="" XCIND_WORKSPACE="" XCIND_PROXY_DOMAIN="" && source "$dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+
+    if [[ "$_is_workspace" == "1" ]]; then
+      # Already a workspace — update if flags provided, else report
+      if [[ -n "$_flag_name" || -n "$_flag_proxy_domain" ]]; then
+        # Source existing values for merge
+        XCIND_WORKSPACE=""
+        XCIND_PROXY_DOMAIN=""
+        # shellcheck disable=SC1091
+        source "$dir/.xcind.sh"
+        _existing_ws="${XCIND_WORKSPACE:-}"
+        _existing_domain="${XCIND_PROXY_DOMAIN:-}"
+
+        [[ -n "$_flag_name" ]] && _existing_ws="$_flag_name"
+        [[ -n "$_flag_proxy_domain" ]] && _existing_domain="$_flag_proxy_domain"
+
+        __xcind-workspace-write-config "$dir" "$_existing_ws" "$_existing_domain"
+        echo "Workspace updated at $dir"
+      else
+        echo "Workspace already initialized at $dir"
+      fi
+      return 0
+    fi
+
+    # .xcind.sh exists but is NOT a workspace — this is an app config
+    local parent
+    parent=$(dirname "$dir")
+
+    if [[ -f "$parent/.xcind.sh" ]]; then
+      local _parent_is_ws=""
+      # shellcheck disable=SC1091,SC2034
+      _parent_is_ws=$(XCIND_IS_WORKSPACE="" && source "$parent/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+
+      if [[ "$_parent_is_ws" == "1" ]]; then
+        echo "You're in app '$(basename "$dir")' inside workspace '$(basename "$parent")' (already initialized at $parent)." >&2
+      else
+        echo "This directory contains an app configuration. Specify a workspace directory explicitly." >&2
+      fi
+    else
+      echo "This directory contains an app configuration." >&2
+      echo "To initialize the parent as a workspace, run:" >&2
+      echo "    xcind-workspace init $parent" >&2
+    fi
+    return 1
+  fi
+
+  # No .xcind.sh exists — create workspace
+  __xcind-workspace-write-config "$dir" "$_flag_name" "$_flag_proxy_domain"
+  echo "Workspace initialized at $dir"
+}
+
+# --------------------------------------------------------------------------
+# Help
+# --------------------------------------------------------------------------
+
+__xcind-workspace-help() {
+  echo "Usage: xcind-workspace <subcommand>"
+  echo ""
+  echo "Subcommands:"
+  echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
+  echo "  status [DIR] [OPTIONS]   Show workspace-wide status"
+  echo ""
+  echo "Init options:"
+  echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
+  echo "  --proxy-domain DOMAIN    Set XCIND_PROXY_DOMAIN in workspace config"
+  echo ""
+  echo "Status options:"
+  echo "  --json                   Output structured JSON"
+  echo ""
+  echo "Options:"
+  echo "  --version, -V  Show version"
+  echo "  --help, -h     Show this help"
+}
+
+# --------------------------------------------------------------------------
+# Dispatch
+# --------------------------------------------------------------------------
+
+case "${1:-}" in
+init)
+  shift
+  __xcind-workspace-init "$@"
+  ;;
+status)
+  shift
+  echo "Error: xcind-workspace status is not yet implemented." >&2
+  exit 1
+  ;;
+--help | -h)
+  __xcind-workspace-help
+  exit 0
+  ;;
+"")
+  __xcind-workspace-help
+  exit 0
+  ;;
+*)
+  echo "Error: Unknown command: $1" >&2
+  echo "Run 'xcind-workspace --help' for usage." >&2
+  exit 1
+  ;;
+esac
