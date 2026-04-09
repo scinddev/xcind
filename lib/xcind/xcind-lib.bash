@@ -182,6 +182,32 @@ __xcind-load-config() {
 }
 
 # --------------------------------------------------------------------------
+# Variable Expansion
+# --------------------------------------------------------------------------
+
+# Expand $VAR and ${VAR} references in a pattern from .xcind.sh.
+# Prints the expanded result to stdout, or empty on failure.
+#
+# Compared to `eval echo "$pattern"`, this:
+#   - Does not go through echo, so patterns like "-n" round-trip correctly.
+#   - Disables glob expansion during the eval, so "*.yaml" is not expanded
+#     against CWD.
+# Command substitution ($(cmd)) is still honored for backward compatibility
+# with existing .xcind.sh files that use patterns like ".env.$(hostname)".
+#
+# Usage:
+#   expanded=$(__xcind-expand-vars "$pattern")
+__xcind-expand-vars() {
+  local pattern="$1"
+  local expanded="" _prev_glob=on
+  case $- in *f*) _prev_glob=off ;; esac
+  set -f
+  eval "expanded=\"${pattern//\"/\\\"}\"" 2>/dev/null || expanded=""
+  [ "$_prev_glob" = on ] && set +f
+  printf '%s' "$expanded"
+}
+
+# --------------------------------------------------------------------------
 # Additional Config Sourcing
 # --------------------------------------------------------------------------
 
@@ -203,7 +229,7 @@ __xcind-source-additional-configs() {
 
   for pattern in "${XCIND_ADDITIONAL_CONFIG_FILES[@]}"; do
     # Expand variables in the pattern (e.g., ${APP_ENV})
-    expanded=$(eval echo "$pattern" 2>/dev/null) || continue
+    expanded=$(__xcind-expand-vars "$pattern")
     [ -z "$expanded" ] && continue
 
     # Make relative paths absolute
@@ -302,8 +328,7 @@ __xcind-resolve-files() {
 
   for pattern in "$@"; do
     # Expand variables in the pattern (e.g., ${APP_ENV})
-    # Using eval in a controlled context — patterns come from .xcind.sh
-    expanded=$(eval echo "$pattern" 2>/dev/null) || continue
+    expanded=$(__xcind-expand-vars "$pattern")
 
     # Skip empty expansions
     [ -z "$expanded" ] && continue
