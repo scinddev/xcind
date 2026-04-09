@@ -612,10 +612,12 @@ XCIND_WORKSPACE_ROOT=""
 unset XCIND_HOST_GATEWAY XCIND_HOST_GATEWAY_ENABLED
 
 # First SHA with one detected value (simulating WSL2 mirrored mode LAN IP)
+# shellcheck disable=SC2317  # invoked indirectly via __xcind-compute-sha
 __xcind-detect-host-gateway() { echo "192.168.1.100"; }
 sha1=$(__xcind-compute-sha "$HGW_SHA_APP")
 
 # Second SHA with a different detected value (simulating DHCP renewal)
+# shellcheck disable=SC2317  # invoked indirectly via __xcind-compute-sha
 __xcind-detect-host-gateway() { echo "10.0.0.50"; }
 sha2=$(__xcind-compute-sha "$HGW_SHA_APP")
 
