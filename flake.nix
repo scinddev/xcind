@@ -63,18 +63,24 @@
             core = xcindCoreDeps pkgs;
             json = xcindJsonDeps pkgs;
             docker = xcindDockerDeps pkgs;
-            coreJsonPath = pkgs.lib.makeBinPath (core ++ json);
-            coreDockerPath = pkgs.lib.makeBinPath (core ++ docker);
+            # xcind-compose, xcind-config, and xcind-workspace all need the
+            # full set at runtime: they either exec `docker compose` directly
+            # or go through __xcind-populate-cache, which shells out to
+            # `docker compose config`.
             fullPath = pkgs.lib.makeBinPath (core ++ json ++ docker);
+            # xcind-proxy manages its own Traefik stack via `docker compose
+            # -f <fixed file>` and never runs the xcind pipeline, so it does
+            # not need jq.
+            proxyPath = pkgs.lib.makeBinPath (core ++ docker);
           in ''
             wrapProgram "$out/bin/xcind-compose" \
               --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-config" \
-              --prefix PATH : ${coreJsonPath}
+              --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-proxy" \
-              --prefix PATH : ${coreDockerPath}
+              --prefix PATH : ${proxyPath}
             wrapProgram "$out/bin/xcind-workspace" \
-              --prefix PATH : ${coreJsonPath}
+              --prefix PATH : ${fullPath}
           '';
         meta = with pkgs.lib; {
           description = "Docker Compose environment manager";

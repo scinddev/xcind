@@ -31,9 +31,9 @@ source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
-# Names of hooks that soft-skipped this run because an optional dependency
-# was missing. Populated by hooks themselves; drained and reported as a
-# single consolidated warning by __xcind-run-hooks.
+# Names of hooks that soft-skipped this run because yq was missing.
+# Populated by hooks themselves; drained and reported as a single
+# consolidated warning by __xcind-run-hooks.
 __XCIND_HOOKS_SKIPPED_NO_YQ=()
 
 # --------------------------------------------------------------------------
