@@ -1045,6 +1045,45 @@ __xcind-maybe-warn-deps() {
 # Hook Execution
 # --------------------------------------------------------------------------
 
+# Parse hook output line-by-line, validating that any `-f PATH` entries
+# still reference existing files. Returns 0 if valid, 1 on first miss.
+#
+# Hook output format: one argument per line, each line either a single
+# token (e.g. "--verbose") or a flag and value separated by a single space
+# (e.g. "-f /path/to/compose.yaml"). Line-based parsing preserves paths
+# containing spaces, which word-splitting does not.
+__xcind-validate-hook-output() {
+  local output="$1"
+  local line
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [[ $line == *" "* ]]; then
+      local flag="${line%% *}"
+      local value="${line#* }"
+      if [ "$flag" = "-f" ] && [ ! -f "$value" ]; then
+        return 1
+      fi
+    fi
+  done <<<"$output"
+  return 0
+}
+
+# Append hook output tokens to XCIND_DOCKER_COMPOSE_OPTS, preserving paths
+# with spaces. Each non-empty line becomes one or two array elements
+# depending on whether it contains a space separator.
+__xcind-append-hook-output-to-opts() {
+  local output="$1"
+  local line
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [[ $line == *" "* ]]; then
+      XCIND_DOCKER_COMPOSE_OPTS+=("${line%% *}" "${line#* }")
+    else
+      XCIND_DOCKER_COMPOSE_OPTS+=("$line")
+    fi
+  done <<<"$output"
+}
+
 # Run GENERATE hooks with cache hit/miss logic.
 # On cache miss: runs hooks, persists output, appends to XCIND_DOCKER_COMPOSE_OPTS.
 # On cache hit: replays persisted output, validates referenced files.
@@ -1070,28 +1109,15 @@ __xcind-run-hooks() {
       output=$(<"$hook_output_file")
       [ -z "$output" ] && continue
 
-      # Verify referenced files exist
-      local cache_valid=true
-      local word
-      local prev=""
-      for word in $output; do
-        if [ "$prev" = "-f" ] && [ ! -f "$word" ]; then
-          cache_valid=false
-          break
-        fi
-        prev="$word"
-      done
-
-      if [ "$cache_valid" = false ]; then
-        # Treat as cache miss — remove generated dir and re-run
+      # Verify referenced files still exist; on miss, rebuild from scratch.
+      if ! __xcind-validate-hook-output "$output"; then
         rm -rf "$XCIND_GENERATED_DIR"
         __xcind-run-hooks "$app_root"
         return $?
       fi
 
-      # Append to compose opts
-      # shellcheck disable=SC2206
-      XCIND_DOCKER_COMPOSE_OPTS+=($output)
+      # Append to compose opts (preserves paths with spaces)
+      __xcind-append-hook-output-to-opts "$output"
     done
   else
     # Cache miss — run hooks and persist output
@@ -1109,10 +1135,9 @@ __xcind-run-hooks() {
       # Persist hook output
       echo "$output" >"$XCIND_GENERATED_DIR/.hook-output-$hook_name"
 
-      # Append to compose opts
+      # Append to compose opts (preserves paths with spaces)
       if [ -n "$output" ]; then
-        # shellcheck disable=SC2206
-        XCIND_DOCKER_COMPOSE_OPTS+=($output)
+        __xcind-append-hook-output-to-opts "$output"
       fi
     done
   fi
