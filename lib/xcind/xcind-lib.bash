@@ -449,6 +449,20 @@ __xcind-resolve-tools() {
   printf '}'
 }
 
+# Print, one per line, the value following each `-f` flag in
+# XCIND_DOCKER_COMPOSE_OPTS. Safe to call when the array is empty.
+# Preserves paths containing spaces.
+__xcind-extract-compose-f-files() {
+  local i=0
+  while [ "$i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
+    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$i]}" = "-f" ]; then
+      i=$((i + 1))
+      printf '%s\n' "${XCIND_DOCKER_COMPOSE_OPTS[$i]}"
+    fi
+    i=$((i + 1))
+  done
+}
+
 # Output the resolved configuration as JSON.
 # Convert a bash array to a JSON array string.
 # Requires jq.
@@ -494,27 +508,22 @@ __xcind-resolve-json() {
     compose_files+=("$compose_file")
   done < <(__xcind-resolve-files "$resolve_base" ${XCIND_COMPOSE_FILES[@]+"${XCIND_COMPOSE_FILES[@]}"})
 
-  # Include hook-generated compose files from XCIND_DOCKER_COMPOSE_OPTS
-  local _i=0
-  while [ "$_i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
-    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$_i]}" = "-f" ]; then
-      _i=$((_i + 1))
-      local _f="${XCIND_DOCKER_COMPOSE_OPTS[$_i]}"
-      # Only add files not already in the list (hook-generated overlays)
-      local _already=false
-      local _c
-      for _c in "${compose_files[@]+"${compose_files[@]}"}"; do
-        if [ "$_c" = "$_f" ]; then
-          _already=true
-          break
-        fi
-      done
-      if [ "$_already" = false ]; then
-        compose_files+=("$_f")
+  # Include hook-generated compose files from XCIND_DOCKER_COMPOSE_OPTS,
+  # skipping any file already resolved above.
+  local _f
+  while IFS= read -r _f; do
+    local _already=false
+    local _c
+    for _c in "${compose_files[@]+"${compose_files[@]}"}"; do
+      if [ "$_c" = "$_f" ]; then
+        _already=true
+        break
       fi
+    done
+    if [ "$_already" = false ]; then
+      compose_files+=("$_f")
     fi
-    _i=$((_i + 1))
-  done
+  done < <(__xcind-extract-compose-f-files)
 
   local bake_files=()
   local bake_file
@@ -777,14 +786,10 @@ __xcind-compute-sha() {
 
   # Collect compose file paths from XCIND_DOCKER_COMPOSE_OPTS (-f flags)
   local compose_files=()
-  local i=0
-  while [ "$i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
-    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$i]}" = "-f" ]; then
-      i=$((i + 1))
-      compose_files+=("${XCIND_DOCKER_COMPOSE_OPTS[$i]}")
-    fi
-    i=$((i + 1))
-  done
+  local _f
+  while IFS= read -r _f; do
+    compose_files+=("$_f")
+  done < <(__xcind-extract-compose-f-files)
 
   # Sort file paths for stability
   local sorted_files
