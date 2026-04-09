@@ -51,6 +51,29 @@ __xcind-sha256() {
 }
 
 # --------------------------------------------------------------------------
+# Workspace Detection
+# --------------------------------------------------------------------------
+
+# Return 0 if <dir>/.xcind.sh exists and declares XCIND_IS_WORKSPACE=1
+# when sourced in a clean subshell. Return 1 otherwise (including when
+# the file does not exist).
+#
+# Usage:
+#   if __xcind-is-workspace-dir "$dir"; then ...
+__xcind-is-workspace-dir() {
+  local dir="$1"
+  [ -f "$dir/.xcind.sh" ] || return 1
+  local _is
+  # shellcheck disable=SC1091,SC2030,SC2031
+  _is=$(
+    XCIND_IS_WORKSPACE=""
+    source "$dir/.xcind.sh" 2>/dev/null
+    echo "${XCIND_IS_WORKSPACE:-}"
+  )
+  [ "$_is" = "1" ]
+}
+
+# --------------------------------------------------------------------------
 # App Root Detection
 # --------------------------------------------------------------------------
 
@@ -73,15 +96,10 @@ __xcind-app-root() {
   local current_dir="${1:-$PWD}"
 
   while true; do
-    if [ -f "$current_dir/.xcind.sh" ]; then
-      # Check if this is a workspace root (not an app root)
-      local _xcind_is_workspace=""
-      # shellcheck disable=SC1091,SC2030,SC2031
-      _xcind_is_workspace=$(XCIND_IS_WORKSPACE="" && source "$current_dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-      if [ "$_xcind_is_workspace" != "1" ]; then
-        echo "$current_dir"
-        return 0
-      fi
+    # An app root has a .xcind.sh that is NOT a workspace marker
+    if [ -f "$current_dir/.xcind.sh" ] && ! __xcind-is-workspace-dir "$current_dir"; then
+      echo "$current_dir"
+      return 0
     fi
 
     local parent_dir
@@ -664,26 +682,13 @@ __xcind-discover-workspace() {
   local parent
   parent="$(dirname "$app_root")"
 
-  if [[ -f "$parent/.xcind.sh" ]]; then
-    # Source in a subshell to check if it explicitly declares a workspace
-    local is_workspace
-    # shellcheck disable=SC1091,SC2030,SC2031
-    is_workspace="$(
-      source "$parent/.xcind.sh" 2>/dev/null
-      echo "${XCIND_IS_WORKSPACE:-0}"
-    )"
-    if [[ $is_workspace == "1" ]]; then
-      XCIND_WORKSPACE_ROOT="$parent"
-      XCIND_WORKSPACE="$(basename "$parent")"
-      XCIND_WORKSPACELESS=0
-      # shellcheck disable=SC1091
-      source "$parent/.xcind.sh"
-      __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
-    else
-      XCIND_WORKSPACELESS=1
-      XCIND_WORKSPACE_ROOT=""
-      XCIND_WORKSPACE=""
-    fi
+  if __xcind-is-workspace-dir "$parent"; then
+    XCIND_WORKSPACE_ROOT="$parent"
+    XCIND_WORKSPACE="$(basename "$parent")"
+    XCIND_WORKSPACELESS=0
+    # shellcheck disable=SC1091
+    source "$parent/.xcind.sh"
+    __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
   else
     XCIND_WORKSPACELESS=1
     XCIND_WORKSPACE_ROOT=""

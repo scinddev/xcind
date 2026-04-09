@@ -86,16 +86,11 @@ __xcind-workspace-init() {
 
   # Check if .xcind.sh exists
   if [[ -f "$dir/.xcind.sh" ]]; then
-    # Source it to check XCIND_IS_WORKSPACE
-    local _is_workspace=""
-    local _existing_ws=""
-    local _existing_domain=""
-    # shellcheck disable=SC1091,SC2034
-    _is_workspace=$(XCIND_IS_WORKSPACE="" XCIND_WORKSPACE="" XCIND_PROXY_DOMAIN="" && source "$dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-
-    if [[ "$_is_workspace" == "1" ]]; then
+    if __xcind-is-workspace-dir "$dir"; then
       # Already a workspace — update if flags provided, else report
       if [[ -n "$_flag_name" || -n "$_flag_proxy_domain" ]]; then
+        local _existing_ws=""
+        local _existing_domain=""
         # Source existing values for merge
         XCIND_WORKSPACE=""
         XCIND_PROXY_DOMAIN=""
@@ -119,16 +114,10 @@ __xcind-workspace-init() {
     local parent
     parent=$(dirname "$dir")
 
-    if [[ -f "$parent/.xcind.sh" ]]; then
-      local _parent_is_ws=""
-      # shellcheck disable=SC1091,SC2034
-      _parent_is_ws=$(XCIND_IS_WORKSPACE="" && source "$parent/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-
-      if [[ "$_parent_is_ws" == "1" ]]; then
-        echo "You're in app '$(basename "$dir")' inside workspace '$(basename "$parent")' (already initialized at $parent)." >&2
-      else
-        echo "This directory contains an app configuration. Specify a workspace directory explicitly." >&2
-      fi
+    if __xcind-is-workspace-dir "$parent"; then
+      echo "You're in app '$(basename "$dir")' inside workspace '$(basename "$parent")' (already initialized at $parent)." >&2
+    elif [[ -f "$parent/.xcind.sh" ]]; then
+      echo "This directory contains an app configuration. Specify a workspace directory explicitly." >&2
     else
       echo "This directory contains an app configuration." >&2
       echo "To initialize the parent as a workspace, run:" >&2
@@ -158,14 +147,9 @@ __xcind-workspace-find-root() {
   fi
 
   # Direct check: is this a workspace root?
-  if [[ -f "$dir/.xcind.sh" ]]; then
-    local _is_ws=""
-    # shellcheck disable=SC1091,SC2034
-    _is_ws=$(XCIND_IS_WORKSPACE="" && source "$dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-    if [[ "$_is_ws" == "1" ]]; then
-      echo "$dir"
-      return 0
-    fi
+  if __xcind-is-workspace-dir "$dir"; then
+    echo "$dir"
+    return 0
   fi
 
   # Try to discover workspace from current location (walk up)
@@ -178,14 +162,9 @@ __xcind-workspace-find-root() {
       break
     fi
 
-    if [[ -f "$parent/.xcind.sh" ]]; then
-      local _is_ws=""
-      # shellcheck disable=SC1091,SC2034
-      _is_ws=$(XCIND_IS_WORKSPACE="" && source "$parent/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-      if [[ "$_is_ws" == "1" ]]; then
-        echo "$parent"
-        return 0
-      fi
+    if __xcind-is-workspace-dir "$parent"; then
+      echo "$parent"
+      return 0
     fi
 
     current="$parent"
@@ -247,14 +226,12 @@ __xcind-workspace-status() {
   local subdir
   for subdir in "$ws_root"/*/; do
     [[ ! -d "$subdir" ]] && continue
-    [[ ! -f "${subdir}.xcind.sh" ]] && continue
+    local app_candidate="${subdir%/}"
+    [[ ! -f "$app_candidate/.xcind.sh" ]] && continue
 
-    local _is_ws=""
-    # shellcheck disable=SC1090,SC2034
-    _is_ws=$(XCIND_IS_WORKSPACE="" && source "${subdir}.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-    if [[ "$_is_ws" != "1" ]]; then
-      app_dirs+=("${subdir%/}")
-      app_names+=("$(basename "${subdir%/}")")
+    if ! __xcind-is-workspace-dir "$app_candidate"; then
+      app_dirs+=("$app_candidate")
+      app_names+=("$(basename "$app_candidate")")
     fi
   done
 
