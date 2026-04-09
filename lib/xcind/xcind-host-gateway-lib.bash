@@ -165,9 +165,10 @@ xcind-host-gateway-hook() {
     return 0
   fi
 
-  # yq is optional for this default-enabled hook; if unavailable, warn and no-op
+  # yq is required for this hook; record and soft-skip if missing. The
+  # consolidated summary is emitted by __xcind-run-hooks at the end of the run.
   if ! command -v yq &>/dev/null; then
-    echo "Warning: skipping host-gateway hook because yq was not found." >&2
+    __XCIND_HOOKS_SKIPPED_NO_YQ+=("xcind-host-gateway-hook")
     return 0
   fi
 

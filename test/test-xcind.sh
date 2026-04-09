@@ -1292,13 +1292,19 @@ assert_eq "all deps present: returns 0" "0" "$cdeps_all_rc"
 assert_contains "all deps present: reports no issues" "All dependencies found." "$cdeps_all_out"
 
 # 2. Optional deps missing but required present → still returns 0, warns about optional
-# Remove jq/yq from stubs so they are not found
-rm -f "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq"
+# Remove jq from stubs (yq is required as of 0.5.x — see __xcind-check-deps)
+rm -f "$CDEPS_STUBS/jq"
 cdeps_reqonly_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1)
 cdeps_reqonly_rc=$?
 assert_eq "required-only: returns 0" "0" "$cdeps_reqonly_rc"
 assert_not_contains "required-only: no required-missing message" "Required dependencies are missing" "$cdeps_reqonly_out"
 assert_contains "required-only: optional-missing warning shown" "Optional dependencies are missing" "$cdeps_reqonly_out"
+
+# 2b. Required yq missing → returns non-zero (regression guard for yq promotion)
+rm -f "$CDEPS_STUBS/yq"
+cdeps_noyq_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1) && cdeps_noyq_rc=0 || cdeps_noyq_rc=$?
+assert_eq "yq missing: returns 1" "1" "$cdeps_noyq_rc"
+assert_contains "yq missing: required message shown" "Required dependencies are missing" "$cdeps_noyq_out"
 
 # 3. Required deps missing → returns non-zero
 cdeps_miss_out=$(PATH="$CDEPS_EMPTY" __xcind-check-deps 2>&1) && cdeps_miss_rc=0 || cdeps_miss_rc=$?
@@ -1306,7 +1312,7 @@ assert_eq "required missing: returns 1" "1" "$cdeps_miss_rc"
 assert_contains "required missing: required message shown" "Required dependencies are missing" "$cdeps_miss_out"
 
 # 4. Multiple required deps missing → issue count reflects all (not capped at 1)
-# Empty PATH: bash, docker, docker compose, sha256sum all missing (4 required) + jq, yq (2 optional) = 6 issues
+# Empty PATH: bash, docker, docker compose, sha256sum, yq all missing (5 required) + jq (1 optional) = 6 issues
 cdeps_count_str=$(echo "$cdeps_miss_out" | grep "issue(s) found" | sed 's/ .*//')
 cdeps_count=${cdeps_count_str:-0}
 if [ "${cdeps_count}" -gt 1 ] 2>/dev/null; then

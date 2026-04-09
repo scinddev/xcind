@@ -117,8 +117,8 @@ The `tools` object is keyed by tool name. Each entry includes `service`, `use` (
 
 Runs independently of app-root detection. Reports the availability of:
 
-- Required dependencies (e.g., `docker`, `docker compose`)
-- Optional dependencies (e.g., `yq` for hooks)
+- Required dependencies (e.g., `docker`, `docker compose`, `yq`)
+- Optional dependencies (e.g., `jq` for JSON output)
 
 ---
 

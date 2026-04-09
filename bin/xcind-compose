@@ -61,6 +61,9 @@ HELPEOF
   exit 0
 fi
 
+# Gentle nudge if jq/yq aren't on PATH (silent in scripts and CI).
+__xcind-maybe-warn-deps
+
 # --- Main ---
 
 # Step 1: Detect app root

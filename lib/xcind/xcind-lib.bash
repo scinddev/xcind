@@ -31,6 +31,11 @@ source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
+# Names of hooks that soft-skipped this run because yq was missing.
+# Populated by hooks themselves; drained and reported as a single
+# consolidated warning by __xcind-run-hooks.
+__XCIND_HOOKS_SKIPPED_NO_YQ=()
+
 # --------------------------------------------------------------------------
 # Portable SHA-256 helper
 # --------------------------------------------------------------------------
@@ -956,6 +961,7 @@ __xcind-check-deps() {
   echo "Required:"
   __check_required bash "shell interpreter"
   __check_required docker "container runtime"
+  __check_required yq "YAML parsing for default-registered hooks"
 
   # docker compose is a subcommand, not a standalone binary
   if docker compose version >/dev/null 2>&1; then
@@ -985,8 +991,7 @@ __xcind-check-deps() {
 
   echo ""
   echo "Optional (needed for specific features):"
-  __check_optional jq "JSON output (xcind-config default mode)"
-  __check_optional yq "proxy-hook, workspace-hook, app-env-hook"
+  __check_optional jq "JSON output (xcind-config --json, xcind-workspace --json)"
 
   echo ""
 
@@ -1010,6 +1015,32 @@ __xcind-check-deps() {
   return "$rc"
 }
 
+# Print a one-line hint to stderr when xcind dependencies are missing from
+# PATH, suggesting the user run 'xcind-config --check' for details. Intended
+# as a gentle nudge for interactive invocations — silent in scripts and CI.
+#
+# Suppressed when:
+#   - $XCIND_SUPPRESS_DEP_WARNING is non-empty
+#   - stderr is not a terminal
+#
+# Usage:
+#   __xcind-maybe-warn-deps
+__xcind-maybe-warn-deps() {
+  [ -n "${XCIND_SUPPRESS_DEP_WARNING:-}" ] && return 0
+  [ -t 2 ] || return 0
+
+  local missing=()
+  command -v yq >/dev/null 2>&1 || missing+=("yq")
+  command -v jq >/dev/null 2>&1 || missing+=("jq")
+
+  [ "${#missing[@]}" -eq 0 ] && return 0
+
+  local list
+  list=$(printf '%s, ' "${missing[@]}")
+  list=${list%, }
+  echo "xcind: dependency not found on PATH: ${list} — run 'xcind-config --check' for details" >&2
+}
+
 # --------------------------------------------------------------------------
 # Hook Execution
 # --------------------------------------------------------------------------
@@ -1022,6 +1053,10 @@ __xcind-check-deps() {
 #   __xcind-run-hooks /path/to/app/root
 __xcind-run-hooks() {
   local app_root="$1"
+
+  # Reset skipped-hooks tracking for this run so the end-of-run summary
+  # reflects only this invocation.
+  __XCIND_HOOKS_SKIPPED_NO_YQ=()
 
   if [ -d "$XCIND_GENERATED_DIR" ]; then
     # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order
@@ -1080,6 +1115,16 @@ __xcind-run-hooks() {
         XCIND_DOCKER_COMPOSE_OPTS+=($output)
       fi
     done
+  fi
+
+  # Consolidated summary for hooks that soft-skipped due to missing yq.
+  # Hard-failing hooks (proxy, workspace, app-env) never reach this point.
+  if [ "${#__XCIND_HOOKS_SKIPPED_NO_YQ[@]}" -gt 0 ]; then
+    local _skipped_list
+    _skipped_list=$(printf '%s, ' "${__XCIND_HOOKS_SKIPPED_NO_YQ[@]}")
+    _skipped_list=${_skipped_list%, }
+    echo "xcind: skipped hook(s) due to missing yq: ${_skipped_list}" >&2
+    echo "xcind: install yq or run 'xcind-config --check' for details" >&2
   fi
 }
 
