@@ -110,15 +110,69 @@ assert_contains "traefik has web entrypoint" "web:" "$traefik_content"
 assert_contains "traefik has docker provider" "docker:" "$traefik_content"
 assert_contains "traefik has exposedByDefault false" "exposedByDefault: false" "$traefik_content"
 
-# Test idempotency — config.sh should not be overwritten
-echo "# user customization" >>"$PROXY_CONFIG_DIR/config.sh"
+# Test idempotency — config values should be preserved on re-init
 "$XCIND_ROOT/bin/xcind-proxy" init
 config_after=$(<"$PROXY_CONFIG_DIR/config.sh")
-assert_contains "config.sh preserved on re-init" "user customization" "$config_after"
+assert_contains "config values preserved on re-init" "XCIND_PROXY_DOMAIN" "$config_after"
 
 export HOME="$REAL_HOME"
 export PATH="$REAL_PATH"
 rm -rf "$MOCK_HOME"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy init flags ==="
+
+MOCK_HOME2=$(mktemp -d)
+export HOME="$MOCK_HOME2"
+export PATH="$MOCK_HOME2/bin:$REAL_PATH"
+mkdir -p "$MOCK_HOME2/bin"
+cat >"$MOCK_HOME2/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+exit 0
+MOCKEOF
+chmod +x "$MOCK_HOME2/bin/docker"
+
+PROXY_CONFIG_DIR2="${MOCK_HOME2}/.config/xcind/proxy"
+PROXY_STATE_DIR2="${MOCK_HOME2}/.local/state/xcind/proxy"
+
+# Test: init with --proxy-domain flag creates config with that domain
+"$XCIND_ROOT/bin/xcind-proxy" init --proxy-domain xcind.localhost
+config2=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "flag: proxy-domain set" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config2"
+assert_contains "flag: other defaults preserved (image)" 'XCIND_PROXY_IMAGE="traefik:v3"' "$config2"
+assert_contains "flag: other defaults preserved (port)" 'XCIND_PROXY_HTTP_PORT="80"' "$config2"
+
+# Test: re-init with --http-port changes only port, preserves domain
+"$XCIND_ROOT/bin/xcind-proxy" init --http-port 8081
+config3=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "flag: http-port updated" 'XCIND_PROXY_HTTP_PORT="8081"' "$config3"
+assert_contains "flag: domain preserved" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config3"
+
+# Test: multiple flags in one invocation
+"$XCIND_ROOT/bin/xcind-proxy" init --image traefik:v3.2 --dashboard true --dashboard-port 9090
+config4=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "multi-flag: image updated" 'XCIND_PROXY_IMAGE="traefik:v3.2"' "$config4"
+assert_contains "multi-flag: dashboard enabled" 'XCIND_PROXY_DASHBOARD="true"' "$config4"
+assert_contains "multi-flag: dashboard-port updated" 'XCIND_PROXY_DASHBOARD_PORT="9090"' "$config4"
+assert_contains "multi-flag: domain still preserved" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config4"
+assert_contains "multi-flag: port still preserved" 'XCIND_PROXY_HTTP_PORT="8081"' "$config4"
+
+# Test: re-init with no flags preserves all values
+"$XCIND_ROOT/bin/xcind-proxy" init
+config5=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "no-flag reinit: domain preserved" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$config5"
+assert_contains "no-flag reinit: port preserved" 'XCIND_PROXY_HTTP_PORT="8081"' "$config5"
+assert_contains "no-flag reinit: image preserved" 'XCIND_PROXY_IMAGE="traefik:v3.2"' "$config5"
+
+# Test: generated docker-compose.yaml reflects updated config
+compose2=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+assert_contains "compose reflects updated port" "8081:80" "$compose2"
+assert_contains "compose reflects updated image" "traefik:v3.2" "$compose2"
+
+export HOME="$REAL_HOME"
+export PATH="$REAL_PATH"
+rm -rf "$MOCK_HOME2"
 
 # ======================================================================
 echo ""
@@ -440,7 +494,7 @@ YAML
   assert_contains "yaml has port 80" "server.port=80" "$proxy_yaml"
   assert_contains "yaml has port 3000" "server.port=3000" "$proxy_yaml"
   assert_contains "yaml has port 5432" "server.port=5432" "$proxy_yaml"
-  assert_contains "yaml has xcind.app.name label" "xcind.app.name=myapp" "$proxy_yaml"
+  assert_not_contains "yaml has no xcind.app.name (moved to app hook)" "xcind.app.name" "$proxy_yaml"
   assert_contains "yaml has xcind.export.web.host" "xcind.export.web.host=myapp-web.localhost" "$proxy_yaml"
   assert_contains "yaml has xcind.export.db.host" "xcind.export.db.host=myapp-db.localhost" "$proxy_yaml"
   assert_contains "yaml has xcind-proxy network" "xcind-proxy:" "$proxy_yaml"
@@ -460,8 +514,8 @@ YAML
 
   proxy_yaml_ws=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
   assert_contains "workspace yaml has dev-myapp-web.localhost" "dev-myapp-web.localhost" "$proxy_yaml_ws"
-  assert_contains "workspace yaml has workspace.name label" "xcind.workspace.name=dev" "$proxy_yaml_ws"
-  assert_contains "workspace yaml has workspace.path label" "xcind.workspace.path=/workspaces/dev" "$proxy_yaml_ws"
+  assert_not_contains "workspace yaml has no workspace.name (moved to ws hook)" "xcind.workspace.name" "$proxy_yaml_ws"
+  assert_not_contains "workspace yaml has no workspace.path (moved to ws hook)" "xcind.workspace.path" "$proxy_yaml_ws"
 
   # Test: port inference (single port)
   rm -rf "$XCIND_GENERATED_DIR"
@@ -583,7 +637,7 @@ YAML
 
   assert_contains "apex ws: has dev-myapp.localhost" "dev-myapp.localhost" "$ws_apex_yaml"
   assert_contains "apex ws: has xcind.apex.host" "xcind.apex.host=dev-myapp.localhost" "$ws_apex_yaml"
-  assert_contains "apex ws: has workspace.name label" "xcind.workspace.name=dev" "$ws_apex_yaml"
+  assert_not_contains "apex ws: no workspace.name (moved to ws hook)" "xcind.workspace.name" "$ws_apex_yaml"
 
   # Test: grouped exports with apex — two exports on same compose service
   rm -rf "$XCIND_GENERATED_DIR"
@@ -731,6 +785,8 @@ YAML
   assert_contains "ws yaml has frontend-postgres alias" "frontend-postgres" "$ws_yaml"
   assert_contains "ws yaml has dev-internal network" "dev-internal:" "$ws_yaml"
   assert_contains "ws yaml has external network" "external: true" "$ws_yaml"
+  assert_contains "ws yaml has xcind.workspace.name label" "xcind.workspace.name=dev" "$ws_yaml"
+  assert_contains "ws yaml has xcind.workspace.path label" "xcind.workspace.path=/workspaces/dev" "$ws_yaml"
 
   # Test: custom service template
   rm -rf "$XCIND_GENERATED_DIR"
@@ -752,6 +808,123 @@ YAML
 else
   echo "  (skipped workspace hook tests: yq not installed)"
 fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace init ==="
+
+WS_INIT_DIR=$(mktemp -d)
+
+# Test: init creates directory and .xcind.sh
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws" >/dev/null
+assert_file_exists "ws init creates .xcind.sh" "$WS_INIT_DIR/newws/.xcind.sh"
+ws_config=$(<"$WS_INIT_DIR/newws/.xcind.sh")
+assert_contains "ws init has XCIND_IS_WORKSPACE=1" "XCIND_IS_WORKSPACE=1" "$ws_config"
+
+# Test: init with --proxy-domain
+rm -rf "$WS_INIT_DIR/flagws"
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/flagws" --proxy-domain xcind.localhost >/dev/null
+ws_config2=$(<"$WS_INIT_DIR/flagws/.xcind.sh")
+assert_contains "ws init --proxy-domain" 'XCIND_PROXY_DOMAIN="xcind.localhost"' "$ws_config2"
+
+# Test: init with --name
+rm -rf "$WS_INIT_DIR/namews"
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/namews" --name myws >/dev/null
+ws_config3=$(<"$WS_INIT_DIR/namews/.xcind.sh")
+assert_contains "ws init --name" 'XCIND_WORKSPACE="myws"' "$ws_config3"
+
+# Test: re-run with no flags prints "already initialized"
+ws_reinit_out=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws")
+assert_contains "ws reinit no flags" "already initialized" "$ws_reinit_out"
+
+# Test: re-run with --proxy-domain updates the file
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws" --proxy-domain new.localhost >/dev/null
+ws_config4=$(<"$WS_INIT_DIR/newws/.xcind.sh")
+assert_contains "ws reinit updates domain" 'XCIND_PROXY_DOMAIN="new.localhost"' "$ws_config4"
+
+# Test: running from an app directory produces error
+mkdir -p "$WS_INIT_DIR/appdir"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_INIT_DIR/appdir/.xcind.sh"
+ws_app_err=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/appdir" 2>&1 || true)
+assert_contains "ws init from app dir: error" "app configuration" "$ws_app_err"
+
+# Test: running from app inside workspace reports already initialized
+mkdir -p "$WS_INIT_DIR/existingws/myapp"
+echo 'XCIND_IS_WORKSPACE=1' >"$WS_INIT_DIR/existingws/.xcind.sh"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_INIT_DIR/existingws/myapp/.xcind.sh"
+ws_nested_err=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/existingws/myapp" 2>&1 || true)
+assert_contains "ws init from app in workspace: mentions workspace" "already initialized" "$ws_nested_err"
+
+# Test: version flag
+ws_ver=$("$XCIND_ROOT/bin/xcind-workspace" --version)
+assert_contains "ws version output" "xcind-workspace" "$ws_ver"
+
+# Test: help flag
+ws_help=$("$XCIND_ROOT/bin/xcind-workspace" --help)
+assert_contains "ws help mentions init" "init" "$ws_help"
+
+# Test: unknown subcommand
+ws_unknown=$("$XCIND_ROOT/bin/xcind-workspace" badcmd 2>&1 || true)
+assert_contains "ws unknown subcommand error" "Unknown command" "$ws_unknown"
+
+rm -rf "$WS_INIT_DIR"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace status ==="
+
+WS_STATUS_DIR=$(mktemp -d)
+REAL_PATH_STATUS="$PATH"
+
+# Create a workspace with two apps
+mkdir -p "$WS_STATUS_DIR/myws/app1" "$WS_STATUS_DIR/myws/app2" "$WS_STATUS_DIR/myws/notanapp"
+echo 'XCIND_IS_WORKSPACE=1' >"$WS_STATUS_DIR/myws/.xcind.sh"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_STATUS_DIR/myws/app1/.xcind.sh"
+echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_STATUS_DIR/myws/app2/.xcind.sh"
+
+# Mock docker to return no containers
+mkdir -p "$WS_STATUS_DIR/bin"
+cat >"$WS_STATUS_DIR/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker — return empty for all queries
+exit 0
+MOCKEOF
+chmod +x "$WS_STATUS_DIR/bin/docker"
+export PATH="$WS_STATUS_DIR/bin:$REAL_PATH_STATUS"
+
+# Test: status from workspace root
+ws_status_out=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS_DIR/myws")
+assert_contains "ws status: shows workspace name" "Workspace: myws" "$ws_status_out"
+assert_contains "ws status: shows root" "Root:" "$ws_status_out"
+assert_contains "ws status: lists app1" "app1/" "$ws_status_out"
+assert_contains "ws status: lists app2" "app2/" "$ws_status_out"
+assert_not_contains "ws status: excludes non-app dir" "notanapp" "$ws_status_out"
+assert_contains "ws status: shows network" "myws-internal" "$ws_status_out"
+assert_contains "ws status: shows proxy" "Proxy:" "$ws_status_out"
+
+# Test: status from app directory discovers workspace
+ws_status_from_app=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS_DIR/myws/app1")
+assert_contains "ws status from app: shows workspace" "Workspace: myws" "$ws_status_from_app"
+
+# Test: status with --json
+if command -v jq &>/dev/null; then
+  ws_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS_DIR/myws" --json)
+  ws_name_json=$(echo "$ws_json" | jq -r '.workspace')
+  assert_eq "ws status json: workspace name" "myws" "$ws_name_json"
+  ws_apps_count=$(echo "$ws_json" | jq '.apps | length')
+  assert_eq "ws status json: apps count" "2" "$ws_apps_count"
+  ws_net_name=$(echo "$ws_json" | jq -r '.network.name')
+  assert_eq "ws status json: network name" "myws-internal" "$ws_net_name"
+else
+  echo "  (skipped json tests: jq not installed)"
+fi
+
+# Test: error when not in a workspace
+ws_no_ws_err=$("$XCIND_ROOT/bin/xcind-workspace" status /tmp 2>&1 || true)
+assert_contains "ws status: error when not in workspace" "Not inside a workspace" "$ws_no_ws_err"
+
+export PATH="$REAL_PATH_STATUS"
+rm -rf "$WS_STATUS_DIR"
 
 # ======================================================================
 echo ""

@@ -8,8 +8,11 @@
 # This file is auto-sourced by xcind-lib.bash. Hooks are registered by
 # default and activate automatically for apps inside a workspace.
 
-# Per-service snippet template for workspace networking
+# Per-service snippet template for workspace networking and identity labels
 XCIND_WORKSPACE_SERVICE_SNIPPET='  {service}:
+    labels:
+      - "xcind.workspace.name={workspace}"
+      - "xcind.workspace.path={workspace_path}"
     networks:
       default: {}
       {network}:
@@ -66,6 +69,8 @@ xcind-workspace-hook() {
     local snippet
     snippet=$(__xcind-render-template "$XCIND_WORKSPACE_SERVICE_SNIPPET" \
       service "$service_name" \
+      workspace "${XCIND_WORKSPACE:-}" \
+      workspace_path "${XCIND_WORKSPACE_ROOT:-}" \
       network "$network" \
       alias "$alias")
 

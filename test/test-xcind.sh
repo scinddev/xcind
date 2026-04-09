@@ -1447,6 +1447,10 @@ assert_contains "completion bash: registers xcind-config" \
   "complete -F _xcind_config_completions xcind-config" "$comp_bash_result"
 assert_contains "completion bash: registers xcind-proxy" \
   "complete -F _xcind_proxy_completions xcind-proxy" "$comp_bash_result"
+assert_contains "completion bash: registers xcind-workspace" \
+  "complete -F _xcind_workspace_completions xcind-workspace" "$comp_bash_result"
+assert_contains "completion bash: has proxy init flags" \
+  "--proxy-domain" "$comp_bash_result"
 
 # 2. completion zsh produces output
 comp_zsh_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -1458,6 +1462,10 @@ assert_contains "completion zsh: registers xcind-config" \
   "compdef _xcind-config xcind-config" "$comp_zsh_result"
 assert_contains "completion zsh: registers xcind-proxy" \
   "compdef _xcind-proxy xcind-proxy" "$comp_zsh_result"
+assert_contains "completion zsh: registers xcind-workspace" \
+  "compdef _xcind-workspace xcind-workspace" "$comp_zsh_result"
+assert_contains "completion zsh: has workspace init command" \
+  "init:Initialize a workspace directory" "$comp_zsh_result"
 
 # 3. completion with no arg fails
 comp_noarg_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -1616,6 +1624,65 @@ EOF
 
 else
   echo "  (skipped: jq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-app-hook ==="
+
+if command -v yq &>/dev/null; then
+  APP_HOOK_DIR=$(mktemp -d)
+  export XCIND_APP="myapp"
+  export XCIND_SHA="apphooktest"
+  export XCIND_CACHE_DIR="$APP_HOOK_DIR/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$APP_HOOK_DIR/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+  db:
+    image: postgres
+  redis:
+    image: redis
+YAML
+
+  hook_output=$(xcind-app-hook "$APP_HOOK_DIR")
+  assert_contains "app hook prints -f flag" \
+    "-f $XCIND_GENERATED_DIR/compose.app.yaml" "$hook_output"
+  assert_eq "compose.app.yaml was created" "true" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.app.yaml" ] && echo true || echo false)"
+
+  generated=$(<"$XCIND_GENERATED_DIR/compose.app.yaml")
+  assert_contains "app yaml has web service" "web:" "$generated"
+  assert_contains "app yaml has db service" "db:" "$generated"
+  assert_contains "app yaml has redis service" "redis:" "$generated"
+  assert_contains "app yaml has xcind.app.name label" "xcind.app.name=myapp" "$generated"
+  assert_contains "app yaml has xcind.app.path label" "xcind.app.path=$APP_HOOK_DIR" "$generated"
+
+  # Test: fallback to basename when XCIND_APP is unset
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  unset XCIND_APP
+  xcind-app-hook "$APP_HOOK_DIR" >/dev/null
+  generated_fallback=$(<"$XCIND_GENERATED_DIR/compose.app.yaml")
+  assert_contains "app hook uses dirname fallback" \
+    "xcind.app.name=$(basename "$APP_HOOK_DIR")" "$generated_fallback"
+  export XCIND_APP="myapp"
+
+  # Test: skip when resolved-config.yaml is missing
+  rm -rf "$XCIND_GENERATED_DIR"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  rm -f "$XCIND_CACHE_DIR/resolved-config.yaml"
+  skip_output=$(xcind-app-hook "$APP_HOOK_DIR" 2>/dev/null)
+  assert_eq "app hook skips when no resolved-config" "" "$skip_output"
+  assert_eq "no compose.app.yaml when skipped" "false" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.app.yaml" ] && echo true || echo false)"
+
+  rm -rf "$APP_HOOK_DIR"
+else
+  echo "  (skipped app hook tests: yq not installed)"
 fi
 
 # ======================================================================

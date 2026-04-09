@@ -17,10 +17,11 @@ Each hook writes a separate compose file:
 | Hook | Generated File | Purpose |
 |------|---------------|---------|
 | `xcind-naming-hook` | `compose.naming.yaml` | Sets Docker Compose project `name:` |
+| `xcind-app-hook` | `compose.app.yaml` | App identity labels (`xcind.app.*`) on all services |
 | `xcind-app-env-hook` | `compose.app-env.yaml` | Injects `XCIND_APP_ENV_FILES` via `env_file:` |
 | `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Maps `host.docker.internal` via `extra_hosts` |
-| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, context labels |
-| `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases |
+| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, export labels |
+| `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases and identity labels |
 
 These files are gitignored and regenerated on cache miss.
 
@@ -53,6 +54,24 @@ In workspaceless mode:
 
 ```yaml
 name: frontend
+```
+
+### `compose.app.yaml`
+
+Generated for all apps. Applies `xcind.app.name` and `xcind.app.path` labels to every service, making all xcind-managed containers discoverable via Docker labels:
+
+```yaml
+services:
+
+  web:
+    labels:
+      - "xcind.app.name=frontend"
+      - "xcind.app.path=/Users/beau/dev/frontend"
+
+  worker:
+    labels:
+      - "xcind.app.name=frontend"
+      - "xcind.app.path=/Users/beau/dev/frontend"
 ```
 
 ### `compose.app-env.yaml`
@@ -97,7 +116,7 @@ Services that already have a `host.docker.internal` entry in `extra_hosts` (usin
 
 ### `compose.proxy.yaml`
 
-Generated when `XCIND_PROXY_EXPORTS` is configured. Contains Traefik routing labels, network attachments, and context labels:
+Generated when `XCIND_PROXY_EXPORTS` is configured. Contains Traefik routing labels, network attachments, and export labels. Context labels (`xcind.app.*`, `xcind.workspace.*`) are handled by the dedicated app and workspace hooks:
 
 ```yaml
 services:
@@ -117,10 +136,6 @@ services:
       - "traefik.http.routers.dev-frontend-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
       - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
-      - "xcind.app.name=frontend"
-      - "xcind.app.path=/Users/beau/dev/frontend"
-      - "xcind.workspace.name=dev"
-      - "xcind.workspace.path=/Users/beau/dev"
       - "xcind.export.web.host=dev-frontend-web.localhost"
       - "xcind.export.web.url=http://dev-frontend-web.localhost"
       - "xcind.apex.host=dev-frontend.localhost"
@@ -135,12 +150,15 @@ For a complete unabridged example, see the [Generated Override Files Appendix](.
 
 ### `compose.workspace.yaml`
 
-Generated only in workspace mode. Connects all services to the workspace internal network with aliases:
+Generated only in workspace mode. Applies `xcind.workspace.name` and `xcind.workspace.path` labels and connects all services to the workspace internal network with aliases:
 
 ```yaml
 services:
 
   web:
+    labels:
+      - "xcind.workspace.name=dev"
+      - "xcind.workspace.path=/Users/beau/dev"
     networks:
       default: {}
       dev-internal:
@@ -148,6 +166,9 @@ services:
           - frontend-web
 
   db:
+    labels:
+      - "xcind.workspace.name=dev"
+      - "xcind.workspace.path=/Users/beau/dev"
     networks:
       default: {}
       dev-internal:
@@ -170,6 +191,7 @@ docker compose \
   -f compose.yaml \
   [-f compose.override.yaml] \
   -f .xcind/generated/{sha}/compose.naming.yaml \
+  -f .xcind/generated/{sha}/compose.app.yaml \
   -f .xcind/generated/{sha}/compose.app-env.yaml \
   -f .xcind/generated/{sha}/compose.host-gateway.yaml \
   -f .xcind/generated/{sha}/compose.proxy.yaml \

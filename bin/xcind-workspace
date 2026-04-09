@@ -1,0 +1,518 @@
+#!/usr/bin/env bash
+# xcind-workspace — Manage xcind workspaces
+#
+# Usage:
+#   xcind-workspace init [DIR] [OPTIONS]   Initialize a workspace directory
+#   xcind-workspace status [DIR] [OPTIONS] Show workspace-wide status
+
+set -euo pipefail
+
+# Resolve the real path of this script, following symlinks
+__xcind_resolve_link() {
+  local target="$1"
+  while [ -L "$target" ]; do
+    local dir
+    dir=$(cd "$(dirname "$target")" && pwd)
+    target=$(readlink "$target")
+    [[ $target != /* ]] && target="$dir/$target"
+  done
+  echo "$(cd "$(dirname "$target")" && pwd)/$(basename "$target")"
+}
+
+XCIND_ROOT="$(cd "$(dirname "$(__xcind_resolve_link "${BASH_SOURCE[0]}")")" && cd .. && pwd)"
+
+# Source the shared library
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
+
+if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
+  echo "xcind-workspace ${XCIND_VERSION}"
+  exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Init
+# --------------------------------------------------------------------------
+
+__xcind-workspace-write-config() {
+  local dir="$1"
+  local ws_name="${2:-}"
+  local proxy_domain="${3:-}"
+
+  local content='# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_IS_WORKSPACE=1'
+
+  if [[ -n "$ws_name" ]]; then
+    content+=$'\n'"XCIND_WORKSPACE=\"$ws_name\""
+  fi
+  if [[ -n "$proxy_domain" ]]; then
+    content+=$'\n'"XCIND_PROXY_DOMAIN=\"$proxy_domain\""
+  fi
+
+  echo "$content" >"$dir/.xcind.sh"
+}
+
+__xcind-workspace-init() {
+  local dir="."
+  local _flag_proxy_domain=""
+  local _flag_name=""
+
+  # Parse arguments: optional positional DIR followed by flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --proxy-domain)
+      _flag_proxy_domain="$2"
+      shift 2
+      ;;
+    --name)
+      _flag_name="$2"
+      shift 2
+      ;;
+    -*)
+      echo "Error: Unknown option for init: $1" >&2
+      exit 1
+      ;;
+    *)
+      dir="$1"
+      shift
+      ;;
+    esac
+  done
+
+  # Resolve to absolute path
+  mkdir -p "$dir"
+  dir=$(cd "$dir" && pwd)
+
+  # Check if .xcind.sh exists
+  if [[ -f "$dir/.xcind.sh" ]]; then
+    # Source it to check XCIND_IS_WORKSPACE
+    local _is_workspace=""
+    local _existing_ws=""
+    local _existing_domain=""
+    # shellcheck disable=SC1091,SC2034
+    _is_workspace=$(XCIND_IS_WORKSPACE="" XCIND_WORKSPACE="" XCIND_PROXY_DOMAIN="" && source "$dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+
+    if [[ "$_is_workspace" == "1" ]]; then
+      # Already a workspace — update if flags provided, else report
+      if [[ -n "$_flag_name" || -n "$_flag_proxy_domain" ]]; then
+        # Source existing values for merge
+        XCIND_WORKSPACE=""
+        XCIND_PROXY_DOMAIN=""
+        # shellcheck disable=SC1091
+        source "$dir/.xcind.sh"
+        _existing_ws="${XCIND_WORKSPACE:-}"
+        _existing_domain="${XCIND_PROXY_DOMAIN:-}"
+
+        [[ -n "$_flag_name" ]] && _existing_ws="$_flag_name"
+        [[ -n "$_flag_proxy_domain" ]] && _existing_domain="$_flag_proxy_domain"
+
+        __xcind-workspace-write-config "$dir" "$_existing_ws" "$_existing_domain"
+        echo "Workspace updated at $dir"
+      else
+        echo "Workspace already initialized at $dir"
+      fi
+      return 0
+    fi
+
+    # .xcind.sh exists but is NOT a workspace — this is an app config
+    local parent
+    parent=$(dirname "$dir")
+
+    if [[ -f "$parent/.xcind.sh" ]]; then
+      local _parent_is_ws=""
+      # shellcheck disable=SC1091,SC2034
+      _parent_is_ws=$(XCIND_IS_WORKSPACE="" && source "$parent/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+
+      if [[ "$_parent_is_ws" == "1" ]]; then
+        echo "You're in app '$(basename "$dir")' inside workspace '$(basename "$parent")' (already initialized at $parent)." >&2
+      else
+        echo "This directory contains an app configuration. Specify a workspace directory explicitly." >&2
+      fi
+    else
+      echo "This directory contains an app configuration." >&2
+      echo "To initialize the parent as a workspace, run:" >&2
+      echo "    xcind-workspace init $parent" >&2
+    fi
+    return 1
+  fi
+
+  # No .xcind.sh exists — create workspace
+  __xcind-workspace-write-config "$dir" "$_flag_name" "$_flag_proxy_domain"
+  echo "Workspace initialized at $dir"
+}
+
+# --------------------------------------------------------------------------
+# Status
+# --------------------------------------------------------------------------
+
+__xcind-workspace-find-root() {
+  local dir="${1:-$PWD}"
+
+  # Resolve to absolute
+  if [[ -d "$dir" ]]; then
+    dir=$(cd "$dir" && pwd)
+  else
+    echo "Error: Directory not found: $dir" >&2
+    return 1
+  fi
+
+  # Direct check: is this a workspace root?
+  if [[ -f "$dir/.xcind.sh" ]]; then
+    local _is_ws=""
+    # shellcheck disable=SC1091,SC2034
+    _is_ws=$(XCIND_IS_WORKSPACE="" && source "$dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+    if [[ "$_is_ws" == "1" ]]; then
+      echo "$dir"
+      return 0
+    fi
+  fi
+
+  # Try to discover workspace from current location (walk up)
+  local current="$dir"
+  while true; do
+    local parent
+    parent=$(dirname "$current")
+
+    if [[ "$parent" == "/" || "$parent" == "$current" ]]; then
+      break
+    fi
+
+    if [[ -f "$parent/.xcind.sh" ]]; then
+      local _is_ws=""
+      # shellcheck disable=SC1091,SC2034
+      _is_ws=$(XCIND_IS_WORKSPACE="" && source "$parent/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+      if [[ "$_is_ws" == "1" ]]; then
+        echo "$parent"
+        return 0
+      fi
+    fi
+
+    current="$parent"
+  done
+
+  echo "Error: Not inside a workspace. Specify a workspace directory or run from within a workspace." >&2
+  return 1
+}
+
+__xcind-workspace-status() {
+  local dir=""
+  local json_mode=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --json)
+      json_mode=true
+      shift
+      ;;
+    -*)
+      echo "Error: Unknown option for status: $1" >&2
+      exit 1
+      ;;
+    *)
+      dir="$1"
+      shift
+      ;;
+    esac
+  done
+
+  # Discover workspace root
+  local ws_root
+  if [[ -n "$dir" ]]; then
+    ws_root=$(__xcind-workspace-find-root "$dir") || exit 1
+  else
+    ws_root=$(__xcind-workspace-find-root "$PWD") || exit 1
+  fi
+
+  # Source workspace config
+  XCIND_WORKSPACE=""
+  XCIND_PROXY_DOMAIN=""
+  # shellcheck disable=SC1091
+  source "$ws_root/.xcind.sh"
+  local ws_name="${XCIND_WORKSPACE:-$(basename "$ws_root")}"
+  local ws_domain="${XCIND_PROXY_DOMAIN:-localhost}"
+
+  # Source global proxy config if available
+  local proxy_config="${XCIND_PROXY_CONFIG_DIR}/config.sh"
+  if [[ -f "$proxy_config" ]]; then
+    # shellcheck disable=SC1090
+    source "$proxy_config"
+    ws_domain="${XCIND_PROXY_DOMAIN:-$ws_domain}"
+  fi
+
+  # Find apps (subdirectories with .xcind.sh that are NOT workspaces)
+  local -a app_dirs=()
+  local -a app_names=()
+  local subdir
+  for subdir in "$ws_root"/*/; do
+    [[ ! -d "$subdir" ]] && continue
+    [[ ! -f "${subdir}.xcind.sh" ]] && continue
+
+    local _is_ws=""
+    # shellcheck disable=SC1090,SC2034
+    _is_ws=$(XCIND_IS_WORKSPACE="" && source "${subdir}.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
+    if [[ "$_is_ws" != "1" ]]; then
+      app_dirs+=("${subdir%/}")
+      app_names+=("$(basename "${subdir%/}")")
+    fi
+  done
+
+  # Check workspace network
+  local network_name="${ws_name}-internal"
+  local network_exists=false
+  if command -v docker &>/dev/null; then
+    if docker network inspect "$network_name" &>/dev/null 2>&1; then
+      network_exists=true
+    fi
+  fi
+
+  # Check proxy status
+  local proxy_running=false
+  local proxy_port="${XCIND_PROXY_HTTP_PORT:-80}"
+  if command -v docker &>/dev/null; then
+    local running_q
+    running_q=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
+    if [[ -n "$running_q" ]]; then
+      proxy_running=true
+    fi
+  fi
+
+  # Collect per-app data
+  local -a app_json_parts=()
+  local i=0
+  while [[ $i -lt ${#app_dirs[@]} ]]; do
+    local app_dir="${app_dirs[$i]}"
+    local app_name="${app_names[$i]}"
+
+    # Query containers for this app
+    local -a svc_statuses=()
+    local -a svc_containers=()
+    local running_count=0
+    local total_count=0
+
+    if command -v docker &>/dev/null; then
+      # Find containers with this app label
+      local container_lines
+      container_lines=$(docker ps -a \
+        --filter "label=xcind.app.name=$app_name" \
+        --filter "label=xcind.workspace.name=$ws_name" \
+        --format '{{.Names}}\t{{.Status}}' 2>/dev/null) || true
+
+      if [[ -n "$container_lines" ]]; then
+        while IFS=$'\t' read -r cname cstatus; do
+          [[ -z "$cname" ]] && continue
+          svc_containers+=("$cname")
+          total_count=$((total_count + 1))
+          if [[ "$cstatus" == Up* ]]; then
+            svc_statuses+=("running")
+            running_count=$((running_count + 1))
+          elif [[ "$cstatus" == Exited* ]]; then
+            svc_statuses+=("exited")
+          elif [[ "$cstatus" == Paused* ]]; then
+            svc_statuses+=("paused")
+          elif [[ "$cstatus" == Restarting* ]]; then
+            svc_statuses+=("restarting")
+          else
+            svc_statuses+=("unknown")
+          fi
+        done <<<"$container_lines"
+      fi
+    fi
+
+    # Collect proxy URLs for this app from container labels
+    local -a app_urls=()
+    if command -v docker &>/dev/null; then
+      local cids
+      cids=$(docker ps -q \
+        --filter "label=xcind.app.name=$app_name" \
+        --filter "label=xcind.workspace.name=$ws_name" 2>/dev/null) || true
+
+      if [[ -n "$cids" ]]; then
+        local cid
+        while IFS= read -r cid; do
+          [[ -z "$cid" ]] && continue
+          local host_labels
+          # shellcheck disable=SC2016
+          host_labels=$(docker inspect --format \
+            '{{range $k, $v := .Config.Labels}}{{if hasPrefix "xcind.export." $k}}{{if hasSuffix ".host" $k}}{{$v}}{{"\n"}}{{end}}{{end}}{{end}}' \
+            "$cid" 2>/dev/null) || true
+          local host_label
+          while IFS= read -r host_label; do
+            [[ -n "$host_label" ]] && app_urls+=("$host_label")
+          done <<<"$host_labels"
+        done <<<"$cids"
+      fi
+    fi
+
+    if [[ "$json_mode" == true ]]; then
+      # Build JSON for this app
+      local services_json="{"
+      local first_svc=true
+      local j=0
+      while [[ $j -lt ${#svc_containers[@]} ]]; do
+        if [[ "$first_svc" == true ]]; then
+          first_svc=false
+        else
+          services_json+=","
+        fi
+        services_json+="\"${svc_containers[$j]}\":{\"status\":\"${svc_statuses[$j]}\"}"
+        j=$((j + 1))
+      done
+      services_json+="}"
+
+      local urls_json="[]"
+      if [[ ${#app_urls[@]} -gt 0 ]]; then
+        urls_json=$(printf '%s\n' "${app_urls[@]}" | jq -R . | jq -s .)
+      fi
+
+      app_json_parts+=("$(jq -n \
+        --arg name "$app_name" \
+        --arg path "$app_dir" \
+        --argjson services "$services_json" \
+        --argjson urls "$urls_json" \
+        '{name: $name, path: $path, services: $services, urls: $urls}')")
+    fi
+
+    i=$((i + 1))
+  done
+
+  # Output
+  if [[ "$json_mode" == true ]]; then
+    if ! command -v jq &>/dev/null; then
+      echo "Error: jq is required for --json output." >&2
+      exit 1
+    fi
+
+    local apps_json="[]"
+    if [[ ${#app_json_parts[@]} -gt 0 ]]; then
+      apps_json=$(printf '%s\n' "${app_json_parts[@]}" | jq -s .)
+    fi
+
+    jq -n \
+      --arg workspace "$ws_name" \
+      --arg root "$ws_root" \
+      --arg domain "$ws_domain" \
+      --argjson apps "$apps_json" \
+      --arg network_name "$network_name" \
+      --argjson network_exists "$network_exists" \
+      --argjson proxy_running "$proxy_running" \
+      --arg proxy_port "$proxy_port" \
+      --arg proxy_domain "$ws_domain" \
+      '{
+        workspace: $workspace,
+        root: $root,
+        domain: $domain,
+        apps: $apps,
+        network: {name: $network_name, exists: $network_exists},
+        proxy: {running: $proxy_running, port: $proxy_port, domain: $proxy_domain}
+      }'
+  else
+    echo "Workspace: $ws_name"
+    echo "Root:      $ws_root"
+    echo "Domain:    $ws_domain"
+    echo ""
+    echo "Apps:"
+
+    if [[ ${#app_dirs[@]} -eq 0 ]]; then
+      echo "  (none)"
+    else
+      local i=0
+      while [[ $i -lt ${#app_dirs[@]} ]]; do
+        local app_name="${app_names[$i]}"
+        local app_dir="${app_dirs[$i]}"
+
+        # Count containers for this app
+        local running_count=0
+        local total_count=0
+        if command -v docker &>/dev/null; then
+          local container_lines
+          container_lines=$(docker ps -a \
+            --filter "label=xcind.app.name=$app_name" \
+            --filter "label=xcind.workspace.name=$ws_name" \
+            --format '{{.Status}}' 2>/dev/null) || true
+          if [[ -n "$container_lines" ]]; then
+            total_count=$(echo "$container_lines" | wc -l | tr -d ' ')
+            running_count=$(echo "$container_lines" | grep -c "^Up" || true)
+          fi
+        fi
+
+        local indicator="○"
+        if [[ $running_count -gt 0 ]]; then
+          indicator="●"
+        fi
+
+        local status_text="stopped"
+        if [[ $total_count -gt 0 ]]; then
+          status_text="$running_count/$total_count services running"
+        fi
+
+        printf "  %-14s %s %s\n" "$(basename "$app_dir")/" "$indicator" "$status_text"
+        i=$((i + 1))
+      done
+    fi
+
+    echo ""
+    if [[ "$network_exists" == true ]]; then
+      echo "Network: $network_name ✓"
+    else
+      echo "Network: $network_name (not created)"
+    fi
+    if [[ "$proxy_running" == true ]]; then
+      echo "Proxy:   ● running (port $proxy_port)"
+    else
+      echo "Proxy:   ○ stopped"
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------
+# Help
+# --------------------------------------------------------------------------
+
+__xcind-workspace-help() {
+  echo "Usage: xcind-workspace <subcommand>"
+  echo ""
+  echo "Subcommands:"
+  echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
+  echo "  status [DIR] [OPTIONS]   Show workspace-wide status"
+  echo ""
+  echo "Init options:"
+  echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
+  echo "  --proxy-domain DOMAIN    Set XCIND_PROXY_DOMAIN in workspace config"
+  echo ""
+  echo "Status options:"
+  echo "  --json                   Output structured JSON"
+  echo ""
+  echo "Options:"
+  echo "  --version, -V  Show version"
+  echo "  --help, -h     Show this help"
+}
+
+# --------------------------------------------------------------------------
+# Dispatch
+# --------------------------------------------------------------------------
+
+case "${1:-}" in
+init)
+  shift
+  __xcind-workspace-init "$@"
+  ;;
+status)
+  shift
+  __xcind-workspace-status "$@"
+  ;;
+--help | -h)
+  __xcind-workspace-help
+  exit 0
+  ;;
+"")
+  __xcind-workspace-help
+  exit 0
+  ;;
+*)
+  echo "Error: Unknown command: $1" >&2
+  echo "Run 'xcind-workspace --help' for usage." >&2
+  exit 1
+  ;;
+esac

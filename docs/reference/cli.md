@@ -130,11 +130,23 @@ Manages the shared Traefik reverse proxy infrastructure.
 
 | Subcommand | Description |
 |------------|-------------|
-| `init` | Create proxy infrastructure files |
+| `init [OPTIONS]` | Create proxy infrastructure files (with optional configuration) |
 | `up [--force]` | Start the shared Traefik proxy (`--force` recreates the network) |
 | `down` | Stop the shared Traefik proxy |
 | `status [--json]` | Show proxy state (running/stopped, image, port, network) |
 | `logs [OPTS]` | Show Traefik proxy logs (supports `docker compose logs` flags) |
+
+### Init Options
+
+| Option | Config Variable | Default |
+|--------|----------------|---------|
+| `--proxy-domain DOMAIN` | `XCIND_PROXY_DOMAIN` | `localhost` |
+| `--http-port PORT` | `XCIND_PROXY_HTTP_PORT` | `80` |
+| `--image IMAGE` | `XCIND_PROXY_IMAGE` | `traefik:v3` |
+| `--dashboard BOOL` | `XCIND_PROXY_DASHBOARD` | `false` |
+| `--dashboard-port PORT` | `XCIND_PROXY_DASHBOARD_PORT` | `8080` |
+
+Flags set-and-persist: values are merged with any existing `config.sh` and written back.
 
 ### Options
 
@@ -146,7 +158,9 @@ Manages the shared Traefik reverse proxy infrastructure.
 ### Usage
 
 ```bash
-xcind-proxy init          # Create proxy config and generated files
+xcind-proxy init          # Create proxy config with defaults
+xcind-proxy init --proxy-domain xcind.localhost  # Set domain
+xcind-proxy init --http-port 8081 --dashboard true  # Multiple flags
 xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy
@@ -171,7 +185,7 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 
 | File | Purpose | Overwritten on re-init? |
 |------|---------|------------------------|
-| `config.sh` | User-editable proxy configuration | No (never overwritten) |
+| `config.sh` | Proxy configuration | Yes (always regenerated; existing values preserved) |
 
 **State** (`~/.local/state/xcind/proxy/`):
 
@@ -179,6 +193,58 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 |------|---------|------------------------|
 | `docker-compose.yaml` | Traefik service definition | Yes (always regenerated) |
 | `traefik.yaml` | Traefik static configuration | Yes (always regenerated) |
+
+---
+
+## `xcind-workspace`
+
+Manages xcind workspaces.
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `init [DIR] [OPTIONS]` | Initialize a workspace directory |
+| `status [DIR] [OPTIONS]` | Show workspace-wide status |
+
+### Init Options
+
+| Option | Description |
+|--------|-------------|
+| `--name NAME` | Set `XCIND_WORKSPACE` explicitly (default: directory name) |
+| `--proxy-domain DOMAIN` | Set `XCIND_PROXY_DOMAIN` in workspace config |
+
+### Status Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output structured JSON |
+
+### Usage
+
+```bash
+xcind-workspace init                         # Initialize current directory
+xcind-workspace init ~/Workspaces/dev        # Initialize specific directory
+xcind-workspace init --proxy-domain xcind.localhost  # With proxy domain
+xcind-workspace init --name myws             # With explicit workspace name
+xcind-workspace status                       # Show workspace status
+xcind-workspace status --json                # JSON output
+```
+
+### Behavior
+
+**Init:**
+
+- `DIR` defaults to `.` (current directory).
+- If `.xcind.sh` already exists with `XCIND_IS_WORKSPACE=1`, re-running with flags updates the config; without flags reports "already initialized".
+- If `.xcind.sh` exists without `XCIND_IS_WORKSPACE=1` (an app config), the command prints a helpful error suggesting the correct workspace directory.
+
+**Status:**
+
+- Discovers the workspace root from the given `DIR` or current directory by walking up to find `.xcind.sh` with `XCIND_IS_WORKSPACE=1`.
+- Lists all apps (subdirectories with `.xcind.sh`) with running/stopped container counts.
+- Shows workspace network and proxy status.
+- With `--json`, outputs structured JSON with per-app service details.
 
 ---
 
@@ -195,8 +261,8 @@ config:
 . <(xcind-config completion zsh)
 ```
 
-This registers completions for `xcind-compose`, `xcind-config`, and
-`xcind-proxy`. For `xcind-compose`, completions invoke Docker's
+This registers completions for `xcind-compose`, `xcind-config`,
+`xcind-proxy`, and `xcind-workspace`. For `xcind-compose`, completions invoke Docker's
 `docker compose __complete` mechanism directly so you get the same experience
 as `docker compose` without requiring Docker's shell completion to be loaded.
 If that subprocess is unavailable or returns no suggestions, a hardcoded fallback list of common subcommands is used.

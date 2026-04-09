@@ -5,7 +5,8 @@
   "bin": {
     "xcind-compose": "bin/xcind-compose",
     "xcind-config": "bin/xcind-config",
-    "xcind-proxy": "bin/xcind-proxy"
+    "xcind-proxy": "bin/xcind-proxy",
+    "xcind-workspace": "bin/xcind-workspace"
   },
   "files": [
     "bin",

@@ -137,6 +137,22 @@ _xcind_proxy_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
+  # After "init", offer init-specific flags
+  if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
+    COMPREPLY=($(compgen -W "--proxy-domain --http-port --image --dashboard --dashboard-port" -- "$cur"))
+    return
+  fi
+
+  # After init flag names, complete values (directories for some, free text for others)
+  if [[ $prev == "--proxy-domain" || $prev == "--http-port" || $prev == "--image" ||
+    $prev == "--dashboard-port" ]]; then
+    return
+  fi
+  if [[ $prev == "--dashboard" ]]; then
+    COMPREPLY=($(compgen -W "true false" -- "$cur"))
+    return
+  fi
+
   # After "up", offer --force
   if [[ $prev == "up" ]]; then
     COMPREPLY=($(compgen -W "--force" -- "$cur"))
@@ -160,9 +176,40 @@ _xcind_proxy_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-workspace: native completion
+# -----------------------------------------------------------------------------
+
+_xcind_workspace_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+  # After "init", offer init-specific flags and directory completion
+  if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
+    COMPREPLY=($(compgen -W "--name --proxy-domain" -- "$cur"))
+    return
+  fi
+
+  # After init flag names, let default completion handle values
+  if [[ $prev == "--name" || $prev == "--proxy-domain" ]]; then
+    return
+  fi
+
+  # After "status", offer --json and directory completion
+  if [[ $prev == "status" ]]; then
+    COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    return
+  fi
+
+  local opts="init status --help -h --version -V"
+  COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
 complete -F _xcind_compose_completions xcind-compose
 complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy
+complete -F _xcind_workspace_completions xcind-workspace

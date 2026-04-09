@@ -38,7 +38,68 @@ fi
 # --------------------------------------------------------------------------
 
 __xcind-proxy-init() {
+  # Parse init-specific flags
+  local _flag_proxy_domain=""
+  local _flag_http_port=""
+  local _flag_image=""
+  local _flag_dashboard=""
+  local _flag_dashboard_port=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --proxy-domain)
+      _flag_proxy_domain="$2"
+      shift 2
+      ;;
+    --http-port)
+      _flag_http_port="$2"
+      shift 2
+      ;;
+    --image)
+      _flag_image="$2"
+      shift 2
+      ;;
+    --dashboard)
+      _flag_dashboard="$2"
+      shift 2
+      ;;
+    --dashboard-port)
+      _flag_dashboard_port="$2"
+      shift 2
+      ;;
+    *)
+      echo "Error: Unknown option for init: $1" >&2
+      exit 1
+      ;;
+    esac
+  done
+
+  mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
+
+  # Source existing config if present (provides current values as defaults)
+  if [[ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$XCIND_PROXY_CONFIG_DIR/config.sh"
+  fi
+
+  # Apply CLI flag overrides (variables consumed by __xcind-proxy-write-config)
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_proxy_domain" ]] && XCIND_PROXY_DOMAIN="$_flag_proxy_domain"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_http_port" ]] && XCIND_PROXY_HTTP_PORT="$_flag_http_port"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_image" ]] && XCIND_PROXY_IMAGE="$_flag_image"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_dashboard" ]] && XCIND_PROXY_DASHBOARD="$_flag_dashboard"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_dashboard_port" ]] && XCIND_PROXY_DASHBOARD_PORT="$_flag_dashboard_port"
+
+  # Write config (always — merges existing + overrides)
+  __xcind-proxy-write-config
+
+  # Run full init (sources config, generates compose/traefik, creates network)
   __xcind-proxy-ensure-init
+
   echo "Proxy config at $XCIND_PROXY_CONFIG_DIR"
   echo "Generated files at $XCIND_PROXY_STATE_DIR"
 }
@@ -174,11 +235,18 @@ __xcind-proxy-help() {
   echo "Usage: xcind-proxy <subcommand>"
   echo ""
   echo "Subcommands:"
-  echo "  init               Create proxy infrastructure files"
+  echo "  init [OPTIONS]     Create proxy infrastructure files"
   echo "  up [--force]       Start the shared Traefik proxy (--force recreates network)"
   echo "  down               Stop the shared Traefik proxy"
   echo "  status [--json]    Show proxy state (running/stopped, image, port, network)"
   echo "  logs [OPTS]        Show Traefik proxy logs (supports docker compose logs flags)"
+  echo ""
+  echo "Init options:"
+  echo "  --proxy-domain DOMAIN     Set domain suffix (default: localhost)"
+  echo "  --http-port PORT          Set HTTP port (default: 80)"
+  echo "  --image IMAGE             Set Traefik Docker image (default: traefik:v3)"
+  echo "  --dashboard BOOL          Enable Traefik dashboard (default: false)"
+  echo "  --dashboard-port PORT     Set dashboard port (default: 8080)"
   echo ""
   echo "Options:"
   echo "  --version, -V  Show version"
@@ -190,7 +258,10 @@ __xcind-proxy-help() {
 # --------------------------------------------------------------------------
 
 case "${1:-}" in
-init) __xcind-proxy-init ;;
+init)
+  shift
+  __xcind-proxy-init "$@"
+  ;;
 up) __xcind-proxy-up "${2:-}" ;;
 down) __xcind-proxy-down ;;
 status)
