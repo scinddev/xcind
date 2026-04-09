@@ -928,6 +928,104 @@ rm -rf "$WS_STATUS_DIR"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-workspace status defined-services count ==="
+
+if command -v jq &>/dev/null && command -v yq &>/dev/null; then
+  WS_COUNT_DIR=$(mktemp -d)
+  REAL_PATH_COUNT="$PATH"
+
+  # Workspace with one app whose compose file defines three services.
+  # Only one of those services has a running container in the docker mock,
+  # so the expected status text is "1/3 services running".
+  mkdir -p "$WS_COUNT_DIR/myws/multiapp"
+  echo 'XCIND_IS_WORKSPACE=1' >"$WS_COUNT_DIR/myws/.xcind.sh"
+  echo 'XCIND_COMPOSE_FILES=("compose.yaml")' >"$WS_COUNT_DIR/myws/multiapp/.xcind.sh"
+  cat >"$WS_COUNT_DIR/myws/multiapp/compose.yaml" <<'COMPOSEEOF'
+services:
+  web:
+    image: nginx:alpine
+  database:
+    image: postgres:16
+  worker:
+    image: alpine:3
+COMPOSEEOF
+
+  # Mock docker:
+  #   - "docker compose ... config"           → emit the compose.yaml
+  #   - "docker ps -a ... --format Names..."  → one Up container
+  #   - everything else                       → exit 0
+  mkdir -p "$WS_COUNT_DIR/bin"
+  cat >"$WS_COUNT_DIR/bin/docker" <<MOCKEOF
+#!/bin/sh
+case "\$*" in
+  *compose*config*)
+    cat "$WS_COUNT_DIR/myws/multiapp/compose.yaml"
+    ;;
+  *"ps -a"*Names*)
+    printf 'multiapp-database-1\tUp 5 minutes\n'
+    ;;
+esac
+exit 0
+MOCKEOF
+  chmod +x "$WS_COUNT_DIR/bin/docker"
+  export PATH="$WS_COUNT_DIR/bin:$REAL_PATH_COUNT"
+
+  count_status=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_COUNT_DIR/myws")
+  assert_contains "ws status count: shows X/Y format" "1/3 services running" "$count_status"
+
+  count_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_COUNT_DIR/myws" --json)
+  count_total=$(echo "$count_json" | jq '.apps[0].total')
+  assert_eq "ws status count: json total" "3" "$count_total"
+  count_running=$(echo "$count_json" | jq '.apps[0].running')
+  assert_eq "ws status count: json running" "1" "$count_running"
+  count_defined=$(echo "$count_json" | jq -r '.apps[0].defined_services | sort | join(",")')
+  assert_eq "ws status count: defined_services lists all three" "database,web,worker" "$count_defined"
+
+  export PATH="$REAL_PATH_COUNT"
+  rm -rf "$WS_COUNT_DIR"
+else
+  echo "  (skipped count tests: jq or yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace status workspace mismatch ==="
+
+if command -v jq &>/dev/null && command -v yq &>/dev/null; then
+  WS_MISMATCH_DIR=$(mktemp -d)
+  REAL_PATH_MISMATCH="$PATH"
+
+  # Two app subdirs under myws/. One has a normal config; the other declares
+  # itself as belonging to a different workspace via XCIND_WORKSPACE.
+  mkdir -p "$WS_MISMATCH_DIR/myws/realapp" "$WS_MISMATCH_DIR/myws/strangerapp"
+  echo 'XCIND_IS_WORKSPACE=1' >"$WS_MISMATCH_DIR/myws/.xcind.sh"
+  : >"$WS_MISMATCH_DIR/myws/realapp/.xcind.sh"
+  echo 'XCIND_WORKSPACE="otherws"' >"$WS_MISMATCH_DIR/myws/strangerapp/.xcind.sh"
+
+  mkdir -p "$WS_MISMATCH_DIR/bin"
+  cat >"$WS_MISMATCH_DIR/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+exit 0
+MOCKEOF
+  chmod +x "$WS_MISMATCH_DIR/bin/docker"
+  export PATH="$WS_MISMATCH_DIR/bin:$REAL_PATH_MISMATCH"
+
+  mismatch_status=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_MISMATCH_DIR/myws")
+  assert_contains "ws status mismatch: shows real app" "realapp/" "$mismatch_status"
+  assert_not_contains "ws status mismatch: skips stranger app" "strangerapp" "$mismatch_status"
+
+  mismatch_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_MISMATCH_DIR/myws" --json)
+  mismatch_count=$(echo "$mismatch_json" | jq '.apps | length')
+  assert_eq "ws status mismatch: json apps count = 1" "1" "$mismatch_count"
+
+  export PATH="$REAL_PATH_MISMATCH"
+  rm -rf "$WS_MISMATCH_DIR"
+else
+  echo "  (skipped mismatch tests: jq or yq not installed)"
+fi
+
+# ======================================================================
+echo ""
 echo "=== Test: XCIND_HOOKS_EXECUTE registration ==="
 
 # Check registration before any test overrides the array

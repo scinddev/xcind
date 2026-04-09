@@ -278,21 +278,104 @@ __xcind-workspace-status() {
     fi
   fi
 
-  # Collect per-app data
-  local -a app_json_parts=()
-  local i=0
-  while [[ $i -lt ${#app_dirs[@]} ]]; do
-    local app_dir="${app_dirs[$i]}"
-    local app_name="${app_names[$i]}"
+  # ----------------------------------------------------------------------
+  # Validate dependencies
+  # ----------------------------------------------------------------------
 
-    # Query containers for this app
-    local -a svc_statuses=()
-    local -a svc_containers=()
-    local running_count=0
-    local total_count=0
+  # jq is required for --json output (existing requirement)
+  if [[ "$json_mode" == true ]] && ! command -v jq &>/dev/null; then
+    echo "Error: jq is required for --json output." >&2
+    exit 1
+  fi
+
+  # The defined-services count requires both jq (to parse xcind-config JSON
+  # for the metadata.workspace check) and yq (to enumerate services from the
+  # resolved compose file). When either is missing, fall back to counting
+  # created containers — the legacy behavior — instead of failing.
+  local use_config_flow=true
+  if ! command -v jq &>/dev/null || ! command -v yq &>/dev/null; then
+    use_config_flow=false
+  fi
+
+  # ----------------------------------------------------------------------
+  # Per-app data collection
+  # ----------------------------------------------------------------------
+
+  local _xcind_status_tmpdir=""
+  if [[ "$use_config_flow" == true ]]; then
+    _xcind_status_tmpdir=$(mktemp -d 2>/dev/null) || _xcind_status_tmpdir=""
+    if [[ -z "$_xcind_status_tmpdir" ]]; then
+      use_config_flow=false
+    fi
+  fi
+
+  local -a app_filtered_dirs=()
+  local -a app_filtered_names=()
+  local -a app_total_counts=()
+  local -a app_running_counts=()
+  local -a app_defined_str=()
+  local -a app_svc_containers_str=()
+  local -a app_svc_statuses_str=()
+  local -a app_urls_str=()
+  local -a app_errors=()
+
+  local _i=0
+  while [[ $_i -lt ${#app_dirs[@]} ]]; do
+    local app_dir="${app_dirs[$_i]}"
+    local app_name="${app_names[$_i]}"
+    local _err_msg=""
+    local _total=0
+    local _defined=""
+
+    # Try the config-driven flow: ask xcind-config for the app's resolved
+    # metadata and compose file in a single invocation. This lets us verify
+    # the app actually belongs to this workspace (via metadata.workspace) and
+    # enumerate the services that are *defined* by the compose project, not
+    # just the ones that happen to have created containers right now.
+    if [[ "$use_config_flow" == true ]]; then
+      local _tmp_compose="$_xcind_status_tmpdir/${app_name}.yaml"
+      local _err_file="$_xcind_status_tmpdir/${app_name}.err"
+      local _xcind_json=""
+      local _xcind_ok=false
+
+      if _xcind_json=$(
+        unset XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+        PATH="$XCIND_ROOT/bin:$PATH" XCIND_APP_ROOT="$app_dir" \
+          "$XCIND_ROOT/bin/xcind-config" --json \
+          --generate-docker-compose-configuration="$_tmp_compose" 2>"$_err_file"
+      ); then
+        _xcind_ok=true
+      fi
+
+      if [[ "$_xcind_ok" == true ]]; then
+        local _app_ws
+        _app_ws=$(printf '%s' "$_xcind_json" | jq -r '.metadata.workspace // ""' 2>/dev/null || echo "")
+
+        if [[ "$_app_ws" != "$ws_name" ]]; then
+          # Silently skip apps that aren't configured for this workspace.
+          _i=$((_i + 1))
+          continue
+        fi
+
+        if [[ -f "$_tmp_compose" ]]; then
+          _defined=$(yq -r '.services // {} | keys | .[]' "$_tmp_compose" 2>/dev/null || true)
+          if [[ -n "$_defined" ]]; then
+            _total=$(printf '%s\n' "$_defined" | wc -l | tr -d ' ')
+          fi
+        fi
+      else
+        _err_msg=$(head -n 1 "$_err_file" 2>/dev/null || true)
+        [[ -z "$_err_msg" ]] && _err_msg="xcind-config failed"
+      fi
+    fi
+
+    # Query containers for this app+workspace
+    local _svc_containers=""
+    local _svc_statuses=""
+    local _running=0
+    local _legacy_total=0
 
     if command -v docker &>/dev/null; then
-      # Find containers with this app label
       local container_lines
       container_lines=$(docker ps -a \
         --filter "label=xcind.app.name=$app_name" \
@@ -300,28 +383,37 @@ __xcind-workspace-status() {
         --format '{{.Names}}\t{{.Status}}' 2>/dev/null) || true
 
       if [[ -n "$container_lines" ]]; then
+        local cname cstatus _state
         while IFS=$'\t' read -r cname cstatus; do
           [[ -z "$cname" ]] && continue
-          svc_containers+=("$cname")
-          total_count=$((total_count + 1))
+          _legacy_total=$((_legacy_total + 1))
+          _state="unknown"
           if [[ "$cstatus" == Up* ]]; then
-            svc_statuses+=("running")
-            running_count=$((running_count + 1))
+            _state="running"
+            _running=$((_running + 1))
           elif [[ "$cstatus" == Exited* ]]; then
-            svc_statuses+=("exited")
+            _state="exited"
           elif [[ "$cstatus" == Paused* ]]; then
-            svc_statuses+=("paused")
+            _state="paused"
           elif [[ "$cstatus" == Restarting* ]]; then
-            svc_statuses+=("restarting")
-          else
-            svc_statuses+=("unknown")
+            _state="restarting"
           fi
+          [[ -n "$_svc_containers" ]] && _svc_containers+=$'\n'
+          _svc_containers+="$cname"
+          [[ -n "$_svc_statuses" ]] && _svc_statuses+=$'\n'
+          _svc_statuses+="$_state"
         done <<<"$container_lines"
       fi
     fi
 
+    # When the new flow isn't running, use today's denominator
+    # (count of created containers).
+    if [[ "$use_config_flow" != true ]]; then
+      _total=$_legacy_total
+    fi
+
     # Collect proxy URLs for this app from container labels
-    local -a app_urls=()
+    local _urls=""
     if command -v docker &>/dev/null; then
       local cids
       cids=$(docker ps -q \
@@ -329,60 +421,88 @@ __xcind-workspace-status() {
         --filter "label=xcind.workspace.name=$ws_name" 2>/dev/null) || true
 
       if [[ -n "$cids" ]]; then
-        local cid
+        local cid host_labels host_label
         while IFS= read -r cid; do
           [[ -z "$cid" ]] && continue
-          local host_labels
           # shellcheck disable=SC2016
           host_labels=$(docker inspect --format \
             '{{range $k, $v := .Config.Labels}}{{if hasPrefix "xcind.export." $k}}{{if hasSuffix ".host" $k}}{{$v}}{{"\n"}}{{end}}{{end}}{{end}}' \
             "$cid" 2>/dev/null) || true
-          local host_label
           while IFS= read -r host_label; do
-            [[ -n "$host_label" ]] && app_urls+=("$host_label")
+            [[ -z "$host_label" ]] && continue
+            [[ -n "$_urls" ]] && _urls+=$'\n'
+            _urls+="$host_label"
           done <<<"$host_labels"
         done <<<"$cids"
       fi
     fi
 
-    if [[ "$json_mode" == true ]]; then
-      # Build JSON for this app
-      local services_json="{"
-      local first_svc=true
-      local j=0
-      while [[ $j -lt ${#svc_containers[@]} ]]; do
-        if [[ "$first_svc" == true ]]; then
-          first_svc=false
-        else
-          services_json+=","
-        fi
-        services_json+="\"${svc_containers[$j]}\":{\"status\":\"${svc_statuses[$j]}\"}"
-        j=$((j + 1))
-      done
-      services_json+="}"
+    app_filtered_dirs+=("$app_dir")
+    app_filtered_names+=("$app_name")
+    app_total_counts+=("$_total")
+    app_running_counts+=("$_running")
+    app_defined_str+=("$_defined")
+    app_svc_containers_str+=("$_svc_containers")
+    app_svc_statuses_str+=("$_svc_statuses")
+    app_urls_str+=("$_urls")
+    app_errors+=("$_err_msg")
+
+    _i=$((_i + 1))
+  done
+
+  # ----------------------------------------------------------------------
+  # Output
+  # ----------------------------------------------------------------------
+
+  if [[ "$json_mode" == true ]]; then
+    local -a app_json_parts=()
+    local _j=0
+    while [[ $_j -lt ${#app_filtered_dirs[@]} ]]; do
+      # Build services map: { container_name: { status: "..." }, ... }
+      local services_json="{}"
+      local svc_lines="${app_svc_containers_str[$_j]}"
+      local stat_lines="${app_svc_statuses_str[$_j]}"
+      if [[ -n "$svc_lines" ]]; then
+        local svc_arr stat_arr
+        svc_arr=$(printf '%s' "$svc_lines" | jq -R . | jq -s .)
+        stat_arr=$(printf '%s' "$stat_lines" | jq -R . | jq -s .)
+        services_json=$(jq -n --argjson n "$svc_arr" --argjson s "$stat_arr" \
+          '[range(0; $n | length)] | map({key: $n[.], value: {status: $s[.]}}) | from_entries')
+      fi
+
+      local defined_json="[]"
+      local def_lines="${app_defined_str[$_j]}"
+      if [[ -n "$def_lines" ]]; then
+        defined_json=$(printf '%s' "$def_lines" | jq -R . | jq -s .)
+      fi
 
       local urls_json="[]"
-      if [[ ${#app_urls[@]} -gt 0 ]]; then
-        urls_json=$(printf '%s\n' "${app_urls[@]}" | jq -R . | jq -s .)
+      local url_lines="${app_urls_str[$_j]}"
+      if [[ -n "$url_lines" ]]; then
+        urls_json=$(printf '%s' "$url_lines" | jq -R . | jq -s .)
       fi
 
       app_json_parts+=("$(jq -n \
-        --arg name "$app_name" \
-        --arg path "$app_dir" \
+        --arg name "${app_filtered_names[$_j]}" \
+        --arg path "${app_filtered_dirs[$_j]}" \
         --argjson services "$services_json" \
+        --argjson defined_services "$defined_json" \
+        --argjson total "${app_total_counts[$_j]}" \
+        --argjson running "${app_running_counts[$_j]}" \
         --argjson urls "$urls_json" \
-        '{name: $name, path: $path, services: $services, urls: $urls}')")
-    fi
+        --arg error "${app_errors[$_j]}" \
+        '{
+          name: $name,
+          path: $path,
+          services: $services,
+          defined_services: $defined_services,
+          total: $total,
+          running: $running,
+          urls: $urls
+        } + (if $error == "" then {} else {error: $error} end)')")
 
-    i=$((i + 1))
-  done
-
-  # Output
-  if [[ "$json_mode" == true ]]; then
-    if ! command -v jq &>/dev/null; then
-      echo "Error: jq is required for --json output." >&2
-      exit 1
-    fi
+      _j=$((_j + 1))
+    done
 
     local apps_json="[]"
     if [[ ${#app_json_parts[@]} -gt 0 ]]; then
@@ -414,41 +534,32 @@ __xcind-workspace-status() {
     echo ""
     echo "Apps:"
 
-    if [[ ${#app_dirs[@]} -eq 0 ]]; then
+    if [[ ${#app_filtered_dirs[@]} -eq 0 ]]; then
       echo "  (none)"
     else
-      local i=0
-      while [[ $i -lt ${#app_dirs[@]} ]]; do
-        local app_name="${app_names[$i]}"
-        local app_dir="${app_dirs[$i]}"
-
-        # Count containers for this app
-        local running_count=0
-        local total_count=0
-        if command -v docker &>/dev/null; then
-          local container_lines
-          container_lines=$(docker ps -a \
-            --filter "label=xcind.app.name=$app_name" \
-            --filter "label=xcind.workspace.name=$ws_name" \
-            --format '{{.Status}}' 2>/dev/null) || true
-          if [[ -n "$container_lines" ]]; then
-            total_count=$(echo "$container_lines" | wc -l | tr -d ' ')
-            running_count=$(echo "$container_lines" | grep -c "^Up" || true)
-          fi
-        fi
+      local _k=0
+      while [[ $_k -lt ${#app_filtered_dirs[@]} ]]; do
+        local _app_name="${app_filtered_names[$_k]}"
+        local _total_count="${app_total_counts[$_k]}"
+        local _running_count="${app_running_counts[$_k]}"
+        local _err="${app_errors[$_k]}"
 
         local indicator="○"
-        if [[ $running_count -gt 0 ]]; then
+        if [[ $_running_count -gt 0 ]]; then
           indicator="●"
         fi
 
-        local status_text="stopped"
-        if [[ $total_count -gt 0 ]]; then
-          status_text="$running_count/$total_count services running"
+        local status_text
+        if [[ -n "$_err" ]]; then
+          status_text="error: $_err"
+        elif [[ $_total_count -gt 0 ]]; then
+          status_text="$_running_count/$_total_count services running"
+        else
+          status_text="stopped"
         fi
 
-        printf "  %-14s %s %s\n" "$(basename "$app_dir")/" "$indicator" "$status_text"
-        i=$((i + 1))
+        printf "  %-14s %s %s\n" "${_app_name}/" "$indicator" "$status_text"
+        _k=$((_k + 1))
       done
     fi
 
@@ -463,6 +574,11 @@ __xcind-workspace-status() {
     else
       echo "Proxy:   ○ stopped"
     fi
+  fi
+
+  # Clean up tempdir
+  if [[ -n "$_xcind_status_tmpdir" && -d "$_xcind_status_tmpdir" ]]; then
+    rm -rf "$_xcind_status_tmpdir"
   fi
 }
 
