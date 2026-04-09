@@ -855,6 +855,14 @@ __xcind-compute-sha() {
   sha_input+="XCIND_HOST_GATEWAY=${XCIND_HOST_GATEWAY:-}
 "
 
+  # Add the runtime-detected host-gateway value so IP or networking-mode
+  # changes invalidate the cache (e.g. WSL2 mirrored mode LAN IP changing
+  # after DHCP renewal or VPN toggle).
+  if [[ ${XCIND_HOST_GATEWAY_ENABLED:-1} != "0" ]]; then
+    sha_input+="XCIND_HOST_GATEWAY_DETECTED=$(__xcind-detect-host-gateway 2>/dev/null)
+"
+  fi
+
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
