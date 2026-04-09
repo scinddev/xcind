@@ -235,6 +235,9 @@ if [[ -n $_do_completion ]]; then
   exit 0
 fi
 
+# Gentle nudge if jq/yq aren't on PATH (silent in scripts and CI).
+__xcind-maybe-warn-deps
+
 # --- Main pipeline (steps 1-14) ---
 
 # Step 1: Detect app root

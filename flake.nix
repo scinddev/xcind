@@ -8,34 +8,81 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      mkXcind = pkgs: pkgs.stdenv.mkDerivation {
-        pname = "xcind";
-        version = "0.5.0";
+      xcindVersion = "0.5.0";
+
+      # Runtime dependency sets, factored so the wrapped build and anything
+      # else that needs the same PATH stays in sync.
+      #
+      # yq is required — the default-registered hooks (proxy, workspace,
+      # app-env, app, host-gateway) all need it. We use yq-go (mikefarah) for
+      # a single static binary with no jq propagation.
+      #
+      # jq is only needed by the JSON-emitting binaries (xcind-config --json,
+      # xcind-workspace --json) and for the config.json cache side-effect
+      # produced by xcind-compose.
+      #
+      # docker is only needed by binaries that shell out to `docker compose`.
+      xcindCoreDeps = pkgs: [ pkgs.coreutils pkgs.yq-go ];
+      xcindJsonDeps = pkgs: [ pkgs.jq ];
+      xcindDockerDeps = pkgs: [ pkgs.docker ];
+
+      # Base attrs shared by both the wrapped and unwrapped derivations.
+      baseAttrs = {
+        version = xcindVersion;
         src = ./.;
-        nativeBuildInputs = [ pkgs.makeWrapper ];
         dontBuild = true;
         installPhase = ''
           runHook preInstall
           bash ./install.sh "$out"
           runHook postInstall
         '';
-        postInstall = ''
-          wrapProgram "$out/bin/xcind-compose" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.yq ]}
-          wrapProgram "$out/bin/xcind-config" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.jq ]}
-          wrapProgram "$out/bin/xcind-proxy" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.docker pkgs.yq ]}
-          wrapProgram "$out/bin/xcind-workspace" \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.coreutils pkgs.jq ]}
-        '';
+      };
+
+      # Unwrapped build: installs xcind to $out but does not inject any
+      # runtime dependencies. Users must provide jq/yq/docker themselves via
+      # their own environment. Useful when downstream consumers want to pin
+      # different tool versions or have jq/yq already on PATH.
+      mkXcindMinimal = pkgs: pkgs.stdenv.mkDerivation (baseAttrs // {
+        pname = "xcind-minimal";
+        meta = with pkgs.lib; {
+          description = "Docker Compose environment manager (unwrapped — bring your own jq/yq/docker)";
+          license = licenses.mit;
+          platforms = platforms.unix;
+          mainProgram = "xcind-compose";
+        };
+      });
+
+      # Wrapped build: same install, but each xcind-* binary is wrapped with
+      # a PATH that contains its runtime dependencies so the binaries work
+      # regardless of what the user has installed.
+      mkXcind = pkgs: pkgs.stdenv.mkDerivation (baseAttrs // {
+        pname = "xcind";
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+        postInstall =
+          let
+            core = xcindCoreDeps pkgs;
+            json = xcindJsonDeps pkgs;
+            docker = xcindDockerDeps pkgs;
+            coreJsonPath = pkgs.lib.makeBinPath (core ++ json);
+            coreDockerPath = pkgs.lib.makeBinPath (core ++ docker);
+            fullPath = pkgs.lib.makeBinPath (core ++ json ++ docker);
+          in ''
+            wrapProgram "$out/bin/xcind-compose" \
+              --prefix PATH : ${fullPath}
+            wrapProgram "$out/bin/xcind-config" \
+              --prefix PATH : ${coreJsonPath}
+            wrapProgram "$out/bin/xcind-proxy" \
+              --prefix PATH : ${coreDockerPath}
+            wrapProgram "$out/bin/xcind-workspace" \
+              --prefix PATH : ${coreJsonPath}
+          '';
         meta = with pkgs.lib; {
           description = "Docker Compose environment manager";
           license = licenses.mit;
           platforms = platforms.unix;
           mainProgram = "xcind-compose";
         };
-      };
+      });
     in
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -52,6 +99,7 @@
         packages = {
           default = mkXcind pkgs;
           xcind = mkXcind pkgs;
+          xcind-minimal = mkXcindMinimal pkgs;
         };
 
         devShells.default = pkgs.mkShell {
@@ -82,7 +130,7 @@
 
             # -- Utilities --
             jq
-            yq
+            yq-go
             curl
             git
             git-cliff
@@ -106,6 +154,7 @@
     ) // {
       overlays.default = final: _prev: {
         xcind = mkXcind final;
+        xcind-minimal = mkXcindMinimal final;
       };
     };
 }

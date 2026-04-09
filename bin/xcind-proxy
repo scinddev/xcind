@@ -257,6 +257,13 @@ __xcind-proxy-help() {
 # Dispatch
 # --------------------------------------------------------------------------
 
+# Gentle nudge if jq/yq aren't on PATH (silent in scripts and CI). Placed
+# after the --version short-circuit and before dispatch so --help still
+# prints cleanly.
+if [[ ${1:-} != "--help" && ${1:-} != "-h" ]]; then
+  __xcind-maybe-warn-deps
+fi
+
 case "${1:-}" in
 init)
   shift

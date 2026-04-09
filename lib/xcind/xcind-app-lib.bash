@@ -18,9 +18,10 @@ xcind-app-hook() {
   local app_root="$1"
   local app="${XCIND_APP:-$(basename "$app_root")}"
 
-  # yq is optional; if unavailable, warn and skip
+  # yq is required for this hook; record and soft-skip if missing. The
+  # consolidated summary is emitted by __xcind-run-hooks at the end of the run.
   if ! command -v yq &>/dev/null; then
-    echo "Warning: skipping xcind-app-hook because yq was not found." >&2
+    __XCIND_HOOKS_SKIPPED_NO_YQ+=("xcind-app-hook")
     return 0
   fi
 
