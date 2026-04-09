@@ -594,6 +594,56 @@ rm -rf "$SHA_APP"
 
 # ======================================================================
 echo ""
+echo "=== Test: SHA invalidates when detected host-gateway value changes ==="
+
+HGW_SHA_APP=$(mktemp -d)
+echo '# hgw sha test' >"$HGW_SHA_APP/.xcind.sh"
+touch "$HGW_SHA_APP/compose.yaml"
+
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_DOCKER_COMPOSE_OPTS=()
+__xcind-load-config "$HGW_SHA_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$HGW_SHA_APP"
+
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE_ROOT=""
+unset XCIND_HOST_GATEWAY XCIND_HOST_GATEWAY_ENABLED
+
+# First SHA with one detected value (simulating WSL2 mirrored mode LAN IP)
+__xcind-detect-host-gateway() { echo "192.168.1.100"; }
+sha1=$(__xcind-compute-sha "$HGW_SHA_APP")
+
+# Second SHA with a different detected value (simulating DHCP renewal)
+__xcind-detect-host-gateway() { echo "10.0.0.50"; }
+sha2=$(__xcind-compute-sha "$HGW_SHA_APP")
+
+assert_eq "SHA changes when detected host-gateway changes" "true" \
+  "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
+
+# SHA should be stable when the detected value does not change
+sha3=$(__xcind-compute-sha "$HGW_SHA_APP")
+assert_eq "SHA stable when detected host-gateway unchanged" "$sha2" "$sha3"
+
+# When the hook is disabled, detection must not influence the SHA
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_HOST_GATEWAY_ENABLED=0
+sha_disabled=$(__xcind-compute-sha "$HGW_SHA_APP")
+# shellcheck disable=SC2317  # invoked indirectly via __xcind-compute-sha
+__xcind-detect-host-gateway() { echo "completely-different"; }
+sha_disabled2=$(__xcind-compute-sha "$HGW_SHA_APP")
+assert_eq "SHA unchanged when hook disabled regardless of detection" \
+  "$sha_disabled" "$sha_disabled2"
+
+# Restore the real detection function by re-sourcing the host-gateway lib
+source "$XCIND_ROOT/lib/xcind/xcind-host-gateway-lib.bash"
+unset XCIND_HOST_GATEWAY_ENABLED
+rm -rf "$HGW_SHA_APP"
+unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-run-hooks (stub) ==="
 
 HOOK_APP=$(mktemp -d)
