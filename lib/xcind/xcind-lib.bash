@@ -51,6 +51,29 @@ __xcind-sha256() {
 }
 
 # --------------------------------------------------------------------------
+# Workspace Detection
+# --------------------------------------------------------------------------
+
+# Return 0 if <dir>/.xcind.sh exists and declares XCIND_IS_WORKSPACE=1
+# when sourced in a clean subshell. Return 1 otherwise (including when
+# the file does not exist).
+#
+# Usage:
+#   if __xcind-is-workspace-dir "$dir"; then ...
+__xcind-is-workspace-dir() {
+  local dir="$1"
+  [ -f "$dir/.xcind.sh" ] || return 1
+  local _is
+  # shellcheck disable=SC1091,SC2030,SC2031
+  _is=$(
+    XCIND_IS_WORKSPACE=""
+    source "$dir/.xcind.sh" 2>/dev/null
+    echo "${XCIND_IS_WORKSPACE:-}"
+  )
+  [ "$_is" = "1" ]
+}
+
+# --------------------------------------------------------------------------
 # App Root Detection
 # --------------------------------------------------------------------------
 
@@ -63,6 +86,7 @@ __xcind-sha256() {
 #
 # Returns 0 on success, 1 if no app root found.
 # Prints the resolved path to stdout.
+# shellcheck disable=SC2120  # __xcind-prepare-app calls with no args
 __xcind-app-root() {
   # If explicitly set, trust it
   if [ -n "${XCIND_APP_ROOT+set}" ] && [ -n "$XCIND_APP_ROOT" ]; then
@@ -73,15 +97,10 @@ __xcind-app-root() {
   local current_dir="${1:-$PWD}"
 
   while true; do
-    if [ -f "$current_dir/.xcind.sh" ]; then
-      # Check if this is a workspace root (not an app root)
-      local _xcind_is_workspace=""
-      # shellcheck disable=SC1091,SC2030,SC2031
-      _xcind_is_workspace=$(XCIND_IS_WORKSPACE="" && source "$current_dir/.xcind.sh" 2>/dev/null && echo "$XCIND_IS_WORKSPACE")
-      if [ "$_xcind_is_workspace" != "1" ]; then
-        echo "$current_dir"
-        return 0
-      fi
+    # An app root has a .xcind.sh that is NOT a workspace marker
+    if [ -f "$current_dir/.xcind.sh" ] && ! __xcind-is-workspace-dir "$current_dir"; then
+      echo "$current_dir"
+      return 0
     fi
 
     local parent_dir
@@ -164,6 +183,32 @@ __xcind-load-config() {
 }
 
 # --------------------------------------------------------------------------
+# Variable Expansion
+# --------------------------------------------------------------------------
+
+# Expand $VAR and ${VAR} references in a pattern from .xcind.sh.
+# Prints the expanded result to stdout, or empty on failure.
+#
+# Compared to `eval echo "$pattern"`, this:
+#   - Does not go through echo, so patterns like "-n" round-trip correctly.
+#   - Disables glob expansion during the eval, so "*.yaml" is not expanded
+#     against CWD.
+# Command substitution ($(cmd)) is still honored for backward compatibility
+# with existing .xcind.sh files that use patterns like ".env.$(hostname)".
+#
+# Usage:
+#   expanded=$(__xcind-expand-vars "$pattern")
+__xcind-expand-vars() {
+  local pattern="$1"
+  local expanded="" _prev_glob=on
+  case $- in *f*) _prev_glob=off ;; esac
+  set -f
+  eval "expanded=\"${pattern//\"/\\\"}\"" 2>/dev/null || expanded=""
+  [ "$_prev_glob" = on ] && set +f
+  printf '%s' "$expanded"
+}
+
+# --------------------------------------------------------------------------
 # Additional Config Sourcing
 # --------------------------------------------------------------------------
 
@@ -185,7 +230,7 @@ __xcind-source-additional-configs() {
 
   for pattern in "${XCIND_ADDITIONAL_CONFIG_FILES[@]}"; do
     # Expand variables in the pattern (e.g., ${APP_ENV})
-    expanded=$(eval echo "$pattern" 2>/dev/null) || continue
+    expanded=$(__xcind-expand-vars "$pattern")
     [ -z "$expanded" ] && continue
 
     # Make relative paths absolute
@@ -284,8 +329,7 @@ __xcind-resolve-files() {
 
   for pattern in "$@"; do
     # Expand variables in the pattern (e.g., ${APP_ENV})
-    # Using eval in a controlled context — patterns come from .xcind.sh
-    expanded=$(eval echo "$pattern" 2>/dev/null) || continue
+    expanded=$(__xcind-expand-vars "$pattern")
 
     # Skip empty expansions
     [ -z "$expanded" ] && continue
@@ -350,6 +394,72 @@ __xcind-build-compose-opts() {
 
   # Set Docker Compose project directory so relative paths in compose files resolve correctly
   XCIND_DOCKER_COMPOSE_OPTS+=("--project-directory" "$app_root")
+}
+
+# --------------------------------------------------------------------------
+# Pipeline
+# --------------------------------------------------------------------------
+
+# Run the full app-resolution pipeline: detect the app root, load config,
+# resolve files, compute the SHA, populate the cache, and run GENERATE
+# hooks. EXECUTE hooks and the final `docker compose` invocation are NOT
+# run here — callers decide whether to run them.
+#
+# The following globals are populated in the CURRENT shell (not a
+# subshell), so callers must invoke this function directly, not inside
+# `$(...)`:
+#   XCIND_APP_ROOT, XCIND_APP, XCIND_WORKSPACE, XCIND_WORKSPACE_ROOT,
+#   XCIND_WORKSPACELESS, XCIND_APP_URL_TEMPLATE, XCIND_ROUTER_TEMPLATE,
+#   XCIND_WORKSPACE_SERVICE_TEMPLATE, XCIND_APP_APEX_URL_TEMPLATE,
+#   XCIND_APEX_ROUTER_TEMPLATE, XCIND_DOCKER_COMPOSE_OPTS,
+#   __XCIND_SOURCED_CONFIG_FILES; and when any GENERATE hooks are
+#   registered: XCIND_SHA, XCIND_CACHE_DIR, XCIND_GENERATED_DIR.
+#
+# Usage:
+#   __xcind-prepare-app || exit 1
+#   # ... use "$XCIND_APP_ROOT" and "${XCIND_DOCKER_COMPOSE_OPTS[@]}"
+__xcind-prepare-app() {
+  local app_root
+  # shellcheck disable=SC2119  # intentionally called with no args
+  app_root=$(__xcind-app-root) || return 1
+  export XCIND_APP_ROOT="$app_root"
+
+  # Reset the set of config files sourced during this pipeline run
+  __XCIND_SOURCED_CONFIG_FILES=()
+
+  # Discover workspace (sets XCIND_WORKSPACE* before load-config runs)
+  __xcind-discover-workspace "$app_root"
+
+  # Workspace-level additional configs (sourced before app config so app wins)
+  if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]]; then
+    __xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+  fi
+
+  # App config + additional configs + workspace self-declaration
+  __xcind-load-config "$app_root" || return 1
+  __xcind-source-additional-configs "$app_root"
+  __xcind-late-bind-workspace
+
+  # Resolve names/URLs and build docker compose options
+  __xcind-resolve-app "$app_root"
+  __xcind-resolve-url-templates
+  __xcind-build-compose-opts "$app_root"
+
+  # Cache + GENERATE hooks only when hooks are registered
+  if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
+    XCIND_SHA=$(__xcind-compute-sha "$app_root")
+    export XCIND_SHA
+    export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
+    export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
+    export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+    export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
+    export XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+
+    # Explicit || return 1 because `set -e` does not propagate out of a
+    # function called in a conditional context (`__xcind-prepare-app || exit 1`).
+    __xcind-populate-cache "$app_root" || return 1
+    __xcind-run-hooks "$app_root" || return 1
+  fi
 }
 
 # --------------------------------------------------------------------------
@@ -431,6 +541,20 @@ __xcind-resolve-tools() {
   printf '}'
 }
 
+# Print, one per line, the value following each `-f` flag in
+# XCIND_DOCKER_COMPOSE_OPTS. Safe to call when the array is empty.
+# Preserves paths containing spaces.
+__xcind-extract-compose-f-files() {
+  local i=0
+  while [ "$i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
+    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$i]}" = "-f" ]; then
+      i=$((i + 1))
+      printf '%s\n' "${XCIND_DOCKER_COMPOSE_OPTS[$i]}"
+    fi
+    i=$((i + 1))
+  done
+}
+
 # Output the resolved configuration as JSON.
 # Convert a bash array to a JSON array string.
 # Requires jq.
@@ -476,27 +600,22 @@ __xcind-resolve-json() {
     compose_files+=("$compose_file")
   done < <(__xcind-resolve-files "$resolve_base" ${XCIND_COMPOSE_FILES[@]+"${XCIND_COMPOSE_FILES[@]}"})
 
-  # Include hook-generated compose files from XCIND_DOCKER_COMPOSE_OPTS
-  local _i=0
-  while [ "$_i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
-    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$_i]}" = "-f" ]; then
-      _i=$((_i + 1))
-      local _f="${XCIND_DOCKER_COMPOSE_OPTS[$_i]}"
-      # Only add files not already in the list (hook-generated overlays)
-      local _already=false
-      local _c
-      for _c in "${compose_files[@]+"${compose_files[@]}"}"; do
-        if [ "$_c" = "$_f" ]; then
-          _already=true
-          break
-        fi
-      done
-      if [ "$_already" = false ]; then
-        compose_files+=("$_f")
+  # Include hook-generated compose files from XCIND_DOCKER_COMPOSE_OPTS,
+  # skipping any file already resolved above.
+  local _f
+  while IFS= read -r _f; do
+    local _already=false
+    local _c
+    for _c in "${compose_files[@]+"${compose_files[@]}"}"; do
+      if [ "$_c" = "$_f" ]; then
+        _already=true
+        break
       fi
+    done
+    if [ "$_already" = false ]; then
+      compose_files+=("$_f")
     fi
-    _i=$((_i + 1))
-  done
+  done < <(__xcind-extract-compose-f-files)
 
   local bake_files=()
   local bake_file
@@ -664,26 +783,13 @@ __xcind-discover-workspace() {
   local parent
   parent="$(dirname "$app_root")"
 
-  if [[ -f "$parent/.xcind.sh" ]]; then
-    # Source in a subshell to check if it explicitly declares a workspace
-    local is_workspace
-    # shellcheck disable=SC1091,SC2030,SC2031
-    is_workspace="$(
-      source "$parent/.xcind.sh" 2>/dev/null
-      echo "${XCIND_IS_WORKSPACE:-0}"
-    )"
-    if [[ $is_workspace == "1" ]]; then
-      XCIND_WORKSPACE_ROOT="$parent"
-      XCIND_WORKSPACE="$(basename "$parent")"
-      XCIND_WORKSPACELESS=0
-      # shellcheck disable=SC1091
-      source "$parent/.xcind.sh"
-      __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
-    else
-      XCIND_WORKSPACELESS=1
-      XCIND_WORKSPACE_ROOT=""
-      XCIND_WORKSPACE=""
-    fi
+  if __xcind-is-workspace-dir "$parent"; then
+    XCIND_WORKSPACE_ROOT="$parent"
+    XCIND_WORKSPACE="$(basename "$parent")"
+    XCIND_WORKSPACELESS=0
+    # shellcheck disable=SC1091
+    source "$parent/.xcind.sh"
+    __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
   else
     XCIND_WORKSPACELESS=1
     XCIND_WORKSPACE_ROOT=""
@@ -772,14 +878,10 @@ __xcind-compute-sha() {
 
   # Collect compose file paths from XCIND_DOCKER_COMPOSE_OPTS (-f flags)
   local compose_files=()
-  local i=0
-  while [ "$i" -lt "${#XCIND_DOCKER_COMPOSE_OPTS[@]}" ]; do
-    if [ "${XCIND_DOCKER_COMPOSE_OPTS[$i]}" = "-f" ]; then
-      i=$((i + 1))
-      compose_files+=("${XCIND_DOCKER_COMPOSE_OPTS[$i]}")
-    fi
-    i=$((i + 1))
-  done
+  local _f
+  while IFS= read -r _f; do
+    compose_files+=("$_f")
+  done < <(__xcind-extract-compose-f-files)
 
   # Sort file paths for stability
   local sorted_files
@@ -1045,6 +1147,45 @@ __xcind-maybe-warn-deps() {
 # Hook Execution
 # --------------------------------------------------------------------------
 
+# Parse hook output line-by-line, validating that any `-f PATH` entries
+# still reference existing files. Returns 0 if valid, 1 on first miss.
+#
+# Hook output format: one argument per line, each line either a single
+# token (e.g. "--verbose") or a flag and value separated by a single space
+# (e.g. "-f /path/to/compose.yaml"). Line-based parsing preserves paths
+# containing spaces, which word-splitting does not.
+__xcind-validate-hook-output() {
+  local output="$1"
+  local line
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [[ $line == *" "* ]]; then
+      local flag="${line%% *}"
+      local value="${line#* }"
+      if [ "$flag" = "-f" ] && [ ! -f "$value" ]; then
+        return 1
+      fi
+    fi
+  done <<<"$output"
+  return 0
+}
+
+# Append hook output tokens to XCIND_DOCKER_COMPOSE_OPTS, preserving paths
+# with spaces. Each non-empty line becomes one or two array elements
+# depending on whether it contains a space separator.
+__xcind-append-hook-output-to-opts() {
+  local output="$1"
+  local line
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [[ $line == *" "* ]]; then
+      XCIND_DOCKER_COMPOSE_OPTS+=("${line%% *}" "${line#* }")
+    else
+      XCIND_DOCKER_COMPOSE_OPTS+=("$line")
+    fi
+  done <<<"$output"
+}
+
 # Run GENERATE hooks with cache hit/miss logic.
 # On cache miss: runs hooks, persists output, appends to XCIND_DOCKER_COMPOSE_OPTS.
 # On cache hit: replays persisted output, validates referenced files.
@@ -1070,28 +1211,15 @@ __xcind-run-hooks() {
       output=$(<"$hook_output_file")
       [ -z "$output" ] && continue
 
-      # Verify referenced files exist
-      local cache_valid=true
-      local word
-      local prev=""
-      for word in $output; do
-        if [ "$prev" = "-f" ] && [ ! -f "$word" ]; then
-          cache_valid=false
-          break
-        fi
-        prev="$word"
-      done
-
-      if [ "$cache_valid" = false ]; then
-        # Treat as cache miss — remove generated dir and re-run
+      # Verify referenced files still exist; on miss, rebuild from scratch.
+      if ! __xcind-validate-hook-output "$output"; then
         rm -rf "$XCIND_GENERATED_DIR"
         __xcind-run-hooks "$app_root"
         return $?
       fi
 
-      # Append to compose opts
-      # shellcheck disable=SC2206
-      XCIND_DOCKER_COMPOSE_OPTS+=($output)
+      # Append to compose opts (preserves paths with spaces)
+      __xcind-append-hook-output-to-opts "$output"
     done
   else
     # Cache miss — run hooks and persist output
@@ -1106,13 +1234,13 @@ __xcind-run-hooks() {
         return $rc
       }
 
-      # Persist hook output
-      echo "$output" >"$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+      # Persist hook output (printf, not echo — echo would swallow/transform
+      # a first line starting with -n/-e/-E if a future hook ever emits one)
+      printf '%s\n' "$output" >"$XCIND_GENERATED_DIR/.hook-output-$hook_name"
 
-      # Append to compose opts
+      # Append to compose opts (preserves paths with spaces)
       if [ -n "$output" ]; then
-        # shellcheck disable=SC2206
-        XCIND_DOCKER_COMPOSE_OPTS+=($output)
+        __xcind-append-hook-output-to-opts "$output"
       fi
     done
   fi

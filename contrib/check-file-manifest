@@ -115,6 +115,28 @@ while IFS= read -r line; do
 done <flake.nix
 check_set "flake.nix wrapProgram" "$tmpdir/bin_files" "${flake_bin_files[@]}"
 
+# --- Makefile SHELL_FILES (all shell scripts) ---
+makefile_files=()
+in_array=false
+while IFS= read -r line; do
+  if [[ $line =~ ^SHELL_FILES[[:space:]]*= ]]; then
+    in_array=true
+    line="${line#*=}"
+  fi
+  if [ "$in_array" = true ]; then
+    # Strip trailing backslash and surrounding whitespace, then split on IFS
+    stripped="${line%\\}"
+    for token in $stripped; do
+      case "$token" in
+      bin/* | lib/xcind/*) makefile_files+=("$token") ;;
+      esac
+    done
+    # End of array when the line does not continue with a trailing backslash
+    [[ $line != *\\ ]] && in_array=false
+  fi
+done <Makefile
+check_set "Makefile SHELL_FILES" "$tmpdir/all_installed" "${makefile_files[@]}"
+
 # --- contrib/test-all SHELL_FILES (all shell scripts) ---
 testall_files=()
 while IFS= read -r line; do
