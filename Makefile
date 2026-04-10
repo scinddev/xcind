@@ -5,6 +5,7 @@ SHELL_FILES = \
 	bin/xcind-workspace \
 	lib/xcind/xcind-app-lib.bash \
 	lib/xcind/xcind-app-env-lib.bash \
+	lib/xcind/xcind-bootstrap.bash \
 	lib/xcind/xcind-completion-bash.bash \
 	lib/xcind/xcind-completion-zsh.bash \
 	lib/xcind/xcind-host-gateway-lib.bash \
