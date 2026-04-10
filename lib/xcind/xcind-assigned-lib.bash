@@ -76,11 +76,18 @@ __xcind-assigned-port-available() {
     return 0
   fi
 
+  # netstat fallback: only trusted when the invocation actually succeeds.
+  # Linux net-tools supports `-lnt`; BSD/macOS netstat rejects those flags
+  # and would otherwise produce empty output that looks like "port free".
+  # When netstat errors, fall through to the /dev/tcp probe below.
   if command -v netstat >/dev/null 2>&1; then
-    if netstat -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
-      return 1
+    local ns_out
+    if ns_out=$(netstat -lnt 2>/dev/null); then
+      if printf '%s\n' "$ns_out" | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
+        return 1
+      fi
+      return 0
     fi
-    return 0
   fi
 
   # /dev/tcp fallback — a successful connect means something is listening.
@@ -261,7 +268,7 @@ __xcind-assigned-warn-compose-conflict() {
       published=$(yq ".services.\"$svc\".ports[$idx].published" "$resolved_config" 2>/dev/null)
       if [[ -n $published && $published != "null" ]]; then
         echo "xcind: warning: service '$svc' already maps container port $cport to host port $published" >&2
-        echo "xcind: Xcind assigned host port $host_port for export '$xport'" >&2
+        echo "xcind: assigned host port $host_port for export '$xport'" >&2
         echo "xcind: consider removing the host port from your compose file to avoid duplicate mappings" >&2
         return 0
       fi
