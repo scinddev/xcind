@@ -162,6 +162,8 @@ _xcind-proxy() {
     'down:Stop the shared Traefik proxy'
     'status:Show proxy state and configuration'
     'logs:Show Traefik proxy logs'
+    'release:Release an assigned host port'
+    'prune:Remove stale assigned-port entries'
     '--help:Show help'
     '-h:Show help'
     '--version:Show version'

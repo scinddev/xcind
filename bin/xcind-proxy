@@ -95,6 +95,9 @@ __xcind-proxy-init() {
   # Run full init (sources config, generates compose/traefik, creates network)
   __xcind-proxy-ensure-init
 
+  # Prune stale assigned-port entries so the next run starts from a clean slate
+  __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
+
   echo "Proxy config at $XCIND_PROXY_CONFIG_DIR"
   echo "Generated files at $XCIND_PROXY_STATE_DIR"
 }
@@ -113,6 +116,9 @@ __xcind-proxy-up() {
 
   # Always regenerate files from current config.sh
   __xcind-proxy-ensure-init
+
+  # Prune stale assigned-port entries before bringing the stack up
+  __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
 
   if [ "$force" = true ]; then
     docker compose -f "$XCIND_PROXY_COMPOSE" up -d || return $?
@@ -144,13 +150,18 @@ __xcind-proxy-status() {
     json_mode=true
   fi
 
+  # Prune stale assigned-port entries so the status display never carries
+  # orphaned rows from deleted apps.
+  __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
+
   # Not initialized
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
     if [ "$json_mode" = true ]; then
-      printf '{"initialized":false,"status":"not_initialized"}\n'
+      printf '{"initialized":false,"status":"not_initialized","assigned_ports":[]}\n'
     else
       echo "Status: not initialized"
       echo "Run 'xcind-proxy init' to set up proxy infrastructure."
+      __xcind-proxy-status-assigned-text
     fi
     return 0
   fi
@@ -191,8 +202,10 @@ __xcind-proxy-status() {
 
   # Output
   if [ "$json_mode" = true ]; then
-    printf '{"initialized":true,"status":"%s","config":"%s","image":"%s","http_port":%s,"dashboard_enabled":%s,"dashboard_url":"%s","network_name":"%s","network_exists":%s}\n' \
-      "$running_status" "$config_status" "$image" "$http_port" "$dashboard_enabled" "$dashboard_url" "$network_name" "$network_exists"
+    local assigned_json
+    assigned_json=$(__xcind-proxy-status-assigned-json)
+    printf '{"initialized":true,"status":"%s","config":"%s","image":"%s","http_port":%s,"dashboard_enabled":%s,"dashboard_url":"%s","network_name":"%s","network_exists":%s,"assigned_ports":%s}\n' \
+      "$running_status" "$config_status" "$image" "$http_port" "$dashboard_enabled" "$dashboard_url" "$network_name" "$network_exists" "$assigned_json"
   else
     echo "Status: $running_status"
     if [ "$config_status" = "stale" ]; then
@@ -210,7 +223,79 @@ __xcind-proxy-status() {
     else
       echo "Network: $network_name (missing)"
     fi
+    __xcind-proxy-status-assigned-text
   fi
+}
+
+# Render the assigned-ports section of `xcind-proxy status` as plain text.
+# Reads the state file directly — callers already hold (or have released)
+# the assigned-ports lock; this is a read-only snapshot.
+__xcind-proxy-status-assigned-text() {
+  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  local any=0
+  local L_port L_app L_xport L_cport L_path L_ts
+  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
+    [[ -z $L_port ]] && continue
+    [[ ${L_port:0:1} == "#" ]] && continue
+    if [ "$any" -eq 0 ]; then
+      echo ""
+      echo "Assigned ports:"
+      any=1
+    fi
+    printf '  %s  %s/%s  → container port %s  (%s)\n' \
+      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path"
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+}
+
+# Render the assigned-ports section as a JSON array.
+__xcind-proxy-status-assigned-json() {
+  if ! command -v jq &>/dev/null; then
+    echo "[]"
+    return 0
+  fi
+  if [[ ! -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
+    echo "[]"
+    return 0
+  fi
+  local json="[]"
+  local L_port L_app L_xport L_cport L_path L_ts
+  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
+    [[ -z $L_port ]] && continue
+    [[ ${L_port:0:1} == "#" ]] && continue
+    json=$(printf '%s' "$json" | jq \
+      --argjson port "$L_port" \
+      --arg app "$L_app" \
+      --arg xport "$L_xport" \
+      --argjson cport "$L_cport" \
+      --arg path "$L_path" \
+      --arg ts "$L_ts" \
+      '. + [{host_port: $port, app: $app, export: $xport, container_port: $cport, app_path: $path, assigned_at: $ts}]')
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+  printf '%s' "$json"
+}
+
+__xcind-proxy-release() {
+  local port="${1:-}"
+  if [[ -z $port ]]; then
+    echo "Usage: xcind-proxy release <port>" >&2
+    exit 1
+  fi
+  if ! [[ $port =~ ^[0-9]+$ ]]; then
+    echo "Error: port must be a positive integer, got: $port" >&2
+    exit 1
+  fi
+  if __xcind-with-assigned-lock __xcind-assigned-remove-port "$port"; then
+    echo "Released assigned port $port"
+  else
+    echo "No assignment found for port $port" >&2
+    exit 1
+  fi
+}
+
+__xcind-proxy-prune() {
+  local pruned
+  pruned=$(__xcind-with-assigned-lock __xcind-assigned-prune)
+  echo "Pruned $pruned stale assigned port entries"
 }
 
 __xcind-proxy-logs() {
@@ -233,8 +318,10 @@ __xcind-proxy-help() {
   echo "  init [OPTIONS]     Create proxy infrastructure files"
   echo "  up [--force]       Start the shared Traefik proxy (--force recreates network)"
   echo "  down               Stop the shared Traefik proxy"
-  echo "  status [--json]    Show proxy state (running/stopped, image, port, network)"
+  echo "  status [--json]    Show proxy state (running/stopped, image, port, network, assigned ports)"
   echo "  logs [OPTS]        Show Traefik proxy logs (supports docker compose logs flags)"
+  echo "  release PORT       Release an assigned port from the state file"
+  echo "  prune              Remove assigned-port entries whose app path no longer exists"
   echo ""
   echo "Init options:"
   echo "  --proxy-domain DOMAIN     Set domain suffix (default: localhost)"
@@ -273,6 +360,13 @@ status)
 logs)
   shift
   __xcind-proxy-logs "$@"
+  ;;
+release)
+  shift
+  __xcind-proxy-release "${1:-}"
+  ;;
+prune)
+  __xcind-proxy-prune
   ;;
 --help | -h)
   __xcind-proxy-help
