@@ -2,8 +2,8 @@
 # xcind-bootstrap.bash — Shared startup for bin/ scripts
 #
 # Each bin/ script sources this file after setting `set -euo pipefail`.
-# Bootstrap exports XCIND_ROOT and sources xcind-lib.bash, so the calling
-# script gets the full xcind environment in one step.
+# Bootstrap sets XCIND_ROOT and sources xcind-lib.bash, so the calling
+# script gets the full xcind shell environment in one step.
 #
 # Each bin/ script cannot source this file by absolute path because
 # XCIND_ROOT is not known until bootstrap computes it. Every caller

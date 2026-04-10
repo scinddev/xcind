@@ -1234,8 +1234,9 @@ __xcind-run-hooks() {
         return $rc
       }
 
-      # Persist hook output
-      echo "$output" >"$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+      # Persist hook output (printf, not echo — echo would swallow/transform
+      # a first line starting with -n/-e/-E if a future hook ever emits one)
+      printf '%s\n' "$output" >"$XCIND_GENERATED_DIR/.hook-output-$hook_name"
 
       # Append to compose opts (preserves paths with spaces)
       if [ -n "$output" ]; then
