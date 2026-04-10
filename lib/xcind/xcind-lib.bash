@@ -86,6 +86,7 @@ __xcind-is-workspace-dir() {
 #
 # Returns 0 on success, 1 if no app root found.
 # Prints the resolved path to stdout.
+# shellcheck disable=SC2120  # __xcind-prepare-app calls with no args
 __xcind-app-root() {
   # If explicitly set, trust it
   if [ -n "${XCIND_APP_ROOT+set}" ] && [ -n "$XCIND_APP_ROOT" ]; then
@@ -393,6 +394,72 @@ __xcind-build-compose-opts() {
 
   # Set Docker Compose project directory so relative paths in compose files resolve correctly
   XCIND_DOCKER_COMPOSE_OPTS+=("--project-directory" "$app_root")
+}
+
+# --------------------------------------------------------------------------
+# Pipeline
+# --------------------------------------------------------------------------
+
+# Run the full app-resolution pipeline: detect the app root, load config,
+# resolve files, compute the SHA, populate the cache, and run GENERATE
+# hooks. EXECUTE hooks and the final `docker compose` invocation are NOT
+# run here — callers decide whether to run them.
+#
+# The following globals are populated in the CURRENT shell (not a
+# subshell), so callers must invoke this function directly, not inside
+# `$(...)`:
+#   XCIND_APP_ROOT, XCIND_APP, XCIND_WORKSPACE, XCIND_WORKSPACE_ROOT,
+#   XCIND_WORKSPACELESS, XCIND_APP_URL_TEMPLATE, XCIND_ROUTER_TEMPLATE,
+#   XCIND_WORKSPACE_SERVICE_TEMPLATE, XCIND_APP_APEX_URL_TEMPLATE,
+#   XCIND_APEX_ROUTER_TEMPLATE, XCIND_DOCKER_COMPOSE_OPTS,
+#   __XCIND_SOURCED_CONFIG_FILES; and when any GENERATE hooks are
+#   registered: XCIND_SHA, XCIND_CACHE_DIR, XCIND_GENERATED_DIR.
+#
+# Usage:
+#   __xcind-prepare-app || exit 1
+#   # ... use "$XCIND_APP_ROOT" and "${XCIND_DOCKER_COMPOSE_OPTS[@]}"
+__xcind-prepare-app() {
+  local app_root
+  # shellcheck disable=SC2119  # intentionally called with no args
+  app_root=$(__xcind-app-root) || return 1
+  export XCIND_APP_ROOT="$app_root"
+
+  # Reset the set of config files sourced during this pipeline run
+  __XCIND_SOURCED_CONFIG_FILES=()
+
+  # Discover workspace (sets XCIND_WORKSPACE* before load-config runs)
+  __xcind-discover-workspace "$app_root"
+
+  # Workspace-level additional configs (sourced before app config so app wins)
+  if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]]; then
+    __xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+  fi
+
+  # App config + additional configs + workspace self-declaration
+  __xcind-load-config "$app_root" || return 1
+  __xcind-source-additional-configs "$app_root"
+  __xcind-late-bind-workspace
+
+  # Resolve names/URLs and build docker compose options
+  __xcind-resolve-app "$app_root"
+  __xcind-resolve-url-templates
+  __xcind-build-compose-opts "$app_root"
+
+  # Cache + GENERATE hooks only when hooks are registered
+  if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
+    XCIND_SHA=$(__xcind-compute-sha "$app_root")
+    export XCIND_SHA
+    export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
+    export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
+    export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+    export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
+    export XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+
+    # Explicit || return 1 because `set -e` does not propagate out of a
+    # function called in a conditional context (`__xcind-prepare-app || exit 1`).
+    __xcind-populate-cache "$app_root" || return 1
+    __xcind-run-hooks "$app_root" || return 1
+  fi
 }
 
 # --------------------------------------------------------------------------

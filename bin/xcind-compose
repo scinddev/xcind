@@ -61,64 +61,14 @@ __xcind-maybe-warn-deps
 
 # --- Main ---
 
-# Step 1: Detect app root
-# shellcheck disable=SC2119  # intentionally called with no args
-app_root=$(__xcind-app-root) || exit 1
-export XCIND_APP_ROOT="$app_root"
+# Run the app-resolution pipeline (shared with xcind-config). Runs in the
+# current shell so callers see the populated XCIND_DOCKER_COMPOSE_OPTS.
+__xcind-prepare-app || exit 1
 
-# Initialize config file tracking
-__XCIND_SOURCED_CONFIG_FILES=()
-
-# Step 2: Discover workspace
-__xcind-discover-workspace "$app_root"
-
-# Step 3: Source workspace additional configs
-if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]]; then
-  __xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
-fi
-
-# Step 4: Load application config (overrides workspace settings)
-__xcind-load-config "$app_root" || exit 1
-
-# Step 5: Source app additional configs
-__xcind-source-additional-configs "$app_root"
-
-# Step 6: Late-bind workspace self-declaration
-__xcind-late-bind-workspace
-
-# Step 7: Resolve app name
-__xcind-resolve-app "$app_root"
-
-# Step 8: Resolve URL templates
-__xcind-resolve-url-templates
-
-# Step 9-10: Resolve files and build compose options
-__xcind-build-compose-opts "$app_root"
-
-# Steps 11-14: Only run when hooks are registered
-if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
-  # Step 11: Compute SHA
-  XCIND_SHA=$(__xcind-compute-sha "$app_root")
-
-  # Step 12: Export pipeline vars
-  export XCIND_SHA
-  export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
-  export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
-  export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
-  export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
-  export XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
-
-  # Step 13: Populate cache
-  __xcind-populate-cache "$app_root"
-
-  # Step 14: Run GENERATE hooks (cache hit = replay, cache miss = execute)
-  __xcind-run-hooks "$app_root"
-fi
-
-# Step 15: Run EXECUTE hooks (always, not cached)
+# Run EXECUTE hooks (not cached)
 if [[ ${#XCIND_HOOKS_EXECUTE[@]} -gt 0 ]]; then
-  __xcind-run-execute-hooks "$app_root"
+  __xcind-run-execute-hooks "$XCIND_APP_ROOT"
 fi
 
-# Step 16: Execute docker compose with resolved options + passthrough args
+# Execute docker compose with resolved options + passthrough args
 exec docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" "$@"
