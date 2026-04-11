@@ -1318,6 +1318,132 @@ XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-assigned-port-available ss branch ==="
+
+# Mock ss that always emits a single listener on port 12345. The real
+# ss output format is: `LISTEN 0 128 0.0.0.0:PORT 0.0.0.0:*`. We prepend
+# $PROBE_BIN to PATH so command -v ss picks up the mock.
+PROBE_BIN=$(mktemp_d)
+_probe_orig_PATH="$PATH"
+cat >"$PROBE_BIN/ss" <<'MOCK_SS'
+#!/bin/sh
+echo "LISTEN 0 128 0.0.0.0:12345 0.0.0.0:*"
+echo "LISTEN 0 128 [::]:12345 [::]:*"
+MOCK_SS
+chmod +x "$PROBE_BIN/ss"
+export PATH="$PROBE_BIN:$_probe_orig_PATH"
+
+__xcind-assigned-port-available 12345 && ss_busy_rc=0 || ss_busy_rc=$?
+assert_eq "ss: busy port detected" "1" "$ss_busy_rc"
+__xcind-assigned-port-available 12346 && ss_free_rc=0 || ss_free_rc=$?
+assert_eq "ss: free port reported free" "0" "$ss_free_rc"
+
+rm -f "$PROBE_BIN/ss"
+export PATH="$_probe_orig_PATH"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-assigned-port-available netstat branch ==="
+
+# Hide ss via a command() override so the function falls through to the
+# netstat branch. Mock netstat emits a canned Linux net-tools line.
+cat >"$PROBE_BIN/netstat" <<'MOCK_NETSTAT'
+#!/bin/sh
+echo "tcp 0 0 0.0.0.0:12347 0.0.0.0:* LISTEN"
+MOCK_NETSTAT
+chmod +x "$PROBE_BIN/netstat"
+export PATH="$PROBE_BIN:$_probe_orig_PATH"
+
+# shellcheck disable=SC2317  # invoked indirectly via __xcind-assigned-port-available
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-port-available 12347 && ns_busy_rc=0 || ns_busy_rc=$?
+assert_eq "netstat: busy port detected" "1" "$ns_busy_rc"
+__xcind-assigned-port-available 12348 && ns_free_rc=0 || ns_free_rc=$?
+assert_eq "netstat: free port reported free" "0" "$ns_free_rc"
+
+# netstat that errors (BSD-style refusal) must fall through to /dev/tcp
+cat >"$PROBE_BIN/netstat" <<'MOCK_NETSTAT_ERR'
+#!/bin/sh
+echo "netstat: option not supported" >&2
+exit 1
+MOCK_NETSTAT_ERR
+chmod +x "$PROBE_BIN/netstat"
+
+# Probe a port almost certainly free; failure here would indicate the
+# function trusted the empty netstat output instead of falling through.
+__xcind-assigned-port-available 65430 && ns_err_rc=0 || ns_err_rc=$?
+assert_eq "netstat err: falls through to /dev/tcp (free)" "0" "$ns_err_rc"
+
+unset -f command
+rm -f "$PROBE_BIN/netstat"
+export PATH="$_probe_orig_PATH"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-assigned-port-available /dev/tcp branch ==="
+
+# Hide both ss and netstat so the function falls through to /dev/tcp.
+# Bind a real listener on an ephemeral port; the connect probe must see it.
+if command -v python3 >/dev/null 2>&1; then
+  # shellcheck disable=SC2317
+  command() {
+    if [ "$1" = "-v" ] && { [ "$2" = "ss" ] || [ "$2" = "netstat" ]; }; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+
+  PORT_FILE=$(mktemp)
+  # Bind to 127.0.0.1:0 so the kernel picks a free port for us.
+  PORT_FILE="$PORT_FILE" python3 -c '
+import os, socket, time
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+s.listen(1)
+with open(os.environ["PORT_FILE"], "w") as f:
+    f.write(str(s.getsockname()[1]))
+time.sleep(30)
+' &
+  LISTENER_PID=$!
+
+  # Wait for the listener to publish its port (up to ~1s)
+  _waited=0
+  while [ ! -s "$PORT_FILE" ] && [ "$_waited" -lt 20 ]; do
+    sleep 0.05
+    _waited=$((_waited + 1))
+  done
+  BUSY_PORT=$(<"$PORT_FILE")
+
+  __xcind-assigned-port-available "$BUSY_PORT" && tcp_busy_rc=0 || tcp_busy_rc=$?
+  assert_eq "/dev/tcp: busy port detected" "1" "$tcp_busy_rc"
+
+  kill "$LISTENER_PID" 2>/dev/null || true
+  wait "$LISTENER_PID" 2>/dev/null || true
+  rm -f "$PORT_FILE"
+
+  # After killing the listener the port should be free again. TIME_WAIT
+  # does not affect a passive-side LISTEN socket teardown, so the probe
+  # should immediately see the port as free.
+  sleep 0.05
+  __xcind-assigned-port-available "$BUSY_PORT" && tcp_free_rc=0 || tcp_free_rc=$?
+  assert_eq "/dev/tcp: free port reported free" "0" "$tcp_free_rc"
+
+  unset -f command
+else
+  echo "  (skipped: python3 not available for /dev/tcp listener setup)"
+fi
+
+rm -rf "$PROBE_BIN"
+unset _probe_orig_PATH
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-assigned-allocate-new ==="
 
 # Stub port availability so the allocator sees a deterministic view
