@@ -13,7 +13,9 @@ _XCIND_TEST_TMPROOT=$(mktemp -d)
 export _XCIND_TEST_TMPROOT
 
 mktemp_d() {
-  mktemp -d -p "$_XCIND_TEST_TMPROOT"
+  # Use the explicit-template form so we work on BSD mktemp (macOS) as
+  # well as GNU coreutils; BSD mktemp has no `-p` / `--tmpdir` flag.
+  mktemp -d "$_XCIND_TEST_TMPROOT/tmp.XXXXXX"
 }
 
 # shellcheck disable=SC2317 # registered as a trap
