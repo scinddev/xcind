@@ -277,26 +277,18 @@ __xcind-assigned-remove-port() {
 # Remove all entries whose app_path no longer exists on disk. Prints the
 # number of entries pruned to stdout.
 __xcind-assigned-prune() {
-  __xcind-assigned-ensure-state-file
+  __xcind_assigned_prune_count=0
+  __xcind-assigned-rewrite __xcind-assigned-keep-existing-path
+  printf '%s\n' "$__xcind_assigned_prune_count"
+}
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
-
-  local pruned=0
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ ! -d $L_path ]]; then
-      pruned=$((pruned + 1))
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
-  printf '%s\n' "$pruned"
+__xcind-assigned-keep-existing-path() {
+  local L_path="$5"
+  if [[ ! -d $L_path ]]; then
+    __xcind_assigned_prune_count=$((__xcind_assigned_prune_count + 1))
+    return 1
+  fi
+  return 0
 }
 
 # --------------------------------------------------------------------------
