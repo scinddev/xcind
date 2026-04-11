@@ -1443,18 +1443,19 @@ assert_contains "empty --generate-docker-compose-configuration=: error message" 
 echo ""
 echo "=== Test: xcind-config --preview quoting ==="
 
-# --preview output must be copy-pasteable when the app path or compose
-# file path contains spaces. printf '%q' escapes spaces, so the output
-# should contain a backslash-space sequence.
-PREVIEW_SPACE_APP=$(mktemp_d)/"with space"
-mkdir -p "$PREVIEW_SPACE_APP"
-cat >"$PREVIEW_SPACE_APP/compose.yaml" <<'YAMLEOF'
+# --preview output must be copy-pasteable when a compose file path
+# contains spaces. Put the compose file in a subdirectory whose name has
+# a space; the app root itself is kept in a space-free tempdir so that
+# GENERATE hooks (naming, app, host-gateway) work on bash 3.2/4.0.
+PREVIEW_SPACE_APP=$(mktemp_d)
+mkdir -p "$PREVIEW_SPACE_APP/with space"
+cat >"$PREVIEW_SPACE_APP/with space/compose.yaml" <<'YAMLEOF'
 services:
   web:
     image: alpine
 YAMLEOF
 cat >"$PREVIEW_SPACE_APP/.xcind.sh" <<'XCINDEOF'
-XCIND_COMPOSE_FILES=(compose.yaml)
+XCIND_COMPOSE_FILES=("with space/compose.yaml")
 XCIND_COMPOSE_ENV_FILES=()
 XCINDEOF
 
@@ -1465,7 +1466,7 @@ assert_eq "preview with space in path: exit code 0" "0" "$preview_space_rc"
 assert_contains "preview with space in path: emits shell-escaped path" \
   'with\ space' "$preview_space_result"
 
-rm -rf "$(dirname "$PREVIEW_SPACE_APP")"
+rm -rf "$PREVIEW_SPACE_APP"
 
 # ======================================================================
 echo ""
