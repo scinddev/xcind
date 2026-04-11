@@ -212,6 +212,23 @@ __xcind-load-config() {
 # Command substitution ($(cmd)) is still honored for backward compatibility
 # with existing .xcind.sh files that use patterns like ".env.$(hostname)".
 #
+# TRUST BOUNDARY: this function uses `eval` to honor command substitution
+# ($(cmd)) for backward compatibility with existing .xcind.sh files. Callers
+# must ensure the pattern comes from a .xcind.sh file the user trusts.
+# Specifically:
+#   - xcind-compose and xcind-config are safe: they walk upward from $PWD,
+#     so the user has already chosen to `cd` into the app directory and
+#     sourcing its .xcind.sh is equivalent to running the user's own code.
+#   - xcind-workspace status walks DOWNWARD through subdirectories and
+#     invokes xcind-config on each child. If a workspace root contains
+#     untrusted clones (third-party checkouts, downloaded archives), the
+#     .xcind.sh files in those subdirectories will be sourced and any
+#     $(cmd) substitutions in their patterns will execute. This is a known
+#     limitation — the workspace model assumes every app under a workspace
+#     root is trusted. A proper fix would narrow the eval to variable
+#     expansion only (no $(cmd)) behind an opt-in, which is a behavior
+#     change that deserves its own ADR.
+#
 # Usage:
 #   expanded=$(__xcind-expand-vars "$pattern")
 __xcind-expand-vars() {
@@ -519,11 +536,15 @@ __xcind-resolve-tools() {
     use="exec"
     path=""
     if [[ -n $meta ]]; then
-      local IFS=';'
+      # Save and restore IFS around the split. `unset IFS` would expose the
+      # inherited value (which may not be the default $' \t\n'), not restore
+      # it — so capture the caller's IFS explicitly and put it back.
+      local _old_ifs="$IFS"
+      IFS=';'
       local pairs
       # shellcheck disable=SC2206
       pairs=($meta)
-      unset IFS
+      IFS="$_old_ifs"
       local pair
       for pair in "${pairs[@]}"; do
         key="${pair%%=*}"
@@ -1027,6 +1048,60 @@ __xcind-populate-cache() {
 # Dependency Check
 # --------------------------------------------------------------------------
 
+# File-scope helpers for __xcind-check-deps. Prefixed so they don't collide
+# with anything the user might define, and so the scope relationship is
+# obvious. They were originally nested inside __xcind-check-deps but that
+# leaked them into the global namespace on any early return (set -e, closed
+# stdout, etc.) because the cleanup `unset -f` only ran on the success path.
+
+# Print a best-effort version string for $cmd to stdout. Never fails — the
+# trailing `return 0` guarantees that, so callers using `ver=$(...)` under
+# `set -e` can't be aborted by a case arm whose first command substitution
+# unexpectedly returned non-zero.
+__xcind-check-deps-version() {
+  local cmd="$1" out
+  case "$cmd" in
+  bash) out=$(bash --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*version \([^ ]*\).*/\1/' ;;
+  docker) docker --version 2>/dev/null | sed 's/Docker version \([^,]*\).*/\1/' ;;
+  "docker compose") docker compose version --short 2>/dev/null || echo "?" ;;
+  jq) jq --version 2>/dev/null | sed 's/^jq-//' ;;
+  yq) yq --version 2>/dev/null | sed 's/.*version v\{0,1\}//' ;;
+  sha256sum) out=$(sha256sum --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*(GNU coreutils) //' ;;
+  shasum) out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
+  *) echo "" ;;
+  esac
+  return 0
+}
+
+# Report the presence of a required dependency. Returns 0 if present, 1 if
+# missing. Callers accumulate the result into their own rc / missing counter.
+__xcind-check-deps-required() {
+  local cmd="$1" purpose="$2"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    local ver
+    ver=$(__xcind-check-deps-version "$cmd")
+    printf "  ✓ %-20s %s\n" "$cmd" "$ver"
+    return 0
+  fi
+  printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
+  return 1
+}
+
+# Report the presence of an optional dependency. Returns 0 if present, 1 if
+# missing. A missing optional dep is a warning, not a failure — the caller
+# decides how to treat the nonzero return.
+__xcind-check-deps-optional() {
+  local cmd="$1" purpose="$2"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    local ver
+    ver=$(__xcind-check-deps-version "$cmd")
+    printf "  ✓ %-20s %s\n" "$cmd" "$ver"
+    return 0
+  fi
+  printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
+  return 1
+}
+
 # Check whether required and optional external dependencies are available.
 # Prints a human-readable report and returns 0 when all *required* deps are
 # present (missing optional deps produce warnings but not a failure).
@@ -1041,56 +1116,24 @@ __xcind-check-deps() {
   echo "xcind v${XCIND_VERSION} — dependency check"
   echo ""
 
-  # --- helpers -----------------------------------------------------------
-  __check_required() {
-    local cmd="$1" purpose="$2"
-    if command -v "$cmd" >/dev/null 2>&1; then
-      local ver
-      ver=$(__dep_version "$cmd")
-      printf "  ✓ %-20s %s\n" "$cmd" "$ver"
-    else
-      printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
-      required_missing=$((required_missing + 1))
-      rc=1
-    fi
-  }
-
-  __check_optional() {
-    local cmd="$1" purpose="$2"
-    if command -v "$cmd" >/dev/null 2>&1; then
-      local ver
-      ver=$(__dep_version "$cmd")
-      printf "  ✓ %-20s %s\n" "$cmd" "$ver"
-    else
-      printf "  ✗ %-20s %-12s  %s\n" "$cmd" "(not found)" "$purpose"
-      warnings=$((warnings + 1))
-    fi
-  }
-
-  __dep_version() {
-    local cmd="$1" out
-    case "$cmd" in
-    bash) out=$(bash --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*version \([^ ]*\).*/\1/' ;;
-    docker) docker --version 2>/dev/null | sed 's/Docker version \([^,]*\).*/\1/' ;;
-    "docker compose") docker compose version --short 2>/dev/null || echo "?" ;;
-    jq) jq --version 2>/dev/null | sed 's/^jq-//' ;;
-    yq) yq --version 2>/dev/null | sed 's/.*version v\{0,1\}//' ;;
-    sha256sum) out=$(sha256sum --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*(GNU coreutils) //' ;;
-    shasum) out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
-    *) echo "" ;;
-    esac
-  }
-  # -----------------------------------------------------------------------
-
   echo "Required:"
-  __check_required bash "shell interpreter"
-  __check_required docker "container runtime"
-  __check_required yq "YAML parsing for default-registered hooks"
+  __xcind-check-deps-required bash "shell interpreter" || {
+    required_missing=$((required_missing + 1))
+    rc=1
+  }
+  __xcind-check-deps-required docker "container runtime" || {
+    required_missing=$((required_missing + 1))
+    rc=1
+  }
+  __xcind-check-deps-required yq "YAML parsing for default-registered hooks" || {
+    required_missing=$((required_missing + 1))
+    rc=1
+  }
 
   # docker compose is a subcommand, not a standalone binary
   if docker compose version >/dev/null 2>&1; then
     local dc_ver
-    dc_ver=$(__dep_version "docker compose")
+    dc_ver=$(__xcind-check-deps-version "docker compose")
     printf "  ✓ %-20s %s\n" "docker compose" "$dc_ver"
   else
     printf "  ✗ %-20s %-12s  %s\n" "docker compose" "(not found)" "required by xcind-compose"
@@ -1101,11 +1144,11 @@ __xcind-check-deps() {
   # SHA-256: either sha256sum or shasum satisfies the requirement
   if command -v sha256sum >/dev/null 2>&1; then
     local ver
-    ver=$(__dep_version sha256sum)
+    ver=$(__xcind-check-deps-version sha256sum)
     printf "  ✓ %-20s %s\n" "sha256sum" "$ver"
   elif command -v shasum >/dev/null 2>&1; then
     local ver
-    ver=$(__dep_version shasum)
+    ver=$(__xcind-check-deps-version shasum)
     printf "  ✓ %-20s %s  %s\n" "shasum" "$ver" "(sha256sum alternative)"
   else
     printf "  ✗ %-20s %-12s  %s\n" "sha256sum/shasum" "(not found)" "cache invalidation"
@@ -1115,7 +1158,9 @@ __xcind-check-deps() {
 
   echo ""
   echo "Optional (needed for specific features):"
-  __check_optional jq "JSON output (xcind-config --json, xcind-workspace --json)"
+  __xcind-check-deps-optional jq "JSON output (xcind-config --json, xcind-workspace --json)" || {
+    warnings=$((warnings + 1))
+  }
 
   echo ""
 
@@ -1132,9 +1177,6 @@ __xcind-check-deps() {
       echo "  • Optional dependencies are missing — some features will be unavailable."
     fi
   fi
-
-  # clean up helpers from the shell namespace
-  unset -f __check_required __check_optional __dep_version
 
   return "$rc"
 }
