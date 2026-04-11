@@ -332,7 +332,7 @@ __xcind-proxy-validate-service() {
 
   if [ "$exists" != "true" ]; then
     local available
-    available=$(yq -r '.services | keys | .[]' "$resolved_config" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+    available=$(__xcind-list-services "$resolved_config" | tr '\n' ', ' | sed 's/,$//')
     echo "Error: Service '$service' not found in compose config. Available services: $available" >&2
     return 1
   fi

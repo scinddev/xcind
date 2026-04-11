@@ -10,18 +10,20 @@
 
 set -euo pipefail
 
-# Locate xcind-bootstrap.bash by following symlinks of this script
-# (npm, nix profile, and manual symlinks all route through here).
+# Resolve XCIND_ROOT by following symlinks to the real install directory
+# (npm, nix profile, and manual symlinks all route through here). macOS
+# lacks `readlink -f`, so the resolver is a manual loop.
 # Keep in sync with the equivalent stub in the other bin/ scripts.
-__xcind_boot="${BASH_SOURCE[0]}"
-while [ -L "$__xcind_boot" ]; do
-  __xcind_boot_dir=$(cd "$(dirname "$__xcind_boot")" && pwd)
-  __xcind_boot=$(readlink "$__xcind_boot")
-  [[ $__xcind_boot != /* ]] && __xcind_boot="$__xcind_boot_dir/$__xcind_boot"
+__xcind_src="${BASH_SOURCE[0]}"
+while [ -L "$__xcind_src" ]; do
+  __xcind_src_dir=$(cd "$(dirname "$__xcind_src")" && pwd)
+  __xcind_src=$(readlink "$__xcind_src")
+  [[ $__xcind_src != /* ]] && __xcind_src="$__xcind_src_dir/$__xcind_src"
 done
+XCIND_ROOT="$(cd "$(dirname "$__xcind_src")/.." && pwd)"
+unset __xcind_src __xcind_src_dir
 # shellcheck disable=SC1091
-source "$(cd "$(dirname "$__xcind_boot")/.." && pwd)/lib/xcind/xcind-bootstrap.bash"
-unset __xcind_boot __xcind_boot_dir
+source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
 
 if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
   echo "xcind-proxy ${XCIND_VERSION}"
@@ -166,9 +168,14 @@ __xcind-proxy-status() {
     return 0
   fi
 
-  # Source config for display
-  # shellcheck disable=SC1091
-  source "$XCIND_PROXY_CONFIG_DIR/config.sh"
+  # Source config for display. The outer check at line 158 guarantees the
+  # compose file exists, but config.sh could still be missing (e.g., after a
+  # manual delete or a partial migration) — fall through with defaults in
+  # that case so status still prints something useful.
+  if [ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$XCIND_PROXY_CONFIG_DIR/config.sh"
+  fi
 
   # Check if running
   local running_raw
