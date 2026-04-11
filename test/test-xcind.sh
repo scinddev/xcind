@@ -944,6 +944,201 @@ assert_eq "empty execute hooks: compose opts unchanged (content)" \
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-run-hooks failure modes ==="
+
+# 1. Hook that exits non-zero must abort the pipeline and propagate the code.
+FAIL_APP=$(mktemp_d)
+echo '# fail hook test' >"$FAIL_APP/.xcind.sh"
+touch "$FAIL_APP/compose.yaml"
+
+export XCIND_SHA="failhook001"
+export XCIND_CACHE_DIR="$FAIL_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$FAIL_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+failing_hook() {
+  echo "Error: intentional failure" >&2
+  return 7
+}
+XCIND_HOOKS_GENERATE=("failing_hook")
+
+reset_xcind_state
+__xcind-load-config "$FAIL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$FAIL_APP"
+
+fail_stderr=$(__xcind-run-hooks "$FAIL_APP" 2>&1) && fail_rc=0 || fail_rc=$?
+assert_eq "failing hook: rc propagates" "7" "$fail_rc"
+assert_contains "failing hook: stderr mentions hook name" "failing_hook" "$fail_stderr"
+assert_contains "failing hook: stderr mentions exit code" "exit code 7" "$fail_stderr"
+
+unset -f failing_hook
+rm -rf "$FAIL_APP"
+
+# 2. Hook emits `-f` to a file that later disappears — cache-hit validation
+#    must detect the missing file and rebuild from scratch.
+REBUILD_APP=$(mktemp_d)
+echo '# rebuild test' >"$REBUILD_APP/.xcind.sh"
+touch "$REBUILD_APP/compose.yaml"
+
+export XCIND_SHA="rebuild002"
+export XCIND_CACHE_DIR="$REBUILD_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$REBUILD_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+REBUILD_COUNT_FILE=$(mktemp)
+echo 0 >"$REBUILD_COUNT_FILE"
+
+# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+rebuilding_hook() {
+  local count
+  count=$(<"$REBUILD_COUNT_FILE")
+  count=$((count + 1))
+  echo "$count" >"$REBUILD_COUNT_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.rebuild.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.rebuild.yaml"
+}
+XCIND_HOOKS_GENERATE=("rebuilding_hook")
+
+reset_xcind_state
+__xcind-load-config "$REBUILD_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$REBUILD_APP"
+
+# First run: cache miss → hook runs once, persists output.
+__xcind-run-hooks "$REBUILD_APP"
+first_count=$(<"$REBUILD_COUNT_FILE")
+assert_eq "rebuild: hook ran on cache miss" "1" "$first_count"
+
+# Remove the referenced compose file to invalidate the cached hook output.
+rm -f "$XCIND_GENERATED_DIR/compose.rebuild.yaml"
+
+# Second run: cache hit → validation fails → recursive rebuild. Hook must
+# run a SECOND time because __xcind-run-hooks wipes XCIND_GENERATED_DIR
+# and recurses into the cache-miss branch.
+reset_xcind_state
+__xcind-load-config "$REBUILD_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$REBUILD_APP"
+__xcind-run-hooks "$REBUILD_APP"
+second_count=$(<"$REBUILD_COUNT_FILE")
+assert_eq "rebuild: hook re-ran after validation failure" "2" "$second_count"
+assert_file_exists "rebuild: referenced file re-created" \
+  "$XCIND_GENERATED_DIR/compose.rebuild.yaml"
+
+unset -f rebuilding_hook
+rm -rf "$REBUILD_APP"
+rm -f "$REBUILD_COUNT_FILE"
+
+# 3. Hook emits assorted line shapes — empty lines, single tokens, and
+#    flag+value pairs. __xcind-append-hook-output-to-opts must not crash
+#    and must normalize them correctly into XCIND_DOCKER_COMPOSE_OPTS.
+SHAPES_APP=$(mktemp_d)
+echo '# shapes test' >"$SHAPES_APP/.xcind.sh"
+touch "$SHAPES_APP/compose.yaml"
+
+export XCIND_SHA="shapes003"
+export XCIND_CACHE_DIR="$SHAPES_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$SHAPES_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+shapes_hook() {
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.shapes.yaml"
+  # Intentionally weird output: blank line, single token, -f pair
+  printf '\n--verbose\n-f %s\n' "$XCIND_GENERATED_DIR/compose.shapes.yaml"
+}
+XCIND_HOOKS_GENERATE=("shapes_hook")
+
+reset_xcind_state
+__xcind-load-config "$SHAPES_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$SHAPES_APP"
+
+__xcind-run-hooks "$SHAPES_APP" && shapes_rc=0 || shapes_rc=$?
+assert_eq "shapes: hook succeeds" "0" "$shapes_rc"
+
+shapes_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "shapes: --verbose single token parsed" "--verbose" "$shapes_opts"
+assert_contains "shapes: -f flag+value parsed" "compose.shapes.yaml" "$shapes_opts"
+
+unset -f shapes_hook
+rm -rf "$SHAPES_APP"
+
+# 4. Hook emits -f to a nonexistent path on FIRST run — the cache-miss
+#    branch persists the output verbatim, but the next cache-hit run
+#    triggers validation failure and recurses. Without a guard this would
+#    be an infinite loop if the hook kept emitting the bad path; our hook
+#    does the same thing on both invocations so the final state after the
+#    rebuild still has the bad path persisted. Assert that rc is still 0
+#    (validation rebuilds, doesn't fail the pipeline) and that the hook
+#    was re-invoked as expected.
+BAD_APP=$(mktemp_d)
+echo '# bad path test' >"$BAD_APP/.xcind.sh"
+touch "$BAD_APP/compose.yaml"
+
+export XCIND_SHA="badpath004"
+export XCIND_CACHE_DIR="$BAD_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$BAD_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+BAD_COUNT_FILE=$(mktemp)
+echo 0 >"$BAD_COUNT_FILE"
+
+# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+bad_path_hook() {
+  local count
+  count=$(<"$BAD_COUNT_FILE")
+  count=$((count + 1))
+  echo "$count" >"$BAD_COUNT_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  # Create the file for the first run only; subsequent rebuilds see it
+  # present (because we created it earlier), so validation passes on
+  # the second cache-hit attempt.
+  touch "$XCIND_GENERATED_DIR/compose.bad.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.bad.yaml"
+}
+XCIND_HOOKS_GENERATE=("bad_path_hook")
+
+reset_xcind_state
+__xcind-load-config "$BAD_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$BAD_APP"
+
+# First run — cache miss
+__xcind-run-hooks "$BAD_APP"
+# Delete the file to force validation failure on cache-hit path
+rm -f "$XCIND_GENERATED_DIR/compose.bad.yaml"
+
+# Second run — cache hit → validation fails → recurse. Hook re-creates
+# the file so the recursive cache-miss branch succeeds and the whole
+# call returns 0 without ever exposing the transient missing state.
+reset_xcind_state
+__xcind-load-config "$BAD_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$BAD_APP"
+__xcind-run-hooks "$BAD_APP" && bad_rc=0 || bad_rc=$?
+assert_eq "bad -f: pipeline recovers via rebuild" "0" "$bad_rc"
+bad_count=$(<"$BAD_COUNT_FILE")
+assert_eq "bad -f: hook invoked twice (miss + rebuild)" "2" "$bad_count"
+assert_file_exists "bad -f: referenced file re-created" \
+  "$XCIND_GENERATED_DIR/compose.bad.yaml"
+
+unset -f bad_path_hook
+rm -rf "$BAD_APP"
+rm -f "$BAD_COUNT_FILE"
+
+# Restore default hooks and clean environment for subsequent tests
+unset XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+reset_xcind_state
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-render-template (hostname generation) ==="
 
 hostname=$(__xcind-render-template "{app}-{export}.{domain}" app "myapp" export "web" domain "localhost")
