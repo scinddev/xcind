@@ -237,22 +237,15 @@ __xcind-assigned-upsert() {
 __xcind-assigned-remove-entry() {
   local app_path="$1" xport="$2"
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  __xcind-assigned-rewrite __xcind-assigned-keep-not-entry \
+    "$app_path" "$xport"
+}
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
-
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_path == "$app_path" && $L_xport == "$xport" ]]; then
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+__xcind-assigned-keep-not-entry() {
+  local L_xport="$3" L_path="$5"
+  local target_path="$7" target_xport="$8"
+  [[ $L_path == "$target_path" && $L_xport == "$target_xport" ]] && return 1
+  return 0
 }
 
 # Remove a single entry by host port. Returns 0 if an entry was removed,
