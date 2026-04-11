@@ -1245,12 +1245,12 @@ wait
 unset -f command
 
 # Unlocked fallback is best-effort: the only guarantee we assert is that
-# at least one write reaches the state file. mv(1) is atomic, but the
-# read-filter-rewrite sequence inside __xcind-assigned-upsert is not
-# serialized, so rows may be lost, duplicated, or re-ordered — and a
-# particularly unlucky interleaving can even produce lines that do not
-# parse as 6-field TSV. That's the cost of running without a lock; the
-# locked test above is the one that enforces the strong invariants.
+# at least one write reaches the state file. mv(1) keeps each completed
+# rewrite atomic, but the read-filter-rewrite sequence inside
+# __xcind-assigned-upsert is not serialized, so concurrent writers can
+# still lose updates, overwrite one another's rows, or re-order the final
+# contents (last-writer-wins). That's the cost of running without a lock;
+# the locked test above is the one that enforces the strong invariants.
 row_count=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
 assert_eq "unlocked: at least one row persisted" "0" \
   "$([ "$row_count" -ge 1 ] && echo 0 || echo 1)"
@@ -1378,6 +1378,18 @@ if command -v python3 >/dev/null 2>&1; then
   }
 
   PORT_FILE=$(mktemp)
+  LISTENER_PID=""
+  # Always reap the listener even if an assertion fails under set -e.
+  # shellcheck disable=SC2317,SC2329  # invoked via trap
+  _tcp_listener_cleanup() {
+    if [ -n "${LISTENER_PID:-}" ]; then
+      kill "$LISTENER_PID" 2>/dev/null || true
+      wait "$LISTENER_PID" 2>/dev/null || true
+    fi
+    rm -f "$PORT_FILE"
+  }
+  trap _tcp_listener_cleanup EXIT
+
   # Bind to 127.0.0.1:0 so the kernel picks a free port for us.
   PORT_FILE="$PORT_FILE" python3 -c '
 import os, socket, time
@@ -1396,6 +1408,18 @@ time.sleep(30)
     sleep 0.05
     _waited=$((_waited + 1))
   done
+
+  # Guard against a listener that crashed or stalled before publishing:
+  # without this, BUSY_PORT would be empty and the probe would silently
+  # test port "", giving a confusing failure under set -e.
+  if [ ! -s "$PORT_FILE" ]; then
+    if ! kill -0 "$LISTENER_PID" 2>/dev/null; then
+      echo "ERROR: /dev/tcp test listener exited before publishing its port." >&2
+    else
+      echo "ERROR: /dev/tcp test listener did not publish its port within the expected time." >&2
+    fi
+    exit 1
+  fi
   BUSY_PORT=$(<"$PORT_FILE")
 
   __xcind-assigned-port-available "$BUSY_PORT" && tcp_busy_rc=0 || tcp_busy_rc=$?
@@ -1403,6 +1427,7 @@ time.sleep(30)
 
   kill "$LISTENER_PID" 2>/dev/null || true
   wait "$LISTENER_PID" 2>/dev/null || true
+  LISTENER_PID=""
   rm -f "$PORT_FILE"
 
   # After killing the listener the port should be free again. TIME_WAIT
@@ -1413,6 +1438,8 @@ time.sleep(30)
   assert_eq "/dev/tcp: free port reported free" "0" "$tcp_free_rc"
 
   unset -f command
+  trap - EXIT
+  unset -f _tcp_listener_cleanup
 else
   echo "  (skipped: python3 not available for /dev/tcp listener setup)"
 fi
