@@ -9,45 +9,10 @@ source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
 
 PASS=0
 FAIL=0
-
-assert_eq() {
-  local label="$1" expected="$2" actual="$3"
-  if [ "$expected" = "$actual" ]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label"
-    echo "    expected: $expected"
-    echo "    actual:   $actual"
-    FAIL=$((FAIL + 1))
-  fi
-}
-
-assert_contains() {
-  local label="$1" needle="$2" haystack="$3"
-  if [[ $haystack == *"$needle"* ]]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label"
-    echo "    expected to contain: $needle"
-    echo "    actual: $haystack"
-    FAIL=$((FAIL + 1))
-  fi
-}
-
-assert_not_contains() {
-  local label="$1" needle="$2" haystack="$3"
-  if [[ $haystack != *"$needle"* ]]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label"
-    echo "    expected NOT to contain: $needle"
-    echo "    actual: $haystack"
-    FAIL=$((FAIL + 1))
-  fi
-}
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/assert.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/setup.sh"
 
 # ======================================================================
 echo "=== Test: __xcind-derive-override ==="
@@ -85,7 +50,7 @@ echo ""
 echo "=== Test: __xcind-app-root ==="
 
 # Set up a mock application
-MOCK_APP=$(mktemp -d)
+MOCK_APP=$(mktemp_d)
 mkdir -p "$MOCK_APP/src/deep/nested"
 echo '# test config' >"$MOCK_APP/.xcind.sh"
 
@@ -104,9 +69,13 @@ assert_eq "XCIND_APP_ROOT override" "/explicit/path" "$result"
 unset XCIND_APP_ROOT
 
 # Test: fails when no .xcind.sh found
-EMPTY_DIR=$(mktemp -d)
-result=$(__xcind-app-root "$EMPTY_DIR" 2>/dev/null) && status=0 || status=$?
+EMPTY_DIR=$(mktemp_d)
+err_file=$(mktemp)
+result=$(__xcind-app-root "$EMPTY_DIR" 2>"$err_file") && status=0 || status=$?
+err=$(<"$err_file")
+rm -f "$err_file"
 assert_eq "fails without .xcind.sh" "1" "$status"
+assert_contains "error mentions missing .xcind.sh" ".xcind.sh" "$err"
 
 rm -rf "$MOCK_APP" "$EMPTY_DIR"
 
@@ -115,7 +84,7 @@ echo ""
 echo "=== Test: __xcind-resolve-files ==="
 
 # Set up a mock application with files
-MOCK_APP=$(mktemp -d)
+MOCK_APP=$(mktemp_d)
 mkdir -p "$MOCK_APP/docker"
 
 # Create some compose files
@@ -202,7 +171,7 @@ echo ""
 echo "=== Test: __xcind-load-config defaults ==="
 
 # Set up an application with standard Docker Compose files and a minimal .xcind.sh
-DEFAULT_APP=$(mktemp -d)
+DEFAULT_APP=$(mktemp_d)
 echo '# empty config — rely on defaults' >"$DEFAULT_APP/.xcind.sh"
 touch "$DEFAULT_APP/compose.yaml"
 touch "$DEFAULT_APP/docker-compose.yml"
@@ -236,7 +205,7 @@ rm -rf "$DEFAULT_APP"
 echo ""
 echo "=== Test: __xcind-load-config overrides defaults ==="
 
-OVERRIDE_PROJECT=$(mktemp -d)
+OVERRIDE_PROJECT=$(mktemp_d)
 cat >"$OVERRIDE_PROJECT/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_FILES=("my-compose.yaml")
 XCIND_COMPOSE_ENV_FILES=(".env.custom")
@@ -257,7 +226,7 @@ rm -rf "$OVERRIDE_PROJECT"
 echo ""
 echo "=== Test: BC shim migrates XCIND_ENV_FILES ==="
 
-BC_APP=$(mktemp -d)
+BC_APP=$(mktemp_d)
 cat >"$BC_APP/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_FILES=("compose.yaml")
 XCIND_ENV_FILES=(".env.legacy")
@@ -265,8 +234,7 @@ EOF
 touch "$BC_APP/compose.yaml"
 touch "$BC_APP/.env.legacy"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-__XCIND_SOURCED_CONFIG_FILES=()
+reset_xcind_state
 
 bc_stderr_file=$(mktemp)
 __xcind-load-config "$BC_APP" 2>"$bc_stderr_file"
@@ -278,7 +246,7 @@ assert_eq "BC shim sets XCIND_COMPOSE_ENV_FILES[0]" ".env.legacy" "${XCIND_COMPO
 assert_contains "BC shim emits deprecation warning" "deprecated" "$bc_stderr"
 
 rm -rf "$BC_APP"
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ENV_FILES
+reset_xcind_state
 
 # ======================================================================
 echo ""
@@ -342,7 +310,7 @@ fi
 echo ""
 echo "=== Test: __xcind-dump-docker-compose-wrapper ==="
 
-WRAPPER_APP=$(mktemp -d)
+WRAPPER_APP=$(mktemp_d)
 echo '# test' >"$WRAPPER_APP/.xcind.sh"
 
 compose_wrapper=$(__xcind-dump-docker-compose-wrapper "$WRAPPER_APP" "/usr/local/bin")
@@ -408,7 +376,7 @@ echo ""
 echo "=== Test: __xcind-discover-workspace ==="
 
 # Set up workspace layout: workspace/app/
-WS_ROOT=$(mktemp -d)
+WS_ROOT=$(mktemp_d)
 mkdir -p "$WS_ROOT/myworkspace/myapp"
 echo 'XCIND_IS_WORKSPACE=1' >"$WS_ROOT/myworkspace/.xcind.sh"
 echo '# app config' >"$WS_ROOT/myworkspace/myapp/.xcind.sh"
@@ -421,7 +389,7 @@ assert_eq "workspace discovered - XCIND_WORKSPACE_ROOT" "$WS_ROOT/myworkspace" "
 assert_eq "workspace discovered - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
 
 # Test: parent .xcind.sh without XCIND_IS_WORKSPACE=1 is not treated as workspace
-NON_WS_PARENT=$(mktemp -d)
+NON_WS_PARENT=$(mktemp_d)
 mkdir -p "$NON_WS_PARENT/someapp"
 echo '# non-workspace config' >"$NON_WS_PARENT/.xcind.sh"
 echo '# app config' >"$NON_WS_PARENT/someapp/.xcind.sh"
@@ -433,7 +401,7 @@ assert_eq "non-workspace parent - XCIND_WORKSPACE_ROOT empty" "" "${XCIND_WORKSP
 rm -rf "$NON_WS_PARENT"
 
 # Test: no workspace when parent has no .xcind.sh
-STANDALONE_APP=$(mktemp -d)
+STANDALONE_APP=$(mktemp_d)
 echo '# standalone app' >"$STANDALONE_APP/.xcind.sh"
 unset XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
 __xcind-discover-workspace "$STANDALONE_APP"
@@ -448,8 +416,12 @@ assert_eq "app-root skips workspace dir" "$WS_ROOT/myworkspace/myapp" "$result"
 
 # Test: __xcind-app-root from within workspace root fails (no app .xcind.sh above)
 unset XCIND_APP_ROOT XCIND_IS_WORKSPACE
-result=$(__xcind-app-root "$WS_ROOT/myworkspace" 2>/dev/null) && status=0 || status=$?
+ws_err_file=$(mktemp)
+result=$(__xcind-app-root "$WS_ROOT/myworkspace" 2>"$ws_err_file") && status=0 || status=$?
+ws_err=$(<"$ws_err_file")
+rm -f "$ws_err_file"
 assert_eq "app-root from workspace root fails" "1" "$status"
+assert_contains "app-root error mentions missing .xcind.sh" ".xcind.sh" "$ws_err"
 
 rm -rf "$WS_ROOT" "$STANDALONE_APP"
 
@@ -461,10 +433,11 @@ echo "=== Test: __xcind-late-bind-workspace ==="
 unset XCIND_WORKSPACE_ROOT
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE="myws"
-XCIND_APP_ROOT="/tmp/test-app"
+LATE_BIND_APP=$(mktemp_d)
+XCIND_APP_ROOT="$LATE_BIND_APP"
 __xcind-late-bind-workspace
 assert_eq "late-bind flips XCIND_WORKSPACELESS" "0" "$XCIND_WORKSPACELESS"
-assert_eq "late-bind sets XCIND_WORKSPACE_ROOT" "/tmp/test-app" "$XCIND_WORKSPACE_ROOT"
+assert_eq "late-bind sets XCIND_WORKSPACE_ROOT" "$LATE_BIND_APP" "$XCIND_WORKSPACE_ROOT"
 
 # Test: no late-bind when already in workspace mode
 XCIND_WORKSPACELESS=0
@@ -558,14 +531,14 @@ unset XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE XCIND_WORKSPACELESS_APEX_ROUTER_
 echo ""
 echo "=== Test: __xcind-compute-sha ==="
 
-SHA_APP=$(mktemp -d)
+SHA_APP=$(mktemp_d)
 echo '# sha test config' >"$SHA_APP/.xcind.sh"
 mkdir -p "$SHA_APP/docker"
 echo 'version: "3"' >"$SHA_APP/docker/compose.yaml"
 touch "$SHA_APP/.env"
 
 # Build opts so SHA has compose files to hash
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+reset_xcind_state
 __xcind-load-config "$SHA_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 XCIND_COMPOSE_DIR="docker"
@@ -596,13 +569,11 @@ rm -rf "$SHA_APP"
 echo ""
 echo "=== Test: SHA invalidates when detected host-gateway value changes ==="
 
-HGW_SHA_APP=$(mktemp -d)
+HGW_SHA_APP=$(mktemp_d)
 echo '# hgw sha test' >"$HGW_SHA_APP/.xcind.sh"
 touch "$HGW_SHA_APP/compose.yaml"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-__XCIND_SOURCED_CONFIG_FILES=()
-XCIND_DOCKER_COMPOSE_OPTS=()
+reset_xcind_state
 __xcind-load-config "$HGW_SHA_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$HGW_SHA_APP"
@@ -642,13 +613,13 @@ assert_eq "SHA unchanged when hook disabled regardless of detection" \
 source "$XCIND_ROOT/lib/xcind/xcind-host-gateway-lib.bash"
 unset XCIND_HOST_GATEWAY_ENABLED
 rm -rf "$HGW_SHA_APP"
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+reset_xcind_state
 
 # ======================================================================
 echo ""
 echo "=== Test: __xcind-run-hooks (stub) ==="
 
-HOOK_APP=$(mktemp -d)
+HOOK_APP=$(mktemp_d)
 echo '# hook test' >"$HOOK_APP/.xcind.sh"
 touch "$HOOK_APP/compose.yaml"
 
@@ -666,7 +637,7 @@ stub_hook() {
 XCIND_HOOKS_GENERATE=("stub_hook")
 
 # Build base opts
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+reset_xcind_state
 __xcind-load-config "$HOOK_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$HOOK_APP"
@@ -689,7 +660,7 @@ assert_contains "hook output replayed (cache hit)" "compose.stub.yaml" "$opts2"
 echo ""
 echo "=== Test: __xcind-run-hooks ordering (cache hit preserves XCIND_HOOKS_GENERATE order) ==="
 
-ORDER_APP=$(mktemp -d)
+ORDER_APP=$(mktemp_d)
 echo '# order test' >"$ORDER_APP/.xcind.sh"
 touch "$ORDER_APP/compose.yaml"
 
@@ -710,7 +681,7 @@ hook_beta() {
 # shellcheck disable=SC2034 # consumed by __xcind-run-hooks
 XCIND_HOOKS_GENERATE=("hook_beta" "hook_alpha")
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+reset_xcind_state
 __xcind-load-config "$ORDER_APP"
 XCIND_COMPOSE_FILES=("compose.yaml")
 __xcind-build-compose-opts "$ORDER_APP"
@@ -741,14 +712,15 @@ rm -rf "$HOOK_APP"
 echo ""
 echo "=== Test: __xcind-run-execute-hooks ==="
 
+EXEC_APP=$(mktemp_d)
 EXEC_HOOK_CALLED=""
 stub_execute_hook() {
   EXEC_HOOK_CALLED="yes:$1"
 }
 XCIND_HOOKS_EXECUTE=("stub_execute_hook")
 
-__xcind-run-execute-hooks "/tmp/test-app"
-assert_eq "execute hook called with app_root" "yes:/tmp/test-app" "$EXEC_HOOK_CALLED"
+__xcind-run-execute-hooks "$EXEC_APP"
+assert_eq "execute hook called with app_root" "yes:$EXEC_APP" "$EXEC_HOOK_CALLED"
 
 # Verify execute hooks always run (no caching)
 EXEC_HOOK_COUNT=0
@@ -757,16 +729,22 @@ counting_execute_hook() {
 }
 XCIND_HOOKS_EXECUTE=("counting_execute_hook")
 
-__xcind-run-execute-hooks "/tmp/test-app"
-__xcind-run-execute-hooks "/tmp/test-app"
-__xcind-run-execute-hooks "/tmp/test-app"
+__xcind-run-execute-hooks "$EXEC_APP"
+__xcind-run-execute-hooks "$EXEC_APP"
+__xcind-run-execute-hooks "$EXEC_APP"
 assert_eq "execute hooks run every invocation (not cached)" "3" "$EXEC_HOOK_COUNT"
 
-# Verify empty hooks array is safe
+# Verify empty hooks array leaves XCIND_DOCKER_COMPOSE_OPTS untouched.
+# (Under set -e, the previous assertion — "exit 0" — was tautological:
+#  any non-zero return would have aborted the script before we got here.)
 # shellcheck disable=SC2034 # consumed by __xcind-run-execute-hooks
 XCIND_HOOKS_EXECUTE=()
-__xcind-run-execute-hooks "/tmp/test-app"
-assert_eq "empty execute hooks: no error" "0" "$?"
+XCIND_DOCKER_COMPOSE_OPTS=("-f" "sentinel.yaml")
+__xcind-run-execute-hooks "$EXEC_APP"
+assert_eq "empty execute hooks: compose opts unchanged (count)" \
+  "2" "${#XCIND_DOCKER_COMPOSE_OPTS[@]}"
+assert_eq "empty execute hooks: compose opts unchanged (content)" \
+  "-f sentinel.yaml" "${XCIND_DOCKER_COMPOSE_OPTS[*]}"
 
 # ======================================================================
 echo ""
@@ -785,7 +763,7 @@ assert_eq "router name" "myapp-api-http" "$router"
 echo ""
 echo "=== Test: __xcind-source-additional-configs ==="
 
-ADDCFG_APP=$(mktemp -d)
+ADDCFG_APP=$(mktemp_d)
 __XCIND_SOURCED_CONFIG_FILES=()
 
 cat >"$ADDCFG_APP/.xcind.sh" <<'EOF'
@@ -803,7 +781,7 @@ XCIND_PROXY_EXPORTS=("nginx" "mailhog")
 EOF
 
 # Load config then source additional configs
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+reset_xcind_state
 __xcind-load-config "$ADDCFG_APP"
 
 assert_eq "base config sets XCIND_PROXY_EXPORTS" "nginx" "${XCIND_PROXY_EXPORTS[0]}"
@@ -828,7 +806,7 @@ rm -rf "$ADDCFG_APP"
 echo ""
 echo "=== Test: __xcind-source-additional-configs with variable expansion ==="
 
-VAREXP_APP=$(mktemp -d)
+VAREXP_APP=$(mktemp_d)
 __XCIND_SOURCED_CONFIG_FILES=()
 
 cat >"$VAREXP_APP/.xcind.sh" <<'XCEOF'
@@ -839,7 +817,7 @@ cat >"$VAREXP_APP/.xcind.staging.sh" <<'EOF'
 XCIND_STAGING_LOADED=1
 EOF
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+reset_xcind_state
 export APP_ENV="staging"
 __xcind-load-config "$VAREXP_APP"
 __xcind-source-additional-configs "$VAREXP_APP"
@@ -847,8 +825,8 @@ __xcind-source-additional-configs "$VAREXP_APP"
 assert_eq "variable expansion resolves staging" "1" "${XCIND_STAGING_LOADED:-0}"
 
 # Non-existent file is skipped silently
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES XCIND_STAGING_LOADED
-__XCIND_SOURCED_CONFIG_FILES=()
+reset_xcind_state
+unset XCIND_STAGING_LOADED
 export APP_ENV="prod"
 __xcind-load-config "$VAREXP_APP"
 __xcind-source-additional-configs "$VAREXP_APP"
@@ -864,11 +842,11 @@ rm -rf "$VAREXP_APP"
 echo ""
 echo "=== Test: __xcind-source-additional-configs with empty array ==="
 
-EMPTY_APP=$(mktemp -d)
+EMPTY_APP=$(mktemp_d)
 __XCIND_SOURCED_CONFIG_FILES=()
 echo '# no additional configs' >"$EMPTY_APP/.xcind.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+reset_xcind_state
 __xcind-load-config "$EMPTY_APP"
 __xcind-source-additional-configs "$EMPTY_APP"
 
@@ -882,7 +860,7 @@ echo ""
 echo "=== Test: __xcind-source-additional-configs with unset variable ==="
 
 __XCIND_SOURCED_CONFIG_FILES=()
-WS_UNSET_ROOT=$(mktemp -d)
+WS_UNSET_ROOT=$(mktemp_d)
 mkdir -p "$WS_UNSET_ROOT/myworkspace/myapp"
 
 # Workspace only sets XCIND_IS_WORKSPACE, no XCIND_ADDITIONAL_CONFIG_FILES
@@ -890,7 +868,7 @@ echo 'XCIND_IS_WORKSPACE=1' >"$WS_UNSET_ROOT/myworkspace/.xcind.sh"
 # App .xcind.sh is empty (no XCIND_ADDITIONAL_CONFIG_FILES set)
 echo '# nothing' >"$WS_UNSET_ROOT/myworkspace/myapp/.xcind.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+reset_xcind_state
 export XCIND_APP_ROOT=""
 app_root=$(__xcind-app-root "$WS_UNSET_ROOT/myworkspace/myapp")
 __xcind-discover-workspace "$app_root"
@@ -909,7 +887,7 @@ rm -rf "$WS_UNSET_ROOT"
 echo ""
 echo "=== Test: Workspace additional configs with inheritance ==="
 
-WS_ADD_ROOT=$(mktemp -d)
+WS_ADD_ROOT=$(mktemp_d)
 mkdir -p "$WS_ADD_ROOT/myworkspace/myapp"
 __XCIND_SOURCED_CONFIG_FILES=()
 
@@ -933,8 +911,8 @@ XCIND_COMPOSE_FILES=("compose.yaml" "compose.dev.yaml")
 EOF
 
 # Simulate the pipeline
-unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+reset_xcind_state
+unset XCIND_APP_ROOT
 
 __xcind-discover-workspace "$WS_ADD_ROOT/myworkspace/myapp"
 assert_eq "workspace inherited - XCIND_WORKSPACELESS" "0" "${XCIND_WORKSPACELESS:-}"
@@ -966,7 +944,7 @@ rm -rf "$WS_ADD_ROOT"
 echo ""
 echo "=== Test: App overrides workspace XCIND_ADDITIONAL_CONFIG_FILES ==="
 
-WS_OVR_ROOT=$(mktemp -d)
+WS_OVR_ROOT=$(mktemp_d)
 mkdir -p "$WS_OVR_ROOT/myworkspace/myapp"
 __XCIND_SOURCED_CONFIG_FILES=()
 
@@ -984,8 +962,8 @@ cat >"$WS_OVR_ROOT/myworkspace/myapp/.xcind.local.sh" <<'EOF'
 XCIND_LOCAL_LOADED=1
 EOF
 
-unset XCIND_APP_ROOT XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES XCIND_LOCAL_LOADED
+reset_xcind_state
+unset XCIND_APP_ROOT XCIND_LOCAL_LOADED
 
 __xcind-discover-workspace "$WS_OVR_ROOT/myworkspace/myapp"
 
@@ -1007,7 +985,7 @@ rm -rf "$WS_OVR_ROOT"
 echo ""
 echo "=== Test: SHA includes additional config hashes ==="
 
-SHA_ADD_APP=$(mktemp -d)
+SHA_ADD_APP=$(mktemp_d)
 __XCIND_SOURCED_CONFIG_FILES=()
 
 cat >"$SHA_ADD_APP/.xcind.sh" <<'EOF'
@@ -1017,7 +995,7 @@ EOF
 echo 'version: "3"' >"$SHA_ADD_APP/compose.yaml"
 echo 'XCIND_DEV_VAR=original' >"$SHA_ADD_APP/.xcind.dev.sh"
 
-unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+reset_xcind_state
 __xcind-load-config "$SHA_ADD_APP"
 __xcind-source-additional-configs "$SHA_ADD_APP"
 __xcind-build-compose-opts "$SHA_ADD_APP"
@@ -1045,7 +1023,7 @@ echo ""
 echo "=== Test: JSON output includes configFiles and metadata ==="
 
 if command -v jq &>/dev/null; then
-  JSON_APP=$(mktemp -d)
+  JSON_APP=$(mktemp_d)
   __XCIND_SOURCED_CONFIG_FILES=()
 
   cat >"$JSON_APP/.xcind.sh" <<'EOF'
@@ -1055,7 +1033,7 @@ EOF
   touch "$JSON_APP/compose.yaml"
   echo '# dev config' >"$JSON_APP/.xcind.dev.sh"
 
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS XCIND_ADDITIONAL_CONFIG_FILES
+  reset_xcind_state
   XCIND_WORKSPACELESS=1
   XCIND_WORKSPACE=""
   XCIND_APP="testapp"
@@ -1088,7 +1066,7 @@ EOF
   rm -rf "$JSON_APP"
 
   # Test workspace metadata
-  JSON_WS=$(mktemp -d)
+  JSON_WS=$(mktemp_d)
   __XCIND_SOURCED_CONFIG_FILES=("$JSON_WS/.xcind.sh")
   XCIND_WORKSPACELESS=0
   XCIND_WORKSPACE="myws"
@@ -1116,7 +1094,7 @@ fi
 echo ""
 echo "=== Test: xcind-naming-hook (workspaceless mode) ==="
 
-NAMING_WL=$(mktemp -d)
+NAMING_WL=$(mktemp_d)
 export XCIND_SHA="naminghash"
 export XCIND_CACHE_DIR="$NAMING_WL/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$NAMING_WL/.xcind/generated/$XCIND_SHA"
@@ -1141,7 +1119,7 @@ rm -rf "$NAMING_WL"
 echo ""
 echo "=== Test: xcind-naming-hook (workspace mode) ==="
 
-NAMING_WS=$(mktemp -d)
+NAMING_WS=$(mktemp_d)
 export XCIND_SHA="naminghash2"
 export XCIND_CACHE_DIR="$NAMING_WS/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$NAMING_WS/.xcind/generated/$XCIND_SHA"
@@ -1164,7 +1142,7 @@ rm -rf "$NAMING_WS"
 echo ""
 echo "=== Test: xcind-app-env-hook (no-op when XCIND_APP_ENV_FILES unset) ==="
 
-APPENV_NOOP=$(mktemp -d)
+APPENV_NOOP=$(mktemp_d)
 export XCIND_SHA="appenvnoop"
 export XCIND_CACHE_DIR="$APPENV_NOOP/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$APPENV_NOOP/.xcind/generated/$XCIND_SHA"
@@ -1196,7 +1174,7 @@ echo ""
 echo "=== Test: xcind-app-env-hook generates compose.app-env.yaml ==="
 
 if command -v yq &>/dev/null; then
-  APPENV_APP=$(mktemp -d)
+  APPENV_APP=$(mktemp_d)
   export XCIND_SHA="appenvhash"
   export XCIND_CACHE_DIR="$APPENV_APP/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$APPENV_APP/.xcind/generated/$XCIND_SHA"
@@ -1260,8 +1238,8 @@ fi
 # ======================================================================
 echo "=== Test: __xcind-check-deps ==="
 
-CDEPS_STUBS=$(mktemp -d)
-CDEPS_EMPTY=$(mktemp -d)
+CDEPS_STUBS=$(mktemp_d)
+CDEPS_EMPTY=$(mktemp_d)
 
 # docker stub: handles --version, compose version, and compose version --short
 cat >"$CDEPS_STUBS/docker" <<'STUB'
@@ -1331,7 +1309,7 @@ echo "=== Test: --generate-docker-compose-configuration ==="
 
 if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
 
-  GCC_TEST_APP=$(mktemp -d)
+  GCC_TEST_APP=$(mktemp_d)
   cat >"$GCC_TEST_APP/.xcind.sh" <<'XCINDEOF'
 XCIND_COMPOSE_FILES=(compose.yaml)
 XCIND_COMPOSE_ENV_FILES=()
@@ -1343,7 +1321,7 @@ services:
 COMPEOF
 
   # 1. --generate-docker-compose-configuration=FILE generates the file
-  GCC_OUT_FILE=$(mktemp -d)/compose.xcind.yaml
+  GCC_OUT_FILE=$(mktemp_d)/compose.xcind.yaml
   (cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --generate-docker-compose-configuration="$GCC_OUT_FILE") && gcc_rc=0 || gcc_rc=$?
   assert_eq "generate-docker-compose-configuration: exit code 0" "0" "$gcc_rc"
@@ -1354,7 +1332,7 @@ COMPEOF
   rm -rf "$(dirname "$GCC_OUT_FILE")"
 
   # 2. --generate-docker-compose-configuration FILE (space-separated) works identically
-  GCC_OUT_FILE2=$(mktemp -d)/compose.xcind.yaml
+  GCC_OUT_FILE2=$(mktemp_d)/compose.xcind.yaml
   (cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --generate-docker-compose-configuration "$GCC_OUT_FILE2") && gcc_rc=0 || gcc_rc=$?
   assert_eq "generate-docker-compose-configuration space form: exit code 0" "0" "$gcc_rc"
@@ -1363,12 +1341,12 @@ COMPEOF
   rm -rf "$(dirname "$GCC_OUT_FILE2")"
 
   # 3. --generate-docker-compose-configuration fails gracefully on bad config
-  GCC_BAD_APP=$(mktemp -d)
+  GCC_BAD_APP=$(mktemp_d)
   cat >"$GCC_BAD_APP/.xcind.sh" <<'XCINDEOF'
 XCIND_COMPOSE_FILES=(nonexistent.yaml)
 XCIND_COMPOSE_ENV_FILES=()
 XCINDEOF
-  GCC_BAD_OUT=$(mktemp -d)/compose.xcind.yaml
+  GCC_BAD_OUT=$(mktemp_d)/compose.xcind.yaml
   (cd "$GCC_BAD_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --generate-docker-compose-configuration="$GCC_BAD_OUT" 2>&1) && gcc_bad_rc=0 || gcc_bad_rc=$?
   assert_eq "generate-docker-compose-configuration bad config: non-zero exit" "true" \
@@ -1385,7 +1363,7 @@ XCINDEOF
     "services:" "$gcc_stdout_result"
 
   # 5. --generate-docker-compose-configuration=FILE --json succeeds (file + JSON to stdout)
-  GCC_COMBINED_FILE=$(mktemp -d)/compose.xcind.yaml
+  GCC_COMBINED_FILE=$(mktemp_d)/compose.xcind.yaml
   gcc_combined_result=$(cd "$GCC_TEST_APP" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
     --generate-docker-compose-configuration="$GCC_COMBINED_FILE" --json) && gcc_combined_rc=0 || gcc_combined_rc=$?
   assert_eq "generate-docker-compose-configuration + json: exit code 0" "0" "$gcc_combined_rc"
@@ -1504,16 +1482,14 @@ echo "=== Test: XCIND_TOOLS parsing and JSON output ==="
 if command -v jq &>/dev/null; then
 
   # --- Setup: fresh app root for tools tests ---
-  TOOLS_APP=$(mktemp -d)
+  TOOLS_APP=$(mktemp_d)
   cat >"$TOOLS_APP/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_FILES=("compose.yaml")
 EOF
   touch "$TOOLS_APP/compose.yaml"
 
   # 1. XCIND_TOOLS not set → "tools": {}
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
   json=$(__xcind-resolve-json "$TOOLS_APP")
@@ -1521,9 +1497,7 @@ EOF
   assert_eq "tools empty when XCIND_TOOLS unset" "{}" "$tools_obj"
 
   # 2. XCIND_TOOLS=() (explicit empty) → "tools": {}
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=()
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1532,9 +1506,7 @@ EOF
   assert_eq "tools empty when XCIND_TOOLS=()" "{}" "$tools_obj"
 
   # 3. Basic tool declarations
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=("php:app" "npm:app")
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1553,9 +1525,7 @@ EOF
   assert_eq "tools count" "2" "$tools_count"
 
   # 4. use=run is reflected
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=("phpunit:app;use=run")
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1565,9 +1535,7 @@ EOF
   assert_eq "tools phpunit use=run" "run" "$phpunit_use"
 
   # 5. path appears only when specified
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=("php:app" "php85:app;path=/usr/local/bin/php8.5")
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1580,9 +1548,7 @@ EOF
   assert_eq "tools php85 path" "/usr/local/bin/php8.5" "$php85_path"
 
   # 6. Duplicate tool names → first wins
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=("php:app" "php:cron")
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1595,9 +1561,7 @@ EOF
   assert_eq "tools duplicate count is 1" "1" "$dup_count"
 
   # 7. Multiple metadata key=value pairs
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=("php:app;use=run;path=/usr/bin/php")
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1610,9 +1574,7 @@ EOF
   assert_eq "tools multi-meta path" "/usr/bin/php" "$multi_path"
 
   # 8. SHA changes when XCIND_TOOLS changes
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
-  __XCIND_SOURCED_CONFIG_FILES=()
-  XCIND_DOCKER_COMPOSE_OPTS=()
+  reset_xcind_state
   XCIND_TOOLS=("php:app")
   __xcind-load-config "$TOOLS_APP"
   __xcind-build-compose-opts "$TOOLS_APP"
@@ -1626,7 +1588,7 @@ EOF
     "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
 
   rm -rf "$TOOLS_APP"
-  unset XCIND_COMPOSE_FILES XCIND_COMPOSE_DIR XCIND_COMPOSE_ENV_FILES XCIND_APP_ENV_FILES XCIND_BAKE_FILES XCIND_TOOLS
+  reset_xcind_state
 
 else
   echo "  (skipped: jq not installed)"
@@ -1637,7 +1599,7 @@ echo ""
 echo "=== Test: xcind-app-hook ==="
 
 if command -v yq &>/dev/null; then
-  APP_HOOK_DIR=$(mktemp -d)
+  APP_HOOK_DIR=$(mktemp_d)
   export XCIND_APP="myapp"
   export XCIND_SHA="apphooktest"
   export XCIND_CACHE_DIR="$APP_HOOK_DIR/.xcind/cache/$XCIND_SHA"
@@ -1681,8 +1643,13 @@ YAML
   rm -rf "$XCIND_GENERATED_DIR"
   mkdir -p "$XCIND_GENERATED_DIR"
   rm -f "$XCIND_CACHE_DIR/resolved-config.yaml"
-  skip_output=$(xcind-app-hook "$APP_HOOK_DIR" 2>/dev/null)
+  skip_err_file=$(mktemp)
+  skip_output=$(xcind-app-hook "$APP_HOOK_DIR" 2>"$skip_err_file")
+  skip_err=$(<"$skip_err_file")
+  rm -f "$skip_err_file"
   assert_eq "app hook skips when no resolved-config" "" "$skip_output"
+  assert_contains "app hook warns about missing resolved-config" \
+    "resolved-config.yaml not found" "$skip_err"
   assert_eq "no compose.app.yaml when skipped" "false" \
     "$([ -f "$XCIND_GENERATED_DIR/compose.app.yaml" ] && echo true || echo false)"
 
@@ -1695,7 +1662,7 @@ fi
 echo ""
 echo "=== Test: xcind-host-gateway-hook no-op when disabled ==="
 
-HGW_NOOP=$(mktemp -d)
+HGW_NOOP=$(mktemp_d)
 export XCIND_SHA="hgwnoop"
 export XCIND_CACHE_DIR="$HGW_NOOP/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$HGW_NOOP/.xcind/generated/$XCIND_SHA"
@@ -1716,7 +1683,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook no-op when no services ==="
 
 if command -v yq &>/dev/null; then
-  HGW_EMPTY=$(mktemp -d)
+  HGW_EMPTY=$(mktemp_d)
   export XCIND_SHA="hgwempty"
   export XCIND_CACHE_DIR="$HGW_EMPTY/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_EMPTY/.xcind/generated/$XCIND_SHA"
@@ -1744,7 +1711,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook generates for all services ==="
 
 if command -v yq &>/dev/null; then
-  HGW_ALL=$(mktemp -d)
+  HGW_ALL=$(mktemp_d)
   export XCIND_SHA="hgwall"
   export XCIND_CACHE_DIR="$HGW_ALL/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_ALL/.xcind/generated/$XCIND_SHA"
@@ -1784,7 +1751,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook skips services with existing mapping ==="
 
 if command -v yq &>/dev/null; then
-  HGW_SKIP=$(mktemp -d)
+  HGW_SKIP=$(mktemp_d)
   export XCIND_SHA="hgwskip"
   export XCIND_CACHE_DIR="$HGW_SKIP/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_SKIP/.xcind/generated/$XCIND_SHA"
@@ -1822,7 +1789,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook skips all when all have mapping ==="
 
 if command -v yq &>/dev/null; then
-  HGW_ALLSKIP=$(mktemp -d)
+  HGW_ALLSKIP=$(mktemp_d)
   export XCIND_SHA="hgwallskip"
   export XCIND_CACHE_DIR="$HGW_ALLSKIP/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_ALLSKIP/.xcind/generated/$XCIND_SHA"
@@ -1858,7 +1825,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook preserves existing extra_hosts ==="
 
 if command -v yq &>/dev/null; then
-  HGW_MERGE=$(mktemp -d)
+  HGW_MERGE=$(mktemp_d)
   export XCIND_SHA="hgwmerge"
   export XCIND_CACHE_DIR="$HGW_MERGE/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_MERGE/.xcind/generated/$XCIND_SHA"
@@ -1900,7 +1867,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook uses XCIND_HOST_GATEWAY override ==="
 
 if command -v yq &>/dev/null; then
-  HGW_OVERRIDE=$(mktemp -d)
+  HGW_OVERRIDE=$(mktemp_d)
   export XCIND_SHA="hgwoverride"
   export XCIND_CACHE_DIR="$HGW_OVERRIDE/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_OVERRIDE/.xcind/generated/$XCIND_SHA"
@@ -1937,7 +1904,10 @@ echo "=== Test: __xcind-detect-host-gateway defaults to host-gateway ==="
 if ! grep -qi microsoft /proc/version 2>/dev/null; then
   # Not WSL2 and not Docker Desktop (CI) — should get "host-gateway"
   unset XCIND_HOST_GATEWAY
-  detected=$(__xcind-detect-host-gateway 2>/dev/null || true)
+  detect_err_file=$(mktemp)
+  detected=$(__xcind-detect-host-gateway 2>"$detect_err_file" || true)
+  detect_err=$(<"$detect_err_file")
+  rm -f "$detect_err_file"
   # Docker Desktop detection may vary, but on native Linux CI we expect host-gateway
   if [[ "$detected" == "host-gateway" ]]; then
     echo "  ✓ detect-host-gateway returns host-gateway on native Linux"
@@ -1948,6 +1918,7 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
     PASS=$((PASS + 1))
   else
     echo "  ✗ detect-host-gateway unexpected value: '$detected'"
+    [ -n "$detect_err" ] && echo "    stderr: $detect_err"
     FAIL=$((FAIL + 1))
   fi
 else
@@ -1975,7 +1946,7 @@ echo ""
 echo "=== Test: xcind-host-gateway-hook handles equals separator in extra_hosts ==="
 
 if command -v yq &>/dev/null; then
-  HGW_EQ=$(mktemp -d)
+  HGW_EQ=$(mktemp_d)
   export XCIND_SHA="hgweq"
   export XCIND_CACHE_DIR="$HGW_EQ/.xcind/cache/$XCIND_SHA"
   export XCIND_GENERATED_DIR="$HGW_EQ/.xcind/generated/$XCIND_SHA"
@@ -2010,7 +1981,7 @@ echo ""
 echo "=== Test: __xcind-detect-host-gateway-wsl2 mirrored mode returns LAN IP ==="
 
 # Mock wslinfo and hostname to simulate WSL2 mirrored mode
-MOCK_BIN=$(mktemp -d)
+MOCK_BIN=$(mktemp_d)
 cat >"$MOCK_BIN/wslinfo" <<'SCRIPT'
 #!/usr/bin/env bash
 echo "mirrored"

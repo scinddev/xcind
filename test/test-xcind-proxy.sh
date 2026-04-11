@@ -9,56 +9,10 @@ source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
 
 PASS=0
 FAIL=0
-
-assert_eq() {
-  local label="$1" expected="$2" actual="$3"
-  if [ "$expected" = "$actual" ]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label"
-    echo "    expected: $expected"
-    echo "    actual:   $actual"
-    FAIL=$((FAIL + 1))
-  fi
-}
-
-assert_contains() {
-  local label="$1" needle="$2" haystack="$3"
-  if [[ $haystack == *"$needle"* ]]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label"
-    echo "    expected to contain: $needle"
-    echo "    actual: $haystack"
-    FAIL=$((FAIL + 1))
-  fi
-}
-
-assert_file_exists() {
-  local label="$1" path="$2"
-  if [ -f "$path" ]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label (file not found: $path)"
-    FAIL=$((FAIL + 1))
-  fi
-}
-
-assert_not_contains() {
-  local label="$1" needle="$2" haystack="$3"
-  if [[ $haystack != *"$needle"* ]]; then
-    echo "  ✓ $label"
-    PASS=$((PASS + 1))
-  else
-    echo "  ✗ $label"
-    echo "    expected NOT to contain: $needle"
-    echo "    actual: $haystack"
-    FAIL=$((FAIL + 1))
-  fi
-}
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/assert.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/setup.sh"
 
 # ======================================================================
 echo "=== Test: xcind-proxy init (mock HOME) ==="
@@ -71,7 +25,7 @@ unset XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME
 
 # Use a temp dir as HOME to avoid touching real config
 REAL_HOME="$HOME"
-MOCK_HOME=$(mktemp -d)
+MOCK_HOME=$(mktemp_d)
 export HOME="$MOCK_HOME"
 
 # Mock docker command to avoid real Docker calls
@@ -130,7 +84,7 @@ rm -rf "$MOCK_HOME"
 echo ""
 echo "=== Test: xcind-proxy init flags ==="
 
-MOCK_HOME2=$(mktemp -d)
+MOCK_HOME2=$(mktemp_d)
 export HOME="$MOCK_HOME2"
 export PATH="$MOCK_HOME2/bin:$REAL_PATH"
 mkdir -p "$MOCK_HOME2/bin"
@@ -185,7 +139,7 @@ rm -rf "$MOCK_HOME2"
 echo ""
 echo "=== Test: __xcind-proxy-ensure-running ==="
 
-MOCK_HOME2=$(mktemp -d)
+MOCK_HOME2=$(mktemp_d)
 REAL_HOME2="$HOME"
 export HOME="$MOCK_HOME2"
 # Re-derive proxy paths from new HOME
@@ -329,7 +283,7 @@ assert_contains "no subcommand shows help" "Usage" "$result"
 echo ""
 echo "=== Test: xcind-proxy status --json (not initialized) ==="
 
-MOCK_HOME_JSON=$(mktemp -d)
+MOCK_HOME_JSON=$(mktemp_d)
 REAL_HOME_JSON="$HOME"
 export HOME="$MOCK_HOME_JSON"
 
@@ -345,7 +299,7 @@ rm -rf "$MOCK_HOME_JSON"
 echo ""
 echo "=== Test: xcind-proxy status --json (initialized) ==="
 
-MOCK_HOME_JSON2=$(mktemp -d)
+MOCK_HOME_JSON2=$(mktemp_d)
 REAL_HOME_JSON2="$HOME"
 export HOME="$MOCK_HOME_JSON2"
 
@@ -419,12 +373,12 @@ echo "=== Test: xcind-proxy-hook (YAML generation) ==="
 
 # These tests require yq
 if command -v yq &>/dev/null; then
-  HOOK_APP=$(mktemp -d)
+  HOOK_APP=$(mktemp_d)
   echo '# hook test' >"$HOOK_APP/.xcind.sh"
 
   # Sandbox HOME so __xcind-proxy-ensure-init never writes to the real home dir
   _orig_HOME="$HOME"
-  HOME=$(mktemp -d)
+  HOME=$(mktemp_d)
   export XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
   export XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
   export XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
@@ -746,7 +700,7 @@ echo ""
 echo "=== Test: xcind-workspace-hook ==="
 
 if command -v yq &>/dev/null; then
-  WS_HOOK_APP=$(mktemp -d)
+  WS_HOOK_APP=$(mktemp_d)
   echo '# ws hook test' >"$WS_HOOK_APP/.xcind.sh"
 
   export XCIND_APP="frontend"
@@ -820,7 +774,7 @@ fi
 echo ""
 echo "=== Test: xcind-workspace init ==="
 
-WS_INIT_DIR=$(mktemp -d)
+WS_INIT_DIR=$(mktemp_d)
 
 # Test: init creates directory and .xcind.sh
 "$XCIND_ROOT/bin/xcind-workspace" init "$WS_INIT_DIR/newws" >/dev/null
@@ -880,7 +834,7 @@ rm -rf "$WS_INIT_DIR"
 echo ""
 echo "=== Test: xcind-workspace status ==="
 
-WS_STATUS_DIR=$(mktemp -d)
+WS_STATUS_DIR=$(mktemp_d)
 REAL_PATH_STATUS="$PATH"
 
 # Create a workspace with two apps
@@ -938,7 +892,7 @@ echo ""
 echo "=== Test: xcind-workspace status defined-services count ==="
 
 if command -v jq &>/dev/null && command -v yq &>/dev/null; then
-  WS_COUNT_DIR=$(mktemp -d)
+  WS_COUNT_DIR=$(mktemp_d)
   REAL_PATH_COUNT="$PATH"
 
   # Workspace with one app whose compose file defines three services.
@@ -999,7 +953,7 @@ echo ""
 echo "=== Test: xcind-workspace status workspace mismatch ==="
 
 if command -v jq &>/dev/null && command -v yq &>/dev/null; then
-  WS_MISMATCH_DIR=$(mktemp -d)
+  WS_MISMATCH_DIR=$(mktemp_d)
   REAL_PATH_MISMATCH="$PATH"
 
   # Two app subdirs under myws/. One has a normal config; the other declares
@@ -1095,7 +1049,7 @@ assert_contains "xcind-assigned-hook registered in GENERATE list" "xcind-assigne
 echo ""
 echo "=== Test: __xcind-assigned-* state file helpers ==="
 
-ASSIGNED_HOME=$(mktemp -d)
+ASSIGNED_HOME=$(mktemp_d)
 _orig_assigned_home="$HOME"
 export HOME="$ASSIGNED_HOME"
 # Re-derive paths from new HOME
@@ -1168,7 +1122,7 @@ XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 echo ""
 echo "=== Test: __xcind-assigned-prune ==="
 
-PRUNE_HOME=$(mktemp -d)
+PRUNE_HOME=$(mktemp_d)
 _orig_prune_home="$HOME"
 export HOME="$PRUNE_HOME"
 XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
@@ -1232,9 +1186,9 @@ echo ""
 echo "=== Test: xcind-assigned-hook (YAML + sticky) ==="
 
 if command -v yq &>/dev/null; then
-  AHOOK_APP=$(mktemp -d)
+  AHOOK_APP=$(mktemp_d)
   _orig_ahook_home="$HOME"
-  HOME=$(mktemp -d)
+  HOME=$(mktemp_d)
   export HOME
   XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
   XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
@@ -1392,7 +1346,7 @@ fi
 echo ""
 echo "=== Test: xcind-proxy release + prune CLI ==="
 
-CLI_HOME=$(mktemp -d)
+CLI_HOME=$(mktemp_d)
 REAL_CLI_HOME="$HOME"
 REAL_CLI_PATH="$PATH"
 export HOME="$CLI_HOME"
