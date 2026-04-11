@@ -1180,6 +1180,111 @@ XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-with-assigned-lock serializes concurrent writers ==="
+
+# Concurrent upserts without a lock would trample each other because each
+# upsert reads the TSV, filters, then rewrites. This test spawns N parallel
+# writers for distinct (app_path, export) identities and asserts that all N
+# rows landed in the state file — proving the flock critical section works.
+if command -v flock >/dev/null 2>&1; then
+  LOCK_HOME=$(mktemp_d)
+  _orig_lock_home="$HOME"
+  export HOME="$LOCK_HOME"
+  XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+  XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+  XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+  __xcind-assigned-ensure-state-file
+
+  N=10
+  for i in $(seq 1 $N); do
+    (
+      __xcind-with-assigned-lock __xcind-assigned-upsert \
+        "$((3300 + i))" "app$i" "web" "80" "/tmp/xcind-lock-test/app$i"
+    ) &
+  done
+  wait
+
+  row_count=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
+  assert_eq "all $N concurrent upserts persisted" "$N" "$row_count"
+
+  unique_ports=$(awk -F'\t' '!/^#/ && NF>0 {print $1}' \
+    "$XCIND_ASSIGNED_PORTS_FILE" | sort -u | wc -l | tr -d ' ')
+  assert_eq "locked: no duplicate ports" "$N" "$unique_ports"
+
+  unique_paths=$(awk -F'\t' '!/^#/ && NF>0 {print $5}' \
+    "$XCIND_ASSIGNED_PORTS_FILE" | sort -u | wc -l | tr -d ' ')
+  assert_eq "locked: all distinct app_paths persisted" "$N" "$unique_paths"
+
+  malformed=$(awk -F'\t' '!/^#/ && NF>0 && NF!=6 {print}' \
+    "$XCIND_ASSIGNED_PORTS_FILE" | wc -l | tr -d ' ')
+  assert_eq "locked: no malformed rows" "0" "$malformed"
+
+  export HOME="$_orig_lock_home"
+  rm -rf "$LOCK_HOME"
+  XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+  XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+  XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+else
+  echo "  (skipped: flock not available on this platform)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-with-assigned-lock unlocked fallback produces valid TSV ==="
+
+# When flock is missing, upserts run unlocked. Lost writes are acceptable
+# (best-effort), but mv(1) is atomic on POSIX filesystems so the state file
+# must always contain a valid, well-formed TSV with no partial rows and no
+# duplicate ports. This test hides flock from `command -v` via a shell
+# function override so the else branch of __xcind-with-assigned-lock runs.
+NOLOCK_HOME=$(mktemp_d)
+_orig_nolock_home="$HOME"
+export HOME="$NOLOCK_HOME"
+XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+__xcind-assigned-ensure-state-file
+
+# shellcheck disable=SC2317  # invoked indirectly by __xcind-with-assigned-lock
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "flock" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+N=10
+for i in $(seq 1 $N); do
+  (
+    __xcind-with-assigned-lock __xcind-assigned-upsert \
+      "$((3400 + i))" "app$i" "web" "80" "/tmp/xcind-nolock-test/app$i"
+  ) &
+done
+wait
+
+unset -f command
+
+# Unlocked fallback guarantees:
+# - File is readable and at least one write persisted.
+# - Each non-comment line is a complete TSV row (6 tab-separated fields);
+#   mv(1) is atomic but row preservation logic is NOT serialized, so
+#   duplicate ports and row-count excursions are both permitted here.
+row_count=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
+assert_eq "unlocked: at least one row persisted" "0" \
+  "$([ "$row_count" -ge 1 ] && echo 0 || echo 1)"
+
+malformed=$(awk -F'\t' '!/^#/ && NF>0 && NF!=6 {print}' \
+  "$XCIND_ASSIGNED_PORTS_FILE" | wc -l | tr -d ' ')
+assert_eq "unlocked: no partial/torn rows" "0" "$malformed"
+
+export HOME="$_orig_nolock_home"
+rm -rf "$NOLOCK_HOME"
+XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-assigned-prune ==="
 
 PRUNE_HOME=$(mktemp_d)
