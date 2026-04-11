@@ -202,7 +202,8 @@ __xcind-assigned-lookup-match() {
 }
 
 # Insert-or-update a single assignment. Any pre-existing row with the same
-# (app_path, export) identity OR the same host port is removed first.
+# (app_path, export) identity OR the same host port is removed first, then
+# the new row is appended.
 __xcind-assigned-upsert() {
   local port="$1" app="$2" xport="$3" cport="$4" app_path="$5"
   __xcind-assigned-ensure-state-file
@@ -210,27 +211,27 @@ __xcind-assigned-upsert() {
   local ts
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
+  # Step 1: rewrite the state file, dropping any row that collides with the
+  # incoming assignment on (app_path, export) identity or on host port.
+  __xcind_assigned_upsert_path="$app_path"
+  __xcind_assigned_upsert_xport="$xport"
+  __xcind_assigned_upsert_port="$port"
+  __xcind-assigned-rewrite __xcind-assigned-upsert-keep
+  unset __xcind_assigned_upsert_path __xcind_assigned_upsert_xport \
+    __xcind_assigned_upsert_port
 
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_path == "$app_path" && $L_xport == "$xport" ]]; then
-      continue
-    fi
-    if [[ $L_port == "$port" ]]; then
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
+  # Step 2: append the new row.
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$port" "$app" "$xport" "$cport" "$app_path" "$ts" >>"$tmp"
+    "$port" "$app" "$xport" "$cport" "$app_path" "$ts" \
+    >>"$XCIND_ASSIGNED_PORTS_FILE"
+}
 
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+__xcind-assigned-upsert-keep() {
+  local L_port="$1" L_xport="$3" L_path="$5"
+  [[ $L_path == "$__xcind_assigned_upsert_path" &&
+    $L_xport == "$__xcind_assigned_upsert_xport" ]] && return 1
+  [[ $L_port == "$__xcind_assigned_upsert_port" ]] && return 1
+  return 0
 }
 
 # Remove any entry matching (app_path, export). No-op if not found.
