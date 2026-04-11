@@ -1806,6 +1806,54 @@ assert_eq "stdout conflict: non-zero exit" "true" \
   "$([ "$stdout_rc" -ne 0 ] && echo true || echo false)"
 assert_contains "stdout conflict: error message" "stdout" "$stdout_result"
 
+# 9. --generate-*= with empty value is rejected with a clear error
+empty_dw_rc=0
+empty_dw_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-wrapper= 2>&1) || empty_dw_rc=$?
+assert_eq "empty --generate-docker-wrapper=: non-zero exit" "1" "$empty_dw_rc"
+assert_contains "empty --generate-docker-wrapper=: error message" \
+  "requires a file path" "$empty_dw_result"
+
+empty_dcw_rc=0
+empty_dcw_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-compose-wrapper= 2>&1) || empty_dcw_rc=$?
+assert_eq "empty --generate-docker-compose-wrapper=: non-zero exit" "1" "$empty_dcw_rc"
+assert_contains "empty --generate-docker-compose-wrapper=: error message" \
+  "requires a file path" "$empty_dcw_result"
+
+empty_dcc_rc=0
+empty_dcc_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-compose-configuration= 2>&1) || empty_dcc_rc=$?
+assert_eq "empty --generate-docker-compose-configuration=: non-zero exit" "1" "$empty_dcc_rc"
+assert_contains "empty --generate-docker-compose-configuration=: error message" \
+  "requires a file path" "$empty_dcc_result"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-preview-command quoting ==="
+
+# Call __xcind-preview-command directly (xcind-lib.bash is already sourced
+# at the top of this file) so the test does not require a Docker daemon.
+# Inject a synthetic XCIND_DOCKER_COMPOSE_OPTS containing a path with a
+# space; then evaluate the output with a mock docker to verify the path
+# round-trips intact regardless of the quoting form printf '%q' uses
+# (bash 3.2/4.0 may produce single-quoted form; bash 4.4+ backslash form).
+_pq_out=$(
+  XCIND_DOCKER_COMPOSE_OPTS=("-f" "/app/with space/compose.yaml" "--project-directory" "/app/with space")
+  __xcind-preview-command "/app/with space" 2>&1
+) && _pq_rc=0 || _pq_rc=$?
+assert_eq "preview %q: exit 0" "0" "$_pq_rc"
+
+_pq_cmd=$(printf '%s\n' "$_pq_out" | grep -v '^#')
+_pq_args=$(
+  # shellcheck disable=SC2317,SC2329
+  docker() { printf '%s\n' "$@"; }
+  eval "$_pq_cmd"
+) && _pq_eval_rc=0 || _pq_eval_rc=$?
+assert_eq "preview %q: output is valid shell" "0" "$_pq_eval_rc"
+assert_contains "preview %q: space path round-trips as single arg" \
+  "/app/with space/compose.yaml" "$_pq_args"
+
 # ======================================================================
 echo ""
 echo "=== Test: xcind-config completion subcommand ==="

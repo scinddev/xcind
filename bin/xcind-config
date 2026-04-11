@@ -111,6 +111,9 @@ while [[ $# -gt 0 ]]; do
   --generate-docker-wrapper=*)
     _do_gen_docker_wrapper=true
     _gen_docker_wrapper_file="${1#*=}"
+    if [[ -z $_gen_docker_wrapper_file ]]; then
+      __xcind_config_die "--generate-docker-wrapper= requires a file path (use --generate-docker-wrapper without = for stdout)"
+    fi
     _action_count=$((_action_count + 1))
     ;;
   --generate-docker-wrapper)
@@ -127,6 +130,9 @@ while [[ $# -gt 0 ]]; do
   --generate-docker-compose-wrapper=*)
     _do_gen_compose_wrapper=true
     _gen_compose_wrapper_file="${1#*=}"
+    if [[ -z $_gen_compose_wrapper_file ]]; then
+      __xcind_config_die "--generate-docker-compose-wrapper= requires a file path (use --generate-docker-compose-wrapper without = for stdout)"
+    fi
     _action_count=$((_action_count + 1))
     ;;
   --generate-docker-compose-wrapper)
@@ -143,6 +149,9 @@ while [[ $# -gt 0 ]]; do
   --generate-docker-compose-configuration=*)
     _do_gen_compose_config=true
     _gen_compose_config_file="${1#*=}"
+    if [[ -z $_gen_compose_config_file ]]; then
+      __xcind_config_die "--generate-docker-compose-configuration= requires a file path (use --generate-docker-compose-configuration without = for stdout)"
+    fi
     _action_count=$((_action_count + 1))
     ;;
   --generate-docker-compose-configuration)
@@ -265,19 +274,26 @@ if [[ $_do_preview == true ]]; then
   __xcind-preview-command "$app_root" "${PREVIEW_EXTRA_ARGS[@]}"
 fi
 
+# Resolve the bin dir once: both wrapper generators embed the same path
+# and the function forks `command -v` on every call.
+_xcind_bin_dir_cached=""
+if [[ $_do_gen_docker_wrapper == true || $_do_gen_compose_wrapper == true ]]; then
+  _xcind_bin_dir_cached=$(__xcind_bin_dir)
+fi
+
 if [[ $_do_gen_docker_wrapper == true ]]; then
   if [[ -n $_gen_docker_wrapper_file ]]; then
-    __xcind-dump-docker-wrapper "$app_root" "$(__xcind_bin_dir)" >"$_gen_docker_wrapper_file"
+    __xcind-dump-docker-wrapper "$app_root" "$_xcind_bin_dir_cached" >"$_gen_docker_wrapper_file"
   else
-    __xcind-dump-docker-wrapper "$app_root" "$(__xcind_bin_dir)"
+    __xcind-dump-docker-wrapper "$app_root" "$_xcind_bin_dir_cached"
   fi
 fi
 
 if [[ $_do_gen_compose_wrapper == true ]]; then
   if [[ -n $_gen_compose_wrapper_file ]]; then
-    __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)" >"$_gen_compose_wrapper_file"
+    __xcind-dump-docker-compose-wrapper "$app_root" "$_xcind_bin_dir_cached" >"$_gen_compose_wrapper_file"
   else
-    __xcind-dump-docker-compose-wrapper "$app_root" "$(__xcind_bin_dir)"
+    __xcind-dump-docker-compose-wrapper "$app_root" "$_xcind_bin_dir_cached"
   fi
 fi
 
