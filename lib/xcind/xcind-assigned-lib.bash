@@ -253,25 +253,19 @@ __xcind-assigned-keep-not-entry() {
 __xcind-assigned-remove-port() {
   local port="$1"
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 1
+  __xcind_assigned_remove_port_found=1
+  __xcind-assigned-rewrite __xcind-assigned-keep-not-port "$port"
+  return "$__xcind_assigned_remove_port_found"
+}
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
-
-  local found=1
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_port == "$port" ]]; then
-      found=0
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
-  return "$found"
+__xcind-assigned-keep-not-port() {
+  local L_port="$1"
+  local target_port="$7"
+  if [[ $L_port == "$target_port" ]]; then
+    __xcind_assigned_remove_port_found=0
+    return 1
+  fi
+  return 0
 }
 
 # Remove all entries whose app_path no longer exists on disk. Prints the
