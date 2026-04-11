@@ -1441,32 +1441,29 @@ assert_contains "empty --generate-docker-compose-configuration=: error message" 
 
 # ======================================================================
 echo ""
-echo "=== Test: xcind-config --preview quoting ==="
+echo "=== Test: __xcind-preview-command quoting ==="
 
-# --preview output must be copy-pasteable when a compose file path
-# contains spaces. Put the compose file in a subdirectory whose name has
-# a space; the app root itself is kept in a space-free tempdir so that
-# GENERATE hooks (naming, app, host-gateway) work on bash 3.2/4.0.
-PREVIEW_SPACE_APP=$(mktemp_d)
-mkdir -p "$PREVIEW_SPACE_APP/with space"
-cat >"$PREVIEW_SPACE_APP/with space/compose.yaml" <<'YAMLEOF'
-services:
-  web:
-    image: alpine
-YAMLEOF
-cat >"$PREVIEW_SPACE_APP/.xcind.sh" <<'XCINDEOF'
-XCIND_COMPOSE_FILES=("with space/compose.yaml")
-XCIND_COMPOSE_ENV_FILES=()
-XCINDEOF
+# Call __xcind-preview-command directly (xcind-lib.bash is already sourced
+# at the top of this file) so the test does not require a Docker daemon.
+# Inject a synthetic XCIND_DOCKER_COMPOSE_OPTS containing a path with a
+# space; then evaluate the output with a mock docker to verify the path
+# round-trips intact regardless of the quoting form printf '%q' uses
+# (bash 3.2/4.0 may produce single-quoted form; bash 4.4+ backslash form).
+_pq_out=$(
+  XCIND_DOCKER_COMPOSE_OPTS=("-f" "/app/with space/compose.yaml" "--project-directory" "/app/with space")
+  __xcind-preview-command "/app/with space" 2>&1
+) && _pq_rc=0 || _pq_rc=$?
+assert_eq "preview %q: exit 0" "0" "$_pq_rc"
 
-preview_space_rc=0
-preview_space_result=$(cd "$PREVIEW_SPACE_APP" && PATH="$XCIND_ROOT/bin:$PATH" \
-  xcind-config --preview 2>&1) || preview_space_rc=$?
-assert_eq "preview with space in path: exit code 0" "0" "$preview_space_rc"
-assert_contains "preview with space in path: emits shell-escaped path" \
-  'with\ space' "$preview_space_result"
-
-rm -rf "$PREVIEW_SPACE_APP"
+_pq_cmd=$(printf '%s\n' "$_pq_out" | grep -v '^#')
+_pq_args=$(
+  # shellcheck disable=SC2317
+  docker() { printf '%s\n' "$@"; }
+  eval "$_pq_cmd"
+) && _pq_eval_rc=0 || _pq_eval_rc=$?
+assert_eq "preview %q: output is valid shell" "0" "$_pq_eval_rc"
+assert_contains "preview %q: space path round-trips as single arg" \
+  "/app/with space/compose.yaml" "$_pq_args"
 
 # ======================================================================
 echo ""
