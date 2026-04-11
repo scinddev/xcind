@@ -18,8 +18,11 @@ lib/xcind/                     # Shared libraries (sourced by executables)
 └── xcind-naming-lib.bash      # Naming hook: auto-sets Docker Compose project name
 
 test/                          # Test suites
-├── test-xcind.sh              # Core test suite (~1248 lines)
-└── test-xcind-proxy.sh        # Proxy test suite (~666 lines)
+├── lib/                       # Shared test infrastructure (sourced by suites)
+│   ├── assert.sh              # assert_eq / assert_contains / assert_not_contains
+│   └── setup.sh               # _register_tmp, reset_xcind_state, EXIT-trap cleanup
+├── test-xcind.sh              # Core test suite
+└── test-xcind-proxy.sh        # Proxy test suite
 
 contrib/                       # Development and release helpers
 ├── check-file-manifest        # Validates file registrations across manifests

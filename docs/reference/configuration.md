@@ -148,13 +148,21 @@ XCIND_HOST_GATEWAY="192.168.1.100"
 
 Array of hook function names that generate compose overlay files. Hooks run after file resolution and their output is cached by SHA.
 
-**Default:** `("xcind-naming-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")`
+**Default:** `("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")`
 
 All built-in hooks are registered automatically. Override to `()` to disable all generation hooks.
 
 ```bash
 XCIND_HOOKS_GENERATE=()  # disable all generation hooks
 ```
+
+When `yq` is missing at runtime, default-registered hooks behave in one of
+two ways: non-load-bearing hooks (`xcind-app-hook`,
+`xcind-host-gateway-hook`, `xcind-workspace-hook`) soft-skip with a
+consolidated warning at the end of the run; hooks with load-bearing output
+(`xcind-app-env-hook`, `xcind-proxy-hook`, `xcind-assigned-hook`) hard-fail
+the pipeline. See [Hook Lifecycle](../specs/hook-lifecycle.md#generate) for
+the full policy.
 
 ### `XCIND_HOOKS_EXECUTE`
 

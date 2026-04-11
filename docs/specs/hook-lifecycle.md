@@ -130,13 +130,33 @@ xcind-compose pipeline
 
 **Built-in hooks:**
 
-| Hook | Generated file | Purpose |
-|------|---------------|---------|
-| `xcind-naming-hook` | `compose.naming.yaml` | Docker Compose project `name:` |
-| `xcind-app-env-hook` | `compose.app-env.yaml` | Injects `XCIND_APP_ENV_FILES` via `env_file:` |
-| `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Maps `host.docker.internal` via `extra_hosts` |
-| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, context labels |
-| `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases |
+| Hook | Generated file | Purpose | Missing `yq` |
+|------|---------------|---------|--------------|
+| `xcind-naming-hook` | `compose.naming.yaml` | Docker Compose project `name:` | n/a (no `yq` dependency) |
+| `xcind-app-hook` | `compose.app.yaml` | App identity labels for all services | Soft-skip |
+| `xcind-app-env-hook` | `compose.app-env.yaml` | Injects `XCIND_APP_ENV_FILES` via `env_file:` | Hard-fail |
+| `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Maps `host.docker.internal` via `extra_hosts` | Soft-skip |
+| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, context labels | Hard-fail |
+| `xcind-assigned-hook` | `compose.assigned.yaml` | Stable host port bindings with flock-serialized state | Hard-fail |
+| `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases | Soft-skip |
+
+**`yq` availability policy:** `yq` is a required dependency overall (see
+[tech stack](../implementation/tech-stack.md)), and `xcind-config --check`
+will flag it as missing. As defense-in-depth for users who bypass the
+dependency check, default-registered GENERATE hooks fall into two categories
+when `yq` is nevertheless absent at runtime:
+
+- **Soft-skip** — the hook is a no-op that returns `0`, records itself in a
+  run-level skipped-hook list, and lets the pipeline continue. All
+  soft-skipping hooks are default-enabled and produce
+  *non-load-bearing* output (identity labels, workspace DNS aliases, host
+  gateway wiring). `__xcind-run-hooks` emits one consolidated warning at the
+  end of the run listing every hook that skipped.
+- **Hard-fail** — the hook prints an error to stderr and returns `1`, which
+  aborts the pipeline. All hard-failing hooks are either opt-in (triggered
+  by a user-set variable like `XCIND_PROXY_EXPORTS`, `XCIND_APP_ENV_FILES`,
+  or `XCIND_ASSIGNED_EXPORTS`) or produce *load-bearing* output whose
+  absence would silently break routing, env injection, or port stability.
 
 **Important:** GENERATE hooks must be **pure generators** — no runtime side effects. Side effects (creating networks, starting services) belong in EXECUTE hooks. GENERATE hooks may be skipped entirely on cache hit.
 
