@@ -217,8 +217,14 @@ __xcind-assigned-upsert() {
   __xcind_assigned_upsert_xport="$xport"
   __xcind_assigned_upsert_port="$port"
   __xcind-assigned-rewrite __xcind-assigned-upsert-keep
+  local rewrite_status=$?
   unset __xcind_assigned_upsert_path __xcind_assigned_upsert_xport \
     __xcind_assigned_upsert_port
+  # If the rewrite failed (e.g. mv couldn't replace the state file), bail
+  # out before appending — otherwise we'd emit a new row on top of the
+  # unmodified file and silently leave behind the identity/port collision
+  # the rewrite was meant to drop.
+  [[ $rewrite_status -eq 0 ]] || return "$rewrite_status"
 
   # Step 2: append the new row.
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
