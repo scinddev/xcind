@@ -69,9 +69,10 @@
             # `docker compose config`.
             fullPath = pkgs.lib.makeBinPath (core ++ json ++ docker);
             # xcind-proxy manages its own Traefik stack via `docker compose
-            # -f <fixed file>` and never runs the xcind pipeline, so it does
-            # not need jq.
-            proxyPath = pkgs.lib.makeBinPath (core ++ docker);
+            # -f <fixed file>` and never runs the xcind pipeline. It still
+            # needs jq for the --json variant of `status`, which serialises
+            # the assigned-ports state as a JSON array.
+            proxyPath = pkgs.lib.makeBinPath (core ++ json ++ docker);
           in ''
             wrapProgram "$out/bin/xcind-compose" \
               --prefix PATH : ${fullPath}

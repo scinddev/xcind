@@ -24,11 +24,13 @@ source "$__XCIND_LIB_DIR/xcind-app-env-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-proxy-lib.bash"
 # shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-assigned-lib.bash"
+# shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-host-gateway-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 
-XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
 # Names of hooks that soft-skipped this run because yq was missing.
@@ -632,6 +634,10 @@ __xcind-resolve-json() {
   local tools_json
   tools_json=$(__xcind-resolve-tools)
 
+  # Resolve assigned exports (empty object when none or jq unavailable)
+  local assigned_json
+  assigned_json=$(__xcind-assigned-json-for-app "$app_root")
+
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
@@ -641,6 +647,7 @@ __xcind-resolve-json() {
     --argjson app_env_files "$(__xcind-to-json-array ${app_env_files[@]+"${app_env_files[@]}"})" \
     --argjson bake_files "$(__xcind-to-json-array ${bake_files[@]+"${bake_files[@]}"})" \
     --argjson tools "$tools_json" \
+    --argjson assigned_exports "$assigned_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
     --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
@@ -656,7 +663,8 @@ __xcind-resolve-json() {
             composeEnvFiles: $compose_env_files,
             appEnvFiles: $app_env_files,
             bakeFiles: $bake_files,
-            tools: $tools
+            tools: $tools,
+            assignedExports: $assigned_exports
         }'
 }
 

@@ -171,7 +171,7 @@ _xcind_proxy_completions() {
     return
   fi
 
-  local opts="init up down status logs --help -h --version -V"
+  local opts="init up down status logs release prune --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

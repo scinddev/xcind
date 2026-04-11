@@ -1079,6 +1079,374 @@ unset -f docker
 
 # ======================================================================
 echo ""
+echo "=== Test: assigned-ports hook registration ==="
+
+HOOKS_GEN_STR="${XCIND_HOOKS_GENERATE[*]}"
+assert_contains "xcind-assigned-hook registered in GENERATE list" "xcind-assigned-hook" "$HOOKS_GEN_STR"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-assigned-* state file helpers ==="
+
+ASSIGNED_HOME=$(mktemp -d)
+_orig_assigned_home="$HOME"
+export HOME="$ASSIGNED_HOME"
+# Re-derive paths from new HOME
+XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+__xcind-assigned-ensure-state-file
+assert_file_exists "state file created with header" "$XCIND_ASSIGNED_PORTS_FILE"
+
+header_line=$(head -1 "$XCIND_ASSIGNED_PORTS_FILE")
+assert_contains "state file header has port" "port" "$header_line"
+assert_contains "state file header has app_path" "app_path" "$header_line"
+
+# Insert two entries for /tmp/foo and /tmp/bar
+mkdir -p "$ASSIGNED_HOME/foo" "$ASSIGNED_HOME/bar"
+__xcind-assigned-upsert 3306 foo db 3306 "$ASSIGNED_HOME/foo"
+__xcind-assigned-upsert 6379 foo cache 6379 "$ASSIGNED_HOME/foo"
+__xcind-assigned-upsert 5432 bar db 5432 "$ASSIGNED_HOME/bar"
+
+# Lookup
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "db")
+assert_eq "lookup foo/db → 3306" "3306" "$looked"
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/bar" "db")
+assert_eq "lookup bar/db → 5432" "5432" "$looked"
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache")
+assert_eq "lookup foo/cache → 6379" "6379" "$looked"
+
+# Nonexistent lookup returns 1
+__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "nothing" >/dev/null && lookup_rc=0 || lookup_rc=$?
+assert_eq "missing lookup exits 1" "1" "$lookup_rc"
+
+# Upsert with same identity (foo/db) replaces the row with the new port
+__xcind-assigned-upsert 3307 foo db 3306 "$ASSIGNED_HOME/foo"
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "db")
+assert_eq "upsert replaces identity" "3307" "$looked"
+
+row_count=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
+assert_eq "upsert keeps three rows" "3" "$row_count"
+
+# Upsert that collides with an existing host port removes the old collider
+__xcind-assigned-upsert 6379 bar cache 6379 "$ASSIGNED_HOME/bar"
+# Now (foo, cache, 6379) should be gone; (bar, cache, 6379) should exist
+__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache" >/dev/null && collided_rc=0 || collided_rc=$?
+assert_eq "collision removes old owner" "1" "$collided_rc"
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/bar" "cache")
+assert_eq "collision keeps new owner" "6379" "$looked"
+
+# Remove entry
+__xcind-assigned-remove-entry "$ASSIGNED_HOME/foo" "db"
+__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "db" >/dev/null && removed_rc=0 || removed_rc=$?
+assert_eq "remove-entry deletes row" "1" "$removed_rc"
+
+# Remove by port
+__xcind-assigned-remove-port 5432
+__xcind-assigned-lookup "$ASSIGNED_HOME/bar" "db" >/dev/null && rm_port_rc=0 || rm_port_rc=$?
+assert_eq "remove-port deletes row" "1" "$rm_port_rc"
+
+# Remove by port that doesn't exist returns 1
+__xcind-assigned-remove-port 9999 && no_port_rc=0 || no_port_rc=$?
+assert_eq "remove-port missing → 1" "1" "$no_port_rc"
+
+export HOME="$_orig_assigned_home"
+rm -rf "$ASSIGNED_HOME"
+XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-assigned-prune ==="
+
+PRUNE_HOME=$(mktemp -d)
+_orig_prune_home="$HOME"
+export HOME="$PRUNE_HOME"
+XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+mkdir -p "$PRUNE_HOME/alive"
+__xcind-assigned-upsert 3306 alive db 3306 "$PRUNE_HOME/alive"
+__xcind-assigned-upsert 5432 gone db 5432 "$PRUNE_HOME/deleted"
+__xcind-assigned-upsert 6379 alive cache 6379 "$PRUNE_HOME/alive"
+
+pruned_count=$(__xcind-assigned-prune)
+assert_eq "prune removed stale entry" "1" "$pruned_count"
+
+# The alive entries should remain, the gone entry should not
+remaining=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
+assert_eq "prune leaves two live entries" "2" "$remaining"
+__xcind-assigned-lookup "$PRUNE_HOME/alive" "db" >/dev/null && alive_rc=0 || alive_rc=1
+assert_eq "prune keeps alive/db" "0" "$alive_rc"
+__xcind-assigned-lookup "$PRUNE_HOME/deleted" "db" >/dev/null && gone_rc=0 || gone_rc=1
+assert_eq "prune drops deleted/db" "1" "$gone_rc"
+
+export HOME="$_orig_prune_home"
+rm -rf "$PRUNE_HOME"
+XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-assigned-allocate-new ==="
+
+# Stub port availability so the allocator sees a deterministic view
+# instead of whatever ports happen to be in use on the test host.
+# shellcheck disable=SC2317  # invoked indirectly via __xcind-assigned-allocate-new
+__xcind-assigned-port-available() {
+  local port="$1"
+  # Simulate 3306 and 3307 taken, 3308 free
+  if [ "$port" = "3306" ] || [ "$port" = "3307" ]; then
+    return 1
+  fi
+  return 0
+}
+
+allocated=$(__xcind-assigned-allocate-new 3306)
+assert_eq "allocate skips taken, finds 3308" "3308" "$allocated"
+
+# All ports taken → error
+# shellcheck disable=SC2317  # invoked indirectly via __xcind-assigned-allocate-new
+__xcind-assigned-port-available() { return 1; }
+XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS_orig="$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS"
+XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS=3
+alloc_result=$(__xcind-assigned-allocate-new 4000 2>&1) && alloc_rc=0 || alloc_rc=$?
+assert_eq "allocate fails after max attempts" "1" "$alloc_rc"
+assert_contains "allocate error mentions ceiling" "no free host port" "$alloc_result"
+XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS="$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS_orig"
+unset -f __xcind-assigned-port-available
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-assigned-hook (YAML + sticky) ==="
+
+if command -v yq &>/dev/null; then
+  AHOOK_APP=$(mktemp -d)
+  _orig_ahook_home="$HOME"
+  HOME=$(mktemp -d)
+  export HOME
+  XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+  XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+  XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+  export XCIND_APP="myapp"
+  export XCIND_SHA="assignedhook123"
+  export XCIND_CACHE_DIR="$AHOOK_APP/.xcind/cache/$XCIND_SHA"
+  export XCIND_GENERATED_DIR="$AHOOK_APP/.xcind/generated/$XCIND_SHA"
+  mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+  redis:
+    image: redis
+    ports:
+      - target: 6379
+YAML
+
+  # Stub port availability: pretend everything is free in tests
+  # shellcheck disable=SC2317
+  __xcind-assigned-port-available() { return 0; }
+
+  # First run: expected to allocate 3306 and 6379 from clean state
+  XCIND_ASSIGNED_EXPORTS=("db=mysql:3306" "cache=redis:6379")
+  hook_out=$(xcind-assigned-hook "$AHOOK_APP")
+  assert_contains "hook emits -f flag" "-f $XCIND_GENERATED_DIR/compose.assigned.yaml" "$hook_out"
+  assert_file_exists "compose.assigned.yaml created" "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+
+  assigned_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+  assert_contains "yaml has mysql service" "mysql:" "$assigned_yaml"
+  assert_contains "yaml has redis service" "redis:" "$assigned_yaml"
+  assert_contains "yaml has 3306:3306 mapping" '"3306:3306"' "$assigned_yaml"
+  assert_contains "yaml has 6379:6379 mapping" '"6379:6379"' "$assigned_yaml"
+
+  # State file reflects assignments
+  state=$(<"$XCIND_ASSIGNED_PORTS_FILE")
+  assert_contains "state file has db row" "db" "$state"
+  assert_contains "state file has cache row" "cache" "$state"
+  assert_contains "state file has app_path" "$AHOOK_APP" "$state"
+
+  # Second run: sticky, same ports should be reused (identity match)
+  rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+  xcind-assigned-hook "$AHOOK_APP" >/dev/null
+  assigned_yaml2=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+  assert_contains "sticky: still 3306:3306" '"3306:3306"' "$assigned_yaml2"
+  assert_contains "sticky: still 6379:6379" '"6379:6379"' "$assigned_yaml2"
+
+  # Stale stickiness: pretend sticky port is no longer free so hook must reallocate
+  # shellcheck disable=SC2317
+  __xcind-assigned-port-available() {
+    local port="$1"
+    if [ "$port" = "3306" ]; then return 1; fi
+    return 0
+  }
+  rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+  XCIND_ASSIGNED_EXPORTS=("db=mysql:3306")
+  xcind-assigned-hook "$AHOOK_APP" >/dev/null
+  reassigned_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+  assert_contains "reallocates away from taken port" '"3307:3306"' "$reassigned_yaml"
+
+  # Grouping: two exports on same compose service
+  # shellcheck disable=SC2317
+  __xcind-assigned-port-available() { return 0; }
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+YAML
+  # Reset state
+  : >"$XCIND_ASSIGNED_PORTS_FILE"
+  printf '# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at\n' >"$XCIND_ASSIGNED_PORTS_FILE"
+  rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+  XCIND_ASSIGNED_EXPORTS=("db=mysql:3306" "db-alt=mysql:3307")
+  xcind-assigned-hook "$AHOOK_APP" >/dev/null
+  grouped=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+  mysql_blocks=$(echo "$grouped" | grep -c '^  mysql:' || true)
+  assert_eq "single grouped mysql block" "1" "$mysql_blocks"
+  assert_contains "grouped: has 3306 port" '"3306:3306"' "$grouped"
+  assert_contains "grouped: has 3307 port" '"3307:3307"' "$grouped"
+
+  # Empty exports → no output
+  XCIND_ASSIGNED_EXPORTS=()
+  rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+  empty_out=$(xcind-assigned-hook "$AHOOK_APP")
+  assert_eq "empty exports → no output" "" "$empty_out"
+  assert_eq "empty exports → no file" "false" \
+    "$([ -f "$XCIND_GENERATED_DIR/compose.assigned.yaml" ] && echo true || echo false)"
+
+  # Unset exports → no output (set -u safe)
+  unset XCIND_ASSIGNED_EXPORTS
+  unset_out=$(xcind-assigned-hook "$AHOOK_APP")
+  assert_eq "unset exports → no output" "" "$unset_out"
+
+  # Port inference from compose
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  redis:
+    image: redis
+    ports:
+      - target: 6379
+YAML
+  : >"$XCIND_ASSIGNED_PORTS_FILE"
+  printf '# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at\n' >"$XCIND_ASSIGNED_PORTS_FILE"
+  XCIND_ASSIGNED_EXPORTS=("redis")
+  xcind-assigned-hook "$AHOOK_APP" >/dev/null
+  infer_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+  assert_contains "inferred port 6379 from compose" '"6379:6379"' "$infer_yaml"
+
+  # Service validation error
+  XCIND_ASSIGNED_EXPORTS=("missing=nosuchservice:1234")
+  missing_result=$(xcind-assigned-hook "$AHOOK_APP" 2>&1) && missing_rc=0 || missing_rc=$?
+  assert_eq "missing service → error" "1" "$missing_rc"
+  assert_contains "missing service mentions not found" "not found" "$missing_result"
+
+  # Compose conflict warning — user compose already has 3306:3306 mapping
+  cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - mode: ingress
+        target: 3306
+        published: "3307"
+        protocol: tcp
+YAML
+  : >"$XCIND_ASSIGNED_PORTS_FILE"
+  printf '# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at\n' >"$XCIND_ASSIGNED_PORTS_FILE"
+  XCIND_ASSIGNED_EXPORTS=("db=mysql:3306")
+  conflict_stderr=$(xcind-assigned-hook "$AHOOK_APP" 2>&1 >/dev/null)
+  assert_contains "compose conflict: warning emitted" "already maps container port 3306" "$conflict_stderr"
+  assert_contains "compose conflict: mentions host 3307" "3307" "$conflict_stderr"
+  # Still generates the overlay
+  assert_file_exists "compose conflict: overlay still generated" "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+
+  unset -f __xcind-assigned-port-available
+  rm -rf "$AHOOK_APP" "$HOME"
+  HOME="$_orig_ahook_home"
+  export HOME
+  XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+  XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+  XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+  unset XCIND_ASSIGNED_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+else
+  echo "  (skipped xcind-assigned-hook tests: yq not installed)"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy release + prune CLI ==="
+
+CLI_HOME=$(mktemp -d)
+REAL_CLI_HOME="$HOME"
+REAL_CLI_PATH="$PATH"
+export HOME="$CLI_HOME"
+export PATH="$CLI_HOME/bin:$PATH"
+mkdir -p "$CLI_HOME/bin"
+cat >"$CLI_HOME/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+exit 0
+MOCKEOF
+chmod +x "$CLI_HOME/bin/docker"
+
+# Seed state directly so release/prune have something to operate on
+mkdir -p "$CLI_HOME/.config/xcind" "$CLI_HOME/alive"
+cat >"$CLI_HOME/.config/xcind/assigned-ports.tsv" <<EOF
+# port	app	export	container_port	app_path	assigned_at
+3306	alive	db	3306	$CLI_HOME/alive	2026-04-10T00:00:00Z
+5432	gone	db	5432	$CLI_HOME/missing	2026-04-10T00:00:00Z
+6379	alive	cache	6379	$CLI_HOME/alive	2026-04-10T00:00:00Z
+EOF
+
+# release an existing port
+release_out=$("$XCIND_ROOT/bin/xcind-proxy" release 3306 2>&1) && release_rc=0 || release_rc=$?
+assert_eq "release existing exits 0" "0" "$release_rc"
+assert_contains "release prints confirmation" "Released assigned port 3306" "$release_out"
+state_after_release=$(<"$CLI_HOME/.config/xcind/assigned-ports.tsv")
+assert_not_contains "state no longer has 3306 row" $'\n3306\t' "$state_after_release"
+
+# release a port that does not exist → exit 1
+release_missing=$("$XCIND_ROOT/bin/xcind-proxy" release 9999 2>&1) && release_missing_rc=0 || release_missing_rc=$?
+assert_eq "release missing exits 1" "1" "$release_missing_rc"
+assert_contains "release missing prints error" "No assignment found" "$release_missing"
+
+# release requires a port argument
+release_noarg=$("$XCIND_ROOT/bin/xcind-proxy" release 2>&1) && release_noarg_rc=0 || release_noarg_rc=$?
+assert_eq "release without arg exits 1" "1" "$release_noarg_rc"
+assert_contains "release usage message" "Usage: xcind-proxy release" "$release_noarg"
+
+# release rejects non-numeric input
+release_bad=$("$XCIND_ROOT/bin/xcind-proxy" release foo 2>&1) && release_bad_rc=0 || release_bad_rc=$?
+assert_eq "release non-numeric exits 1" "1" "$release_bad_rc"
+assert_contains "release non-numeric error" "must be a positive integer" "$release_bad"
+
+# prune removes the /gone entry
+prune_out=$("$XCIND_ROOT/bin/xcind-proxy" prune 2>&1) && prune_rc=0 || prune_rc=$?
+assert_eq "prune exits 0" "0" "$prune_rc"
+assert_contains "prune reports count" "Pruned 1" "$prune_out"
+state_after_prune=$(<"$CLI_HOME/.config/xcind/assigned-ports.tsv")
+assert_not_contains "prune removed gone row" "gone" "$state_after_prune"
+assert_contains "prune kept alive row" "alive" "$state_after_prune"
+
+# Status (text mode) renders the assigned-ports section
+status_out=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1)
+assert_contains "status text shows Assigned ports header" "Assigned ports:" "$status_out"
+assert_contains "status text shows 6379 row" "6379" "$status_out"
+
+export HOME="$REAL_CLI_HOME"
+export PATH="$REAL_CLI_PATH"
+rm -rf "$CLI_HOME"
+
+# ======================================================================
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
