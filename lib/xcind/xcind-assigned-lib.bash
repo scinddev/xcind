@@ -41,6 +41,78 @@ __xcind-assigned-ensure-state-file() {
 }
 
 # --------------------------------------------------------------------------
+# Shared TSV read/rewrite helpers
+# --------------------------------------------------------------------------
+#
+# These two helpers factor out the shared read-loop boilerplate used by every
+# function that touches the assigned-ports state file. They exist so that
+# future schema changes touch the header constant, one `read -r` call, and
+# one `printf` format string — not 5–7 copies of the same loop.
+#
+# Both helpers:
+#   - silently do nothing when the state file does not exist
+#   - skip blank lines and comment (#…) lines
+#   - bind six positional fields (L_port L_app L_xport L_cport L_path L_ts)
+#     before invoking the caller-supplied predicate/callback
+#   - pass any trailing arguments through to the callback after those fields
+#
+# __xcind-assigned-iter is read-only. __xcind-assigned-rewrite rewrites the
+# file via a temp file + mv; callers must hold the assigned-ports lock.
+
+# Iterate data rows of the assigned-ports state file, invoking $callback
+# with the six TSV fields followed by any extra arguments passed to iter.
+#
+# Iteration stops as soon as the callback returns a non-zero status, and
+# that status is propagated back to the caller. Callers that want "found"
+# semantics can exploit this: make the callback set a module-level variable
+# and `return 1` on a hit — iter will return 1 and the caller knows it
+# short-circuited. Normal completion (no hit) returns 0.
+#
+# The state file not existing is treated as "empty": iter returns 0 and
+# the callback is never invoked.
+__xcind-assigned-iter() {
+  local callback="$1"
+  shift
+  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  local L_port L_app L_xport L_cport L_path L_ts
+  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
+    [[ -z $L_port ]] && continue
+    [[ ${L_port:0:1} == "#" ]] && continue
+    "$callback" "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" "$@" || return $?
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+  return 0
+}
+
+# Rewrite the assigned-ports state file in place, keeping only rows for
+# which $predicate returns 0. The predicate receives the six TSV fields
+# followed by any extra arguments passed to rewrite.
+#
+# Callers MUST already hold the assigned-ports lock
+# (__xcind-with-assigned-lock). The helper ensures the state file exists,
+# writes a fresh header + surviving rows into a sibling .tmp file, then
+# atomically mv(1)s it over the original.
+__xcind-assigned-rewrite() {
+  local predicate="$1"
+  shift
+  __xcind-assigned-ensure-state-file
+
+  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
+  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
+
+  local L_port L_app L_xport L_cport L_path L_ts
+  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
+    [[ -z $L_port ]] && continue
+    [[ ${L_port:0:1} == "#" ]] && continue
+    if "$predicate" "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" "$@"; then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
+    fi
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+
+  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+}
+
+# --------------------------------------------------------------------------
 # Critical section helper
 # --------------------------------------------------------------------------
 
