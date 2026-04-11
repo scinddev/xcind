@@ -427,6 +427,202 @@ rm -rf "$WS_ROOT" "$STANDALONE_APP"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-workspace init CLI ==="
+
+# Plain init creates .xcind.sh with XCIND_IS_WORKSPACE=1 and reports path
+WS_PLAIN=$(mktemp_d)
+init_out=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_PLAIN")
+assert_file_exists "plain init: .xcind.sh created" "$WS_PLAIN/.xcind.sh"
+content=$(<"$WS_PLAIN/.xcind.sh")
+assert_contains "plain init: XCIND_IS_WORKSPACE=1 set" "XCIND_IS_WORKSPACE=1" "$content"
+assert_contains "plain init: reports target path" "$WS_PLAIN" "$init_out"
+
+# --name flag persists XCIND_WORKSPACE
+WS_NAMED=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_NAMED" --name "myteam" >/dev/null
+content=$(<"$WS_NAMED/.xcind.sh")
+assert_contains "--name: XCIND_WORKSPACE persisted" 'XCIND_WORKSPACE="myteam"' "$content"
+
+# --proxy-domain flag persists XCIND_PROXY_DOMAIN
+WS_PROXY=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_PROXY" --proxy-domain "test.local" >/dev/null
+content=$(<"$WS_PROXY/.xcind.sh")
+assert_contains "--proxy-domain: XCIND_PROXY_DOMAIN persisted" \
+  'XCIND_PROXY_DOMAIN="test.local"' "$content"
+
+# Both flags together
+WS_BOTH=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_BOTH" --name "combo" --proxy-domain "combo.test" >/dev/null
+content=$(<"$WS_BOTH/.xcind.sh")
+assert_contains "combined: name persisted" 'XCIND_WORKSPACE="combo"' "$content"
+assert_contains "combined: domain persisted" 'XCIND_PROXY_DOMAIN="combo.test"' "$content"
+
+# Idempotent init: second run without flags preserves existing config
+content_before=$(<"$WS_NAMED/.xcind.sh")
+idem_out=$("$XCIND_ROOT/bin/xcind-workspace" init "$WS_NAMED")
+content_after=$(<"$WS_NAMED/.xcind.sh")
+assert_eq "idempotent: file unchanged on re-init" "$content_before" "$content_after"
+assert_contains "idempotent: reports already-initialized" "already initialized" "$idem_out"
+
+# Re-init with flags updates the stored values
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_NAMED" --proxy-domain "new.example" >/dev/null
+content=$(<"$WS_NAMED/.xcind.sh")
+assert_contains "update: new domain applied" 'XCIND_PROXY_DOMAIN="new.example"' "$content"
+assert_contains "update: prior name preserved" 'XCIND_WORKSPACE="myteam"' "$content"
+
+# Init on a directory containing a non-workspace .xcind.sh (an app config) fails
+APP_DIR=$(mktemp_d)
+echo '# app config (no XCIND_IS_WORKSPACE)' >"$APP_DIR/.xcind.sh"
+init_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" init "$APP_DIR" 2>"$init_err_file" && init_app_rc=0 || init_app_rc=$?
+init_err=$(<"$init_err_file")
+rm -f "$init_err_file"
+assert_eq "init over app config: exits 1" "1" "$init_app_rc"
+assert_contains "init over app: error mentions app configuration" \
+  "app configuration" "$init_err"
+
+# Unknown flag fails
+unk_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_PLAIN" --bogus 2>"$unk_err_file" && unk_rc=0 || unk_rc=$?
+unk_err=$(<"$unk_err_file")
+rm -f "$unk_err_file"
+assert_eq "unknown init flag: exits 1" "1" "$unk_rc"
+assert_contains "unknown init flag: error names the flag" "--bogus" "$unk_err"
+
+# --version short-circuits
+ver_out=$("$XCIND_ROOT/bin/xcind-workspace" --version)
+assert_contains "--version: prints xcind-workspace" "xcind-workspace" "$ver_out"
+
+# --help prints usage
+help_out=$("$XCIND_ROOT/bin/xcind-workspace" --help)
+assert_contains "--help: prints Usage" "Usage: xcind-workspace" "$help_out"
+assert_contains "--help: lists init subcommand" "init [DIR]" "$help_out"
+assert_contains "--help: lists status subcommand" "status [DIR]" "$help_out"
+
+# No arguments prints help and exits 0
+noargs_out=$("$XCIND_ROOT/bin/xcind-workspace")
+assert_contains "no args: prints help" "Usage: xcind-workspace" "$noargs_out"
+
+# Unknown subcommand fails
+badcmd_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" bogus 2>"$badcmd_err_file" && badcmd_rc=0 || badcmd_rc=$?
+badcmd_err=$(<"$badcmd_err_file")
+rm -f "$badcmd_err_file"
+assert_eq "unknown subcommand: exits 1" "1" "$badcmd_rc"
+assert_contains "unknown subcommand: error mentions Unknown command" \
+  "Unknown command" "$badcmd_err"
+
+rm -rf "$WS_PLAIN" "$WS_NAMED" "$WS_PROXY" "$WS_BOTH" "$APP_DIR"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace status CLI ==="
+
+# Build a workspace + two apps. Mock docker so status doesn't touch real
+# Docker state (mirrors test-xcind-proxy.sh's pattern).
+WS_STATUS=$(mktemp_d)
+WS_STATUS_HOME=$(mktemp_d)
+_ws_status_orig_HOME="$HOME"
+_ws_status_orig_PATH="$PATH"
+export HOME="$WS_STATUS_HOME"
+mkdir -p "$WS_STATUS_HOME/bin"
+cat >"$WS_STATUS_HOME/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker for workspace status tests — report nothing running.
+case "$1" in
+network) exit 1 ;;  # no networks
+ps) echo "" ;;
+inspect) exit 1 ;;
+*) exit 0 ;;
+esac
+MOCKEOF
+chmod +x "$WS_STATUS_HOME/bin/docker"
+export PATH="$WS_STATUS_HOME/bin:$_ws_status_orig_PATH"
+
+# Initialize the workspace via the real CLI
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_STATUS" --name "wsstatus" >/dev/null
+
+# Status with an empty workspace (no apps) — text mode
+status_empty=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS" 2>&1)
+assert_contains "status empty: Workspace header" "Workspace: wsstatus" "$status_empty"
+assert_contains "status empty: Root line" "Root:" "$status_empty"
+assert_contains "status empty: Apps section" "Apps:" "$status_empty"
+assert_contains "status empty: reports (none)" "(none)" "$status_empty"
+
+# Add a registered app (XCIND_WORKSPACE matches the workspace name)
+mkdir -p "$WS_STATUS/webapp"
+cat >"$WS_STATUS/webapp/.xcind.sh" <<'APPEOF'
+# app config
+XCIND_WORKSPACE="wsstatus"
+XCIND_COMPOSE_FILES=("compose.yaml")
+APPEOF
+cat >"$WS_STATUS/webapp/compose.yaml" <<'COMPOSEEOF'
+services:
+  web:
+    image: nginx
+COMPOSEEOF
+
+status_registered=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS" 2>&1)
+assert_contains "status registered: Apps section" "Apps:" "$status_registered"
+assert_contains "status registered: shows webapp name" "webapp/" "$status_registered"
+assert_contains "status registered: shows stopped indicator" "stopped" "$status_registered"
+assert_contains "status registered: shows network line" "Network:" "$status_registered"
+assert_contains "status registered: shows proxy line" "Proxy:" "$status_registered"
+
+# --json output
+if command -v jq >/dev/null 2>&1 && command -v yq >/dev/null 2>&1; then
+  status_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS" --json 2>&1)
+  # Must be parseable JSON
+  printf '%s' "$status_json" | jq . >/dev/null && json_rc=0 || json_rc=$?
+  assert_eq "status --json: parseable JSON" "0" "$json_rc"
+
+  json_workspace=$(printf '%s' "$status_json" | jq -r '.workspace')
+  assert_eq "status --json: workspace name" "wsstatus" "$json_workspace"
+  json_root=$(printf '%s' "$status_json" | jq -r '.root')
+  assert_eq "status --json: root path" "$WS_STATUS" "$json_root"
+  json_has_apps=$(printf '%s' "$status_json" | jq -r '.apps | type')
+  assert_eq "status --json: apps is an array" "array" "$json_has_apps"
+  json_proxy_running=$(printf '%s' "$status_json" | jq -r '.proxy.running')
+  assert_eq "status --json: proxy.running is bool" "false" "$json_proxy_running"
+fi
+
+# Status outside any workspace fails
+OUTSIDE_DIR=$(mktemp_d)
+out_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" status "$OUTSIDE_DIR" 2>"$out_err_file" && outside_rc=0 || outside_rc=$?
+out_err=$(<"$out_err_file")
+rm -f "$out_err_file"
+assert_eq "status outside workspace: exits 1" "1" "$outside_rc"
+assert_contains "status outside: error mentions Not inside" \
+  "Not inside a workspace" "$out_err"
+
+# Status on a missing directory fails
+missing_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" status "/nonexistent/does-not-exist-xcind" \
+  2>"$missing_err_file" && missing_rc=0 || missing_rc=$?
+missing_err=$(<"$missing_err_file")
+rm -f "$missing_err_file"
+assert_eq "status missing dir: exits 1" "1" "$missing_rc"
+assert_contains "status missing: error mentions Directory not found" \
+  "Directory not found" "$missing_err"
+
+# Unknown status flag
+status_unk_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS" --bogus 2>"$status_unk_err_file" &&
+  status_unk_rc=0 || status_unk_rc=$?
+status_unk_err=$(<"$status_unk_err_file")
+rm -f "$status_unk_err_file"
+assert_eq "unknown status flag: exits 1" "1" "$status_unk_rc"
+assert_contains "unknown status flag: error names the flag" \
+  "--bogus" "$status_unk_err"
+
+export HOME="$_ws_status_orig_HOME"
+export PATH="$_ws_status_orig_PATH"
+unset _ws_status_orig_HOME _ws_status_orig_PATH
+rm -rf "$WS_STATUS" "$WS_STATUS_HOME" "$OUTSIDE_DIR"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-late-bind-workspace ==="
 
 # Test: late-bind when app sets XCIND_WORKSPACE
