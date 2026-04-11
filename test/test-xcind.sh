@@ -962,7 +962,7 @@ export XCIND_CACHE_DIR="$FAIL_APP/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$FAIL_APP/.xcind/generated/$XCIND_SHA"
 mkdir -p "$XCIND_CACHE_DIR"
 
-# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
 failing_hook() {
   echo "Error: intentional failure" >&2
   return 7
@@ -996,7 +996,7 @@ mkdir -p "$XCIND_CACHE_DIR"
 REBUILD_COUNT_FILE=$(mktemp)
 echo 0 >"$REBUILD_COUNT_FILE"
 
-# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
 rebuilding_hook() {
   local count
   count=$(<"$REBUILD_COUNT_FILE")
@@ -1050,7 +1050,7 @@ export XCIND_CACHE_DIR="$SHAPES_APP/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$SHAPES_APP/.xcind/generated/$XCIND_SHA"
 mkdir -p "$XCIND_CACHE_DIR"
 
-# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
 shapes_hook() {
   mkdir -p "$XCIND_GENERATED_DIR"
   touch "$XCIND_GENERATED_DIR/compose.shapes.yaml"
@@ -1094,7 +1094,7 @@ mkdir -p "$XCIND_CACHE_DIR"
 BAD_COUNT_FILE=$(mktemp)
 echo 0 >"$BAD_COUNT_FILE"
 
-# shellcheck disable=SC2317 # invoked via XCIND_HOOKS_GENERATE
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
 bad_path_hook() {
   local count
   count=$(<"$BAD_COUNT_FILE")
