@@ -283,30 +283,35 @@ assert_contains "no subcommand shows help" "Usage" "$result"
 echo ""
 echo "=== Test: xcind-proxy status --json (not initialized) ==="
 
-MOCK_HOME_JSON=$(mktemp_d)
-REAL_HOME_JSON="$HOME"
-export HOME="$MOCK_HOME_JSON"
+if command -v jq &>/dev/null; then
+  MOCK_HOME_JSON=$(mktemp_d)
+  REAL_HOME_JSON="$HOME"
+  export HOME="$MOCK_HOME_JSON"
 
-json_result=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1) && json_status=0 || json_status=$?
-assert_eq "status --json not initialized exits 0" "0" "$json_status"
-assert_contains "json has initialized false" '"initialized":false' "$json_result"
-assert_contains "json has not_initialized status" '"status":"not_initialized"' "$json_result"
+  json_result=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1) && json_status=0 || json_status=$?
+  assert_eq "status --json not initialized exits 0" "0" "$json_status"
+  assert_contains "json has initialized false" '"initialized":false' "$json_result"
+  assert_contains "json has not_initialized status" '"status":"not_initialized"' "$json_result"
 
-export HOME="$REAL_HOME_JSON"
-rm -rf "$MOCK_HOME_JSON"
+  export HOME="$REAL_HOME_JSON"
+  rm -rf "$MOCK_HOME_JSON"
+else
+  echo "  (skipped json tests: jq not installed)"
+fi
 
 # ======================================================================
 echo ""
 echo "=== Test: xcind-proxy status --json (initialized) ==="
 
-MOCK_HOME_JSON2=$(mktemp_d)
-REAL_HOME_JSON2="$HOME"
-export HOME="$MOCK_HOME_JSON2"
+if command -v jq &>/dev/null; then
+  MOCK_HOME_JSON2=$(mktemp_d)
+  REAL_HOME_JSON2="$HOME"
+  export HOME="$MOCK_HOME_JSON2"
 
-REAL_PATH_JSON2="$PATH"
-export PATH="$MOCK_HOME_JSON2/bin:$PATH"
-mkdir -p "$MOCK_HOME_JSON2/bin"
-cat >"$MOCK_HOME_JSON2/bin/docker" <<'MOCKEOF'
+  REAL_PATH_JSON2="$PATH"
+  export PATH="$MOCK_HOME_JSON2/bin:$PATH"
+  mkdir -p "$MOCK_HOME_JSON2/bin"
+  cat >"$MOCK_HOME_JSON2/bin/docker" <<'MOCKEOF'
 #!/bin/sh
 # Mock docker — simulate running container for ps, accept network inspect
 case "$1" in
@@ -315,44 +320,48 @@ case "$1" in
   *) exit 0 ;;
 esac
 MOCKEOF
-chmod +x "$MOCK_HOME_JSON2/bin/docker"
+  chmod +x "$MOCK_HOME_JSON2/bin/docker"
 
-"$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
+  "$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
 
-json_result2=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1) && json_status2=0 || json_status2=$?
-assert_eq "status --json initialized exits 0" "0" "$json_status2"
-assert_contains "json has initialized true" '"initialized":true' "$json_result2"
-assert_contains "json has running status" '"status":"running"' "$json_result2"
-assert_contains "json has config" '"config":"current"' "$json_result2"
-assert_contains "json has image" '"image":"traefik:v3"' "$json_result2"
-assert_contains "json has http_port" '"http_port":80' "$json_result2"
-assert_contains "json has network_name" '"network_name":"xcind-proxy"' "$json_result2"
-assert_contains "json has network_exists" '"network_exists":true' "$json_result2"
+  json_result2=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1) && json_status2=0 || json_status2=$?
+  assert_eq "status --json initialized exits 0" "0" "$json_status2"
+  assert_contains "json has initialized true" '"initialized":true' "$json_result2"
+  assert_contains "json has running status" '"status":"running"' "$json_result2"
+  assert_contains "json has config" '"config":"current"' "$json_result2"
+  assert_contains "json has image" '"image":"traefik:v3"' "$json_result2"
+  assert_contains "json has http_port" '"http_port":80' "$json_result2"
+  assert_contains "json has network_name" '"network_name":"xcind-proxy"' "$json_result2"
+  assert_contains "json has network_exists" '"network_exists":true' "$json_result2"
 
-# Also verify text mode still works
-text_result=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1) && text_status=0 || text_status=$?
-assert_eq "status text exits 0" "0" "$text_status"
-assert_contains "text has Status: running" "Status: running" "$text_result"
-assert_contains "text has Image:" "Image:" "$text_result"
+  # Also verify text mode still works
+  text_result=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1) && text_status=0 || text_status=$?
+  assert_eq "status text exits 0" "0" "$text_status"
+  assert_contains "text has Status: running" "Status: running" "$text_result"
+  assert_contains "text has Image:" "Image:" "$text_result"
 
-export HOME="$REAL_HOME_JSON2"
-export PATH="$REAL_PATH_JSON2"
-rm -rf "$MOCK_HOME_JSON2"
+  export HOME="$REAL_HOME_JSON2"
+  export PATH="$REAL_PATH_JSON2"
+  rm -rf "$MOCK_HOME_JSON2"
+else
+  echo "  (skipped json tests: jq not installed)"
+fi
 
 # ======================================================================
 echo ""
 echo "=== Test: xcind-proxy status --json with unusual image name ==="
 
-MOCK_HOME_JSON3=$(mktemp_d)
-REAL_HOME_JSON3="$HOME"
-export HOME="$MOCK_HOME_JSON3"
-# Re-derive proxy paths from new HOME so we can write into the config
-XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+if command -v jq &>/dev/null; then
+  MOCK_HOME_JSON3=$(mktemp_d)
+  REAL_HOME_JSON3="$HOME"
+  export HOME="$MOCK_HOME_JSON3"
+  # Re-derive proxy paths from new HOME so we can write into the config
+  XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
 
-REAL_PATH_JSON3="$PATH"
-export PATH="$MOCK_HOME_JSON3/bin:$PATH"
-mkdir -p "$MOCK_HOME_JSON3/bin"
-cat >"$MOCK_HOME_JSON3/bin/docker" <<'MOCKEOF'
+  REAL_PATH_JSON3="$PATH"
+  export PATH="$MOCK_HOME_JSON3/bin:$PATH"
+  mkdir -p "$MOCK_HOME_JSON3/bin"
+  cat >"$MOCK_HOME_JSON3/bin/docker" <<'MOCKEOF'
 #!/bin/sh
 # Mock docker — simulate running container for ps, accept network inspect
 case "$1" in
@@ -361,31 +370,34 @@ case "$1" in
   *) exit 0 ;;
 esac
 MOCKEOF
-chmod +x "$MOCK_HOME_JSON3/bin/docker"
+  chmod +x "$MOCK_HOME_JSON3/bin/docker"
 
-"$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
+  "$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
 
-# Set an image name that would break a hand-rolled printf template
-printf 'XCIND_PROXY_IMAGE='\''my-registry/traefik:"tag with quote"'\''\n' \
-  >"$XCIND_PROXY_CONFIG_DIR/config.sh"
+  # Set an image name that would break a hand-rolled printf template
+  printf 'XCIND_PROXY_IMAGE='\''my-registry/traefik:"tag with quote"'\''\n' \
+    >"$XCIND_PROXY_CONFIG_DIR/config.sh"
 
-json_out=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>/dev/null)
+  json_out=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>/dev/null)
 
-# Parse it — if the JSON is broken, jq exits non-zero and we fail
-if printf '%s' "$json_out" | jq -e . >/dev/null 2>&1; then
-  assert_eq "status --json parses as valid JSON" "0" "0"
+  # Parse it — if the JSON is broken, jq exits non-zero and we fail
+  if printf '%s' "$json_out" | jq -e . >/dev/null 2>&1; then
+    assert_eq "status --json parses as valid JSON" "0" "0"
+  else
+    assert_eq "status --json parses as valid JSON" "0" "1"
+  fi
+
+  # Confirm the image field round-trips correctly
+  echoed=$(printf '%s' "$json_out" | jq -r '.image')
+  assert_eq "image field round-trips through JSON" \
+    'my-registry/traefik:"tag with quote"' "$echoed"
+
+  export HOME="$REAL_HOME_JSON3"
+  export PATH="$REAL_PATH_JSON3"
+  rm -rf "$MOCK_HOME_JSON3"
 else
-  assert_eq "status --json parses as valid JSON" "0" "1"
+  echo "  (skipped json tests: jq not installed)"
 fi
-
-# Confirm the image field round-trips correctly
-echoed=$(printf '%s' "$json_out" | jq -r '.image')
-assert_eq "image field round-trips through JSON" \
-  'my-registry/traefik:"tag with quote"' "$echoed"
-
-export HOME="$REAL_HOME_JSON3"
-export PATH="$REAL_PATH_JSON3"
-rm -rf "$MOCK_HOME_JSON3"
 
 # ======================================================================
 echo ""
