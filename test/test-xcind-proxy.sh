@@ -341,6 +341,54 @@ rm -rf "$MOCK_HOME_JSON2"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-proxy status --json with unusual image name ==="
+
+MOCK_HOME_JSON3=$(mktemp_d)
+REAL_HOME_JSON3="$HOME"
+export HOME="$MOCK_HOME_JSON3"
+# Re-derive proxy paths from new HOME so we can write into the config
+XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+
+REAL_PATH_JSON3="$PATH"
+export PATH="$MOCK_HOME_JSON3/bin:$PATH"
+mkdir -p "$MOCK_HOME_JSON3/bin"
+cat >"$MOCK_HOME_JSON3/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker — simulate running container for ps, accept network inspect
+case "$1" in
+  compose) echo '{"Name":"traefik"}' ;;
+  network) exit 0 ;;
+  *) exit 0 ;;
+esac
+MOCKEOF
+chmod +x "$MOCK_HOME_JSON3/bin/docker"
+
+"$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
+
+# Set an image name that would break a hand-rolled printf template
+printf 'XCIND_PROXY_IMAGE='\''my-registry/traefik:"tag with quote"'\''\n' \
+  >"$XCIND_PROXY_CONFIG_DIR/config.sh"
+
+json_out=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>/dev/null)
+
+# Parse it — if the JSON is broken, jq exits non-zero and we fail
+if printf '%s' "$json_out" | jq -e . >/dev/null 2>&1; then
+  assert_eq "status --json parses as valid JSON" "0" "0"
+else
+  assert_eq "status --json parses as valid JSON" "0" "1"
+fi
+
+# Confirm the image field round-trips correctly
+echoed=$(printf '%s' "$json_out" | jq -r '.image')
+assert_eq "image field round-trips through JSON" \
+  'my-registry/traefik:"tag with quote"' "$echoed"
+
+export HOME="$REAL_HOME_JSON3"
+export PATH="$REAL_PATH_JSON3"
+rm -rf "$MOCK_HOME_JSON3"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-proxy-parse-entry ==="
 
 # Format: "web" (export=service, no port)
