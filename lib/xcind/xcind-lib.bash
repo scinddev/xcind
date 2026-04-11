@@ -1054,7 +1054,10 @@ __xcind-populate-cache() {
 # leaked them into the global namespace on any early return (set -e, closed
 # stdout, etc.) because the cleanup `unset -f` only ran on the success path.
 
-# Print a best-effort version string for $cmd to stdout. Never fails.
+# Print a best-effort version string for $cmd to stdout. Never fails — the
+# trailing `return 0` guarantees that, so callers using `ver=$(...)` under
+# `set -e` can't be aborted by a case arm whose first command substitution
+# unexpectedly returned non-zero.
 __xcind-check-deps-version() {
   local cmd="$1" out
   case "$cmd" in
@@ -1067,6 +1070,7 @@ __xcind-check-deps-version() {
   shasum) out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
   *) echo "" ;;
   esac
+  return 0
 }
 
 # Report the presence of a required dependency. Returns 0 if present, 1 if
