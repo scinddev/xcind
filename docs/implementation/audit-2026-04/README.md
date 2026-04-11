@@ -1,13 +1,13 @@
 # Audit Follow-ups — April 2026
 
 Short-lived implementation guides for the work packages deferred from the
-audit that landed in commit `368db82` ("Audit cleanups: yq hook consistency,
-helper extraction, test fixes") on branch `claude/audit-xcind-project-nUU4d`.
+April 2026 audit cleanup (PR #44 — "Audit cleanups: yq hook consistency,
+helper extraction, test fixes").
 
-Each numbered file is a self-contained work package that can be tackled in its
-own follow-up context (new chat, new PR). The audit report that produced
-these packages lives in the git history of this branch — the commit message
-of `368db82` summarizes what was fixed and what was deferred.
+Each numbered file is a self-contained work package that can be tackled in
+its own follow-up context (new chat, new PR). The PR that produced these
+packages summarizes what was fixed and what was deferred; these files pick
+up from there.
 
 **Delete this directory once every package ships.** These docs are
 intentionally short-lived and should not accumulate as historical noise. If a

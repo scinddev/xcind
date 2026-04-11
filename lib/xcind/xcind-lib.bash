@@ -53,7 +53,9 @@ __xcind-sha256() {
 }
 
 # Enumerate compose service names from a resolved-config.yaml. Prints one
-# service name per line. Silent on error or when .services is empty/missing.
+# service name per line. Silent on error or when .services is empty/missing —
+# returns 0 whether yq succeeds or fails, so callers can safely use the
+# result inside `local var; var=$(...)` under `set -e` + `pipefail`.
 # Requires yq on PATH — callers must guard their own yq availability (hooks
 # may soft-skip or hard-fail depending on whether their output is load-bearing).
 #
@@ -61,7 +63,7 @@ __xcind-sha256() {
 #   while IFS= read -r svc; do ... done < <(__xcind-list-services "$path")
 __xcind-list-services() {
   local resolved_config="$1"
-  yq -r '.services // {} | keys | .[]' "$resolved_config" 2>/dev/null
+  yq -r '.services // {} | keys | .[]' "$resolved_config" 2>/dev/null || true
 }
 
 # --------------------------------------------------------------------------
