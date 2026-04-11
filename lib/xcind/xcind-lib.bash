@@ -762,7 +762,26 @@ __xcind-preview-command() {
   fi
 
   echo "# Working directory: $app_root"
-  printf 'docker compose %s %s\n' "${XCIND_DOCKER_COMPOSE_OPTS[*]}" "$*"
+
+  # Shell-quote each argument so paths containing spaces (or other
+  # special characters) round-trip through copy-paste. `printf '%q'` is a
+  # Bash builtin and works on Bash 3.2+.
+  local _arg _quoted_opts="" _quoted_args=""
+  for _arg in "${XCIND_DOCKER_COMPOSE_OPTS[@]}"; do
+    _quoted_opts+=" $(printf '%q' "$_arg")"
+  done
+  _quoted_opts="${_quoted_opts# }"
+
+  for _arg in "$@"; do
+    _quoted_args+=" $(printf '%q' "$_arg")"
+  done
+  _quoted_args="${_quoted_args# }"
+
+  if [[ -n $_quoted_args ]]; then
+    printf 'docker compose %s %s\n' "$_quoted_opts" "$_quoted_args"
+  else
+    printf 'docker compose %s\n' "$_quoted_opts"
+  fi
 }
 
 # --------------------------------------------------------------------------

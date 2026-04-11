@@ -217,7 +217,12 @@ __xcind-workspace-status() {
     ws_domain="${XCIND_PROXY_DOMAIN:-$ws_domain}"
   fi
 
-  # Find apps (subdirectories with .xcind.sh that are NOT workspaces)
+  # Find apps (subdirectories with .xcind.sh that are NOT workspaces).
+  #
+  # The glob intentionally skips hidden directories ("$ws_root"/.*/): a
+  # workspace root typically contains .git, .cache, and other dot-dirs
+  # that should never be treated as apps. Users who want an app directory
+  # whose name starts with "." must rename or move it.
   local -a app_dirs=()
   local -a app_names=()
   local subdir
@@ -329,8 +334,20 @@ __xcind-workspace-status() {
       fi
 
       if [[ "$_xcind_ok" == true ]]; then
-        local _app_ws
-        _app_ws=$(printf '%s' "$_xcind_json" | jq -r '.metadata.workspace // ""' 2>/dev/null || echo "")
+        local _app_ws _jq_err_file="$_xcind_status_tmpdir/${app_name}.jqerr"
+        local _jq_rc=0
+        _app_ws=$(printf '%s' "$_xcind_json" | jq -r '.metadata.workspace // ""' 2>"$_jq_err_file") || _jq_rc=$?
+        if [[ $_jq_rc -ne 0 ]]; then
+          # A real jq failure means xcind-config emitted malformed JSON —
+          # surface the error so the user can see it, and fall back to
+          # skipping this app (preserving the current "not in workspace"
+          # behavior for downstream code).
+          local _jq_err
+          _jq_err=$(head -n 1 "$_jq_err_file" 2>/dev/null || true)
+          [[ -z "$_jq_err" ]] && _jq_err="jq failed with exit code $_jq_rc"
+          echo "xcind-workspace: warning: failed to parse metadata for ${app_name}: ${_jq_err}" >&2
+          _app_ws=""
+        fi
 
         if [[ "$_app_ws" != "$ws_name" ]]; then
           # Silently skip apps that aren't configured for this workspace.

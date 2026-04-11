@@ -1417,6 +1417,56 @@ assert_eq "stdout conflict: non-zero exit" "true" \
   "$([ "$stdout_rc" -ne 0 ] && echo true || echo false)"
 assert_contains "stdout conflict: error message" "stdout" "$stdout_result"
 
+# 9. --generate-*= with empty value is rejected with a clear error
+empty_dw_rc=0
+empty_dw_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-wrapper= 2>&1) || empty_dw_rc=$?
+assert_eq "empty --generate-docker-wrapper=: non-zero exit" "1" "$empty_dw_rc"
+assert_contains "empty --generate-docker-wrapper=: error message" \
+  "requires a file path" "$empty_dw_result"
+
+empty_dcw_rc=0
+empty_dcw_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-compose-wrapper= 2>&1) || empty_dcw_rc=$?
+assert_eq "empty --generate-docker-compose-wrapper=: non-zero exit" "1" "$empty_dcw_rc"
+assert_contains "empty --generate-docker-compose-wrapper=: error message" \
+  "requires a file path" "$empty_dcw_result"
+
+empty_dcc_rc=0
+empty_dcc_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-docker-compose-configuration= 2>&1) || empty_dcc_rc=$?
+assert_eq "empty --generate-docker-compose-configuration=: non-zero exit" "1" "$empty_dcc_rc"
+assert_contains "empty --generate-docker-compose-configuration=: error message" \
+  "requires a file path" "$empty_dcc_result"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-config --preview quoting ==="
+
+# --preview output must be copy-pasteable when the app path or compose
+# file path contains spaces. printf '%q' escapes spaces, so the output
+# should contain a backslash-space sequence.
+PREVIEW_SPACE_APP=$(mktemp_d)/"with space"
+mkdir -p "$PREVIEW_SPACE_APP"
+cat >"$PREVIEW_SPACE_APP/compose.yaml" <<'YAMLEOF'
+services:
+  web:
+    image: alpine
+YAMLEOF
+cat >"$PREVIEW_SPACE_APP/.xcind.sh" <<'XCINDEOF'
+XCIND_COMPOSE_FILES=(compose.yaml)
+XCIND_COMPOSE_ENV_FILES=()
+XCINDEOF
+
+preview_space_rc=0
+preview_space_result=$(cd "$PREVIEW_SPACE_APP" && PATH="$XCIND_ROOT/bin:$PATH" \
+  xcind-config --preview 2>&1) || preview_space_rc=$?
+assert_eq "preview with space in path: exit code 0" "0" "$preview_space_rc"
+assert_contains "preview with space in path: emits shell-escaped path" \
+  'with\ space' "$preview_space_result"
+
+rm -rf "$(dirname "$PREVIEW_SPACE_APP")"
+
 # ======================================================================
 echo ""
 echo "=== Test: xcind-config completion subcommand ==="
