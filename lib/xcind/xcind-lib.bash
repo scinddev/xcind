@@ -52,6 +52,18 @@ __xcind-sha256() {
   fi
 }
 
+# Enumerate compose service names from a resolved-config.yaml. Prints one
+# service name per line. Silent on error or when .services is empty/missing.
+# Requires yq on PATH — callers must guard their own yq availability (hooks
+# may soft-skip or hard-fail depending on whether their output is load-bearing).
+#
+# Usage:
+#   while IFS= read -r svc; do ... done < <(__xcind-list-services "$path")
+__xcind-list-services() {
+  local resolved_config="$1"
+  yq -r '.services // {} | keys | .[]' "$resolved_config" 2>/dev/null
+}
+
 # --------------------------------------------------------------------------
 # Workspace Detection
 # --------------------------------------------------------------------------
@@ -1254,7 +1266,9 @@ __xcind-run-hooks() {
   fi
 
   # Consolidated summary for hooks that soft-skipped due to missing yq.
-  # Hard-failing hooks (proxy, workspace, app-env) never reach this point.
+  # Hard-failing hooks (proxy, app-env, assigned) never reach this point —
+  # all three are opt-in via explicit exports declarations and their output
+  # is load-bearing, so a missing yq there should halt the pipeline loudly.
   if [ "${#__XCIND_HOOKS_SKIPPED_NO_YQ[@]}" -gt 0 ]; then
     local _skipped_list
     _skipped_list=$(printf '%s, ' "${__XCIND_HOOKS_SKIPPED_NO_YQ[@]}")

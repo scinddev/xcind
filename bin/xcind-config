@@ -12,18 +12,20 @@
 
 set -euo pipefail
 
-# Locate xcind-bootstrap.bash by following symlinks of this script
-# (npm, nix profile, and manual symlinks all route through here).
+# Resolve XCIND_ROOT by following symlinks to the real install directory
+# (npm, nix profile, and manual symlinks all route through here). macOS
+# lacks `readlink -f`, so the resolver is a manual loop.
 # Keep in sync with the equivalent stub in the other bin/ scripts.
-__xcind_boot="${BASH_SOURCE[0]}"
-while [ -L "$__xcind_boot" ]; do
-  __xcind_boot_dir=$(cd "$(dirname "$__xcind_boot")" && pwd)
-  __xcind_boot=$(readlink "$__xcind_boot")
-  [[ $__xcind_boot != /* ]] && __xcind_boot="$__xcind_boot_dir/$__xcind_boot"
+__xcind_src="${BASH_SOURCE[0]}"
+while [ -L "$__xcind_src" ]; do
+  __xcind_src_dir=$(cd "$(dirname "$__xcind_src")" && pwd)
+  __xcind_src=$(readlink "$__xcind_src")
+  [[ $__xcind_src != /* ]] && __xcind_src="$__xcind_src_dir/$__xcind_src"
 done
+XCIND_ROOT="$(cd "$(dirname "$__xcind_src")/.." && pwd)"
+unset __xcind_src __xcind_src_dir
 # shellcheck disable=SC1091
-source "$(cd "$(dirname "$__xcind_boot")/.." && pwd)/lib/xcind/xcind-bootstrap.bash"
-unset __xcind_boot __xcind_boot_dir
+source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
 
 # --- Helpers ---
 
@@ -226,7 +228,11 @@ if [[ $_do_check == true ]]; then
 fi
 
 if [[ -n $_do_completion ]]; then
-  cat "$XCIND_ROOT/lib/xcind/xcind-completion-${_do_completion}.bash"
+  _completion_file="$XCIND_ROOT/lib/xcind/xcind-completion-${_do_completion}.bash"
+  if [[ ! -f $_completion_file ]]; then
+    __xcind_config_die "completion script not found: $_completion_file"
+  fi
+  cat "$_completion_file"
   exit 0
 fi
 

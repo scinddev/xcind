@@ -34,10 +34,13 @@ xcind-workspace-hook() {
     return 0
   fi
 
-  # Require yq
+  # yq is required for this default-enabled hook; record and soft-skip if
+  # missing. The consolidated summary is emitted by __xcind-run-hooks at the
+  # end of the run. The EXECUTE hook still creates the external network, so
+  # inter-container DNS continues working even without these aliases.
   if ! command -v yq &>/dev/null; then
-    echo "Error: yq is required for workspace hook but was not found." >&2
-    return 1
+    __XCIND_HOOKS_SKIPPED_NO_YQ+=("xcind-workspace-hook")
+    return 0
   fi
 
   local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
@@ -45,7 +48,7 @@ xcind-workspace-hook() {
 
   # Enumerate all compose services
   local services
-  services=$(yq -r '.services | keys | .[]' "$resolved_config" 2>/dev/null)
+  services=$(__xcind-list-services "$resolved_config")
 
   if [ -z "$services" ]; then
     return 0

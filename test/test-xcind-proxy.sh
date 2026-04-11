@@ -55,12 +55,19 @@ assert_not_contains() {
   else
     echo "  ✗ $label"
     echo "    expected NOT to contain: $needle"
+    echo "    actual: $haystack"
     FAIL=$((FAIL + 1))
   fi
 }
 
 # ======================================================================
 echo "=== Test: xcind-proxy init (mock HOME) ==="
+
+# Unset XDG_* so xcind-proxy-lib and xcind-assigned-lib fall back to the
+# mock HOME-derived paths. Without this, a developer with XDG_CONFIG_HOME
+# set in their environment (common on Nix/systemd setups) would see tests
+# write to the real ~/.config/xcind/proxy, clobbering live state.
+unset XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME
 
 # Use a temp dir as HOME to avoid touching real config
 REAL_HOME="$HOME"

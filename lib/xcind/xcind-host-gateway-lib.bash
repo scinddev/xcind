@@ -176,7 +176,7 @@ xcind-host-gateway-hook() {
 
   # Enumerate all compose services
   local services
-  services=$(yq -r '.services | keys | .[]' "$resolved_config" 2>/dev/null)
+  services=$(__xcind-list-services "$resolved_config")
 
   if [[ -z "$services" ]]; then
     return 0
