@@ -263,23 +263,24 @@ __xcind-proxy-status() {
 }
 
 # Render the assigned-ports section of `xcind-proxy status` as plain text.
-# Reads the state file directly — callers already hold (or have released)
-# the assigned-ports lock; this is a read-only snapshot.
+# Reads the state file directly via __xcind-assigned-iter — callers already
+# hold (or have released) the assigned-ports lock; this is a read-only
+# snapshot.
 __xcind-proxy-status-assigned-text() {
-  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
-  local any=0
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [ "$any" -eq 0 ]; then
-      echo ""
-      echo "Assigned ports:"
-      any=1
-    fi
-    printf '  %s  %s/%s  → container port %s  (%s)\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
+  __xcind_proxy_status_text_any=0
+  __xcind-assigned-iter __xcind-proxy-status-assigned-text-row
+  unset __xcind_proxy_status_text_any
+}
+
+__xcind-proxy-status-assigned-text-row() {
+  local L_port="$1" L_app="$2" L_xport="$3" L_cport="$4" L_path="$5"
+  if [ "$__xcind_proxy_status_text_any" -eq 0 ]; then
+    echo ""
+    echo "Assigned ports:"
+    __xcind_proxy_status_text_any=1
+  fi
+  printf '  %s  %s/%s  → container port %s  (%s)\n' \
+    "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path"
 }
 
 # Render the assigned-ports section as a JSON array.
@@ -288,25 +289,22 @@ __xcind-proxy-status-assigned-json() {
     echo "[]"
     return 0
   fi
-  if [[ ! -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
-    echo "[]"
-    return 0
-  fi
-  local json="[]"
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    json=$(printf '%s' "$json" | jq \
-      --argjson port "$L_port" \
-      --arg app "$L_app" \
-      --arg xport "$L_xport" \
-      --argjson cport "$L_cport" \
-      --arg path "$L_path" \
-      --arg ts "$L_ts" \
-      '. + [{host_port: $port, app: $app, export: $xport, container_port: $cport, app_path: $path, assigned_at: $ts}]')
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-  printf '%s' "$json"
+  __xcind_proxy_status_json_result="[]"
+  __xcind-assigned-iter __xcind-proxy-status-assigned-json-row
+  printf '%s' "$__xcind_proxy_status_json_result"
+  unset __xcind_proxy_status_json_result
+}
+
+__xcind-proxy-status-assigned-json-row() {
+  local L_port="$1" L_app="$2" L_xport="$3" L_cport="$4" L_path="$5" L_ts="$6"
+  __xcind_proxy_status_json_result=$(printf '%s' "$__xcind_proxy_status_json_result" | jq \
+    --argjson port "$L_port" \
+    --arg app "$L_app" \
+    --arg xport "$L_xport" \
+    --argjson cport "$L_cport" \
+    --arg path "$L_path" \
+    --arg ts "$L_ts" \
+    '. + [{host_port: $port, app: $app, export: $xport, container_port: $cport, app_path: $path, assigned_at: $ts}]')
 }
 
 __xcind-proxy-release() {

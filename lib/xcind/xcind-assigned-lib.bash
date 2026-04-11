@@ -41,6 +41,78 @@ __xcind-assigned-ensure-state-file() {
 }
 
 # --------------------------------------------------------------------------
+# Shared TSV read/rewrite helpers
+# --------------------------------------------------------------------------
+#
+# These two helpers factor out the shared read-loop boilerplate used by every
+# function that touches the assigned-ports state file. They exist so that
+# future schema changes touch the header constant, one `read -r` call, and
+# one `printf` format string — not 5–7 copies of the same loop.
+#
+# Both helpers:
+#   - silently do nothing when the state file does not exist
+#   - skip blank lines and comment (#…) lines
+#   - bind six positional fields (L_port L_app L_xport L_cport L_path L_ts)
+#     before invoking the caller-supplied predicate/callback
+#   - pass any trailing arguments through to the callback after those fields
+#
+# __xcind-assigned-iter is read-only. __xcind-assigned-rewrite rewrites the
+# file via a temp file + mv; callers must hold the assigned-ports lock.
+
+# Iterate data rows of the assigned-ports state file, invoking $callback
+# with the six TSV fields followed by any extra arguments passed to iter.
+#
+# Iteration stops as soon as the callback returns a non-zero status, and
+# that status is propagated back to the caller. Callers that want "found"
+# semantics can exploit this: make the callback set a module-level variable
+# and `return 1` on a hit — iter will return 1 and the caller knows it
+# short-circuited. Normal completion (no hit) returns 0.
+#
+# The state file not existing is treated as "empty": iter returns 0 and
+# the callback is never invoked.
+__xcind-assigned-iter() {
+  local callback="$1"
+  shift
+  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  local L_port L_app L_xport L_cport L_path L_ts
+  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
+    [[ -z $L_port ]] && continue
+    [[ ${L_port:0:1} == "#" ]] && continue
+    "$callback" "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" "$@" || return $?
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+  return 0
+}
+
+# Rewrite the assigned-ports state file in place, keeping only rows for
+# which $predicate returns 0. The predicate receives the six TSV fields
+# followed by any extra arguments passed to rewrite.
+#
+# Callers MUST already hold the assigned-ports lock
+# (__xcind-with-assigned-lock). The helper ensures the state file exists,
+# writes a fresh header + surviving rows into a sibling .tmp file, then
+# atomically mv(1)s it over the original.
+__xcind-assigned-rewrite() {
+  local predicate="$1"
+  shift
+  __xcind-assigned-ensure-state-file
+
+  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
+  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
+
+  local L_port L_app L_xport L_cport L_path L_ts
+  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
+    [[ -z $L_port ]] && continue
+    [[ ${L_port:0:1} == "#" ]] && continue
+    if "$predicate" "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" "$@"; then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
+    fi
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+
+  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+}
+
+# --------------------------------------------------------------------------
 # Critical section helper
 # --------------------------------------------------------------------------
 
@@ -104,23 +176,34 @@ __xcind-assigned-port-available() {
 
 # Look up the host port assigned to (app_path, export). Prints the port and
 # returns 0 on hit; returns 1 (no output) otherwise.
+#
+# Uses the iterator helper: the match callback sets a module-level result
+# variable and returns 1 to short-circuit iteration. If iter returns 0 the
+# whole file was scanned without a hit, so we return 1 (not found).
 __xcind-assigned-lookup() {
   local app_path="$1" xport="$2"
-  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 1
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_path == "$app_path" && $L_xport == "$xport" ]]; then
-      printf '%s\n' "$L_port"
-      return 0
-    fi
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-  return 1
+  __xcind_assigned_lookup_result=""
+  if __xcind-assigned-iter __xcind-assigned-lookup-match \
+    "$app_path" "$xport"; then
+    return 1
+  fi
+  printf '%s\n' "$__xcind_assigned_lookup_result"
+  return 0
+}
+
+__xcind-assigned-lookup-match() {
+  local L_port="$1" L_xport="$3" L_path="$5"
+  local target_path="$7" target_xport="$8"
+  if [[ $L_path == "$target_path" && $L_xport == "$target_xport" ]]; then
+    __xcind_assigned_lookup_result="$L_port"
+    return 1
+  fi
+  return 0
 }
 
 # Insert-or-update a single assignment. Any pre-existing row with the same
-# (app_path, export) identity OR the same host port is removed first.
+# (app_path, export) identity OR the same host port is removed first, then
+# the new row is appended.
 __xcind-assigned-upsert() {
   local port="$1" app="$2" xport="$3" cport="$4" app_path="$5"
   __xcind-assigned-ensure-state-file
@@ -128,49 +211,48 @@ __xcind-assigned-upsert() {
   local ts
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
+  # Step 1: rewrite the state file, dropping any row that collides with the
+  # incoming assignment on (app_path, export) identity or on host port.
+  __xcind_assigned_upsert_path="$app_path"
+  __xcind_assigned_upsert_xport="$xport"
+  __xcind_assigned_upsert_port="$port"
+  __xcind-assigned-rewrite __xcind-assigned-upsert-keep
+  local rewrite_status=$?
+  unset __xcind_assigned_upsert_path __xcind_assigned_upsert_xport \
+    __xcind_assigned_upsert_port
+  # If the rewrite failed (e.g. mv couldn't replace the state file), bail
+  # out before appending — otherwise we'd emit a new row on top of the
+  # unmodified file and silently leave behind the identity/port collision
+  # the rewrite was meant to drop.
+  [[ $rewrite_status -eq 0 ]] || return "$rewrite_status"
 
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_path == "$app_path" && $L_xport == "$xport" ]]; then
-      continue
-    fi
-    if [[ $L_port == "$port" ]]; then
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
+  # Step 2: append the new row.
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$port" "$app" "$xport" "$cport" "$app_path" "$ts" >>"$tmp"
+    "$port" "$app" "$xport" "$cport" "$app_path" "$ts" \
+    >>"$XCIND_ASSIGNED_PORTS_FILE"
+}
 
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+__xcind-assigned-upsert-keep() {
+  local L_port="$1" L_xport="$3" L_path="$5"
+  [[ $L_path == "$__xcind_assigned_upsert_path" &&
+    $L_xport == "$__xcind_assigned_upsert_xport" ]] && return 1
+  [[ $L_port == "$__xcind_assigned_upsert_port" ]] && return 1
+  return 0
 }
 
 # Remove any entry matching (app_path, export). No-op if not found.
 __xcind-assigned-remove-entry() {
   local app_path="$1" xport="$2"
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  __xcind-assigned-rewrite __xcind-assigned-keep-not-entry \
+    "$app_path" "$xport"
+}
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
-
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_path == "$app_path" && $L_xport == "$xport" ]]; then
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+__xcind-assigned-keep-not-entry() {
+  local L_xport="$3" L_path="$5"
+  local target_path="$7" target_xport="$8"
+  [[ $L_path == "$target_path" && $L_xport == "$target_xport" ]] && return 1
+  return 0
 }
 
 # Remove a single entry by host port. Returns 0 if an entry was removed,
@@ -178,50 +260,36 @@ __xcind-assigned-remove-entry() {
 __xcind-assigned-remove-port() {
   local port="$1"
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 1
+  __xcind_assigned_remove_port_found=1
+  __xcind-assigned-rewrite __xcind-assigned-keep-not-port "$port"
+  return "$__xcind_assigned_remove_port_found"
+}
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
-
-  local found=1
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_port == "$port" ]]; then
-      found=0
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
-  return "$found"
+__xcind-assigned-keep-not-port() {
+  local L_port="$1"
+  local target_port="$7"
+  if [[ $L_port == "$target_port" ]]; then
+    __xcind_assigned_remove_port_found=0
+    return 1
+  fi
+  return 0
 }
 
 # Remove all entries whose app_path no longer exists on disk. Prints the
 # number of entries pruned to stdout.
 __xcind-assigned-prune() {
-  __xcind-assigned-ensure-state-file
+  __xcind_assigned_prune_count=0
+  __xcind-assigned-rewrite __xcind-assigned-keep-existing-path
+  printf '%s\n' "$__xcind_assigned_prune_count"
+}
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
-  printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
-
-  local pruned=0
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ ! -d $L_path ]]; then
-      pruned=$((pruned + 1))
-      continue
-    fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
-  printf '%s\n' "$pruned"
+__xcind-assigned-keep-existing-path() {
+  local L_path="$5"
+  if [[ ! -d $L_path ]]; then
+    __xcind_assigned_prune_count=$((__xcind_assigned_prune_count + 1))
+    return 1
+  fi
+  return 0
 }
 
 # --------------------------------------------------------------------------
@@ -426,42 +494,49 @@ __xcind-assigned-json-for-app() {
   fi
 
   # Map export_name → compose_service from the current declaration, if any.
-  local -a xps=() svcs=()
+  # These arrays are consumed by the iter callback below; declaring them at
+  # module scope is intentional because Bash 3.2 has no declare -g and the
+  # callback can't see function locals.
+  __xcind_assigned_json_xps=()
+  __xcind_assigned_json_svcs=()
   if [[ -n ${XCIND_ASSIGNED_EXPORTS+set} ]] && [[ ${#XCIND_ASSIGNED_EXPORTS[@]} -gt 0 ]]; then
     local entry
     for entry in "${XCIND_ASSIGNED_EXPORTS[@]}"; do
       local _export_name _compose_service _port
       __xcind-proxy-parse-entry "$entry"
-      xps+=("$_export_name")
-      svcs+=("$_compose_service")
+      __xcind_assigned_json_xps+=("$_export_name")
+      __xcind_assigned_json_svcs+=("$_compose_service")
     done
   fi
 
-  local json="{}"
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    [[ $L_path != "$app_path" ]] && continue
+  __xcind_assigned_json_result="{}"
+  __xcind-assigned-iter __xcind-assigned-json-for-app-row "$app_path"
+  printf '%s' "$__xcind_assigned_json_result"
+  unset __xcind_assigned_json_xps __xcind_assigned_json_svcs \
+    __xcind_assigned_json_result
+}
 
-    local svc=""
-    local j=0
-    while [[ $j -lt ${#xps[@]} ]]; do
-      if [[ ${xps[$j]} == "$L_xport" ]]; then
-        svc="${svcs[$j]}"
-        break
-      fi
-      j=$((j + 1))
-    done
+__xcind-assigned-json-for-app-row() {
+  local L_port="$1" L_xport="$3" L_cport="$4" L_path="$5"
+  local target_path="$7"
+  [[ $L_path != "$target_path" ]] && return 0
 
-    json=$(printf '%s' "$json" | jq \
-      --arg name "$L_xport" \
-      --arg svc "$svc" \
-      --argjson cport "$L_cport" \
-      --argjson hport "$L_port" \
-      --argjson declared "$L_cport" \
-      '. + {($name): {compose_service: $svc, container_port: $cport, host_port: $hport, declared_port: $declared}}')
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
+  local svc=""
+  local j=0
+  while [[ $j -lt ${#__xcind_assigned_json_xps[@]} ]]; do
+    if [[ ${__xcind_assigned_json_xps[$j]} == "$L_xport" ]]; then
+      svc="${__xcind_assigned_json_svcs[$j]}"
+      break
+    fi
+    j=$((j + 1))
+  done
 
-  printf '%s' "$json"
+  __xcind_assigned_json_result=$(printf '%s' "$__xcind_assigned_json_result" | jq \
+    --arg name "$L_xport" \
+    --arg svc "$svc" \
+    --argjson cport "$L_cport" \
+    --argjson hport "$L_port" \
+    --argjson declared "$L_cport" \
+    '. + {($name): {compose_service: $svc, container_port: $cport, host_port: $hport, declared_port: $declared}}')
+  return 0
 }
