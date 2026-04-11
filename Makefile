@@ -16,6 +16,8 @@ SHELL_FILES = \
 	lib/xcind/xcind-workspace-lib.bash \
 	test/test-xcind.sh \
 	test/test-xcind-proxy.sh \
+	test/lib/assert.sh \
+	test/lib/setup.sh \
 	install.sh \
 	uninstall.sh
 
