@@ -176,19 +176,29 @@ __xcind-assigned-port-available() {
 
 # Look up the host port assigned to (app_path, export). Prints the port and
 # returns 0 on hit; returns 1 (no output) otherwise.
+#
+# Uses the iterator helper: the match callback sets a module-level result
+# variable and returns 1 to short-circuit iteration. If iter returns 0 the
+# whole file was scanned without a hit, so we return 1 (not found).
 __xcind-assigned-lookup() {
   local app_path="$1" xport="$2"
-  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 1
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if [[ $L_path == "$app_path" && $L_xport == "$xport" ]]; then
-      printf '%s\n' "$L_port"
-      return 0
-    fi
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
-  return 1
+  __xcind_assigned_lookup_result=""
+  if __xcind-assigned-iter __xcind-assigned-lookup-match \
+    "$app_path" "$xport"; then
+    return 1
+  fi
+  printf '%s\n' "$__xcind_assigned_lookup_result"
+  return 0
+}
+
+__xcind-assigned-lookup-match() {
+  local L_port="$1" L_xport="$3" L_path="$5"
+  local target_path="$7" target_xport="$8"
+  if [[ $L_path == "$target_path" && $L_xport == "$target_xport" ]]; then
+    __xcind_assigned_lookup_result="$L_port"
+    return 1
+  fi
+  return 0
 }
 
 # Insert-or-update a single assignment. Any pre-existing row with the same
