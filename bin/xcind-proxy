@@ -152,6 +152,14 @@ __xcind-proxy-status() {
     json_mode=true
   fi
 
+  # jq is required for --json output (the hand-rolled printf template used
+  # to be tolerant of missing jq, but since the output is now built with
+  # `jq -n`, fail loudly instead of producing broken JSON).
+  if [[ "$json_mode" == true ]] && ! command -v jq &>/dev/null; then
+    echo "Error: jq is required for --json output." >&2
+    exit 1
+  fi
+
   # Prune stale assigned-port entries so the status display never carries
   # orphaned rows from deleted apps.
   __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
@@ -159,7 +167,7 @@ __xcind-proxy-status() {
   # Not initialized
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
     if [ "$json_mode" = true ]; then
-      printf '{"initialized":false,"status":"not_initialized","assigned_ports":[]}\n'
+      jq -cn '{initialized: false, status: "not_initialized", assigned_ports: []}'
     else
       echo "Status: not initialized"
       echo "Run 'xcind-proxy init' to set up proxy infrastructure."
@@ -211,8 +219,28 @@ __xcind-proxy-status() {
   if [ "$json_mode" = true ]; then
     local assigned_json
     assigned_json=$(__xcind-proxy-status-assigned-json)
-    printf '{"initialized":true,"status":"%s","config":"%s","image":"%s","http_port":%s,"dashboard_enabled":%s,"dashboard_url":"%s","network_name":"%s","network_exists":%s,"assigned_ports":%s}\n' \
-      "$running_status" "$config_status" "$image" "$http_port" "$dashboard_enabled" "$dashboard_url" "$network_name" "$network_exists" "$assigned_json"
+    jq -cn \
+      --arg status "$running_status" \
+      --arg config "$config_status" \
+      --arg image "$image" \
+      --argjson http_port "$http_port" \
+      --argjson dashboard_enabled "$dashboard_enabled" \
+      --arg dashboard_url "$dashboard_url" \
+      --arg network_name "$network_name" \
+      --argjson network_exists "$network_exists" \
+      --argjson assigned_ports "$assigned_json" \
+      '{
+        initialized: true,
+        status: $status,
+        config: $config,
+        image: $image,
+        http_port: $http_port,
+        dashboard_enabled: $dashboard_enabled,
+        dashboard_url: $dashboard_url,
+        network_name: $network_name,
+        network_exists: $network_exists,
+        assigned_ports: $assigned_ports
+      }'
   else
     echo "Status: $running_status"
     if [ "$config_status" = "stale" ]; then
