@@ -1457,7 +1457,7 @@ assert_eq "preview %q: exit 0" "0" "$_pq_rc"
 
 _pq_cmd=$(printf '%s\n' "$_pq_out" | grep -v '^#')
 _pq_args=$(
-  # shellcheck disable=SC2317
+  # shellcheck disable=SC2317,SC2329
   docker() { printf '%s\n' "$@"; }
   eval "$_pq_cmd"
 ) && _pq_eval_rc=0 || _pq_eval_rc=$?
