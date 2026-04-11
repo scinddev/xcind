@@ -488,42 +488,49 @@ __xcind-assigned-json-for-app() {
   fi
 
   # Map export_name → compose_service from the current declaration, if any.
-  local -a xps=() svcs=()
+  # These arrays are consumed by the iter callback below; declaring them at
+  # module scope is intentional because Bash 3.2 has no declare -g and the
+  # callback can't see function locals.
+  __xcind_assigned_json_xps=()
+  __xcind_assigned_json_svcs=()
   if [[ -n ${XCIND_ASSIGNED_EXPORTS+set} ]] && [[ ${#XCIND_ASSIGNED_EXPORTS[@]} -gt 0 ]]; then
     local entry
     for entry in "${XCIND_ASSIGNED_EXPORTS[@]}"; do
       local _export_name _compose_service _port
       __xcind-proxy-parse-entry "$entry"
-      xps+=("$_export_name")
-      svcs+=("$_compose_service")
+      __xcind_assigned_json_xps+=("$_export_name")
+      __xcind_assigned_json_svcs+=("$_compose_service")
     done
   fi
 
-  local json="{}"
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    [[ $L_path != "$app_path" ]] && continue
+  __xcind_assigned_json_result="{}"
+  __xcind-assigned-iter __xcind-assigned-json-for-app-row "$app_path"
+  printf '%s' "$__xcind_assigned_json_result"
+  unset __xcind_assigned_json_xps __xcind_assigned_json_svcs \
+    __xcind_assigned_json_result
+}
 
-    local svc=""
-    local j=0
-    while [[ $j -lt ${#xps[@]} ]]; do
-      if [[ ${xps[$j]} == "$L_xport" ]]; then
-        svc="${svcs[$j]}"
-        break
-      fi
-      j=$((j + 1))
-    done
+__xcind-assigned-json-for-app-row() {
+  local L_port="$1" L_xport="$3" L_cport="$4" L_path="$5"
+  local target_path="$7"
+  [[ $L_path != "$target_path" ]] && return 0
 
-    json=$(printf '%s' "$json" | jq \
-      --arg name "$L_xport" \
-      --arg svc "$svc" \
-      --argjson cport "$L_cport" \
-      --argjson hport "$L_port" \
-      --argjson declared "$L_cport" \
-      '. + {($name): {compose_service: $svc, container_port: $cport, host_port: $hport, declared_port: $declared}}')
-  done <"$XCIND_ASSIGNED_PORTS_FILE"
+  local svc=""
+  local j=0
+  while [[ $j -lt ${#__xcind_assigned_json_xps[@]} ]]; do
+    if [[ ${__xcind_assigned_json_xps[$j]} == "$L_xport" ]]; then
+      svc="${__xcind_assigned_json_svcs[$j]}"
+      break
+    fi
+    j=$((j + 1))
+  done
 
-  printf '%s' "$json"
+  __xcind_assigned_json_result=$(printf '%s' "$__xcind_assigned_json_result" | jq \
+    --arg name "$L_xport" \
+    --arg svc "$svc" \
+    --argjson cport "$L_cport" \
+    --argjson hport "$L_port" \
+    --argjson declared "$L_cport" \
+    '. + {($name): {compose_service: $svc, container_port: $cport, host_port: $hport, declared_port: $declared}}')
+  return 0
 }
