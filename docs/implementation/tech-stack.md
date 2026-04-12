@@ -8,7 +8,7 @@ Technologies and tools used to build and distribute Xcind.
 |-----------|---------|---------------|
 | Bash | Core language | 3.2+ compatibility target |
 | Docker Compose | Underlying tool being wrapped | v2 |
-| yq | YAML manipulation for hook-generated compose files | Required by proxy, app-env, and workspace hooks |
+| yq | YAML manipulation for hook-generated compose files | Required dependency: `xcind-config --check` fails if missing. Default-registered hooks that depend on it either soft-skip or hard-fail at runtime when absent — see [Hook Lifecycle](../specs/hook-lifecycle.md#generate). |
 | jq | JSON output for `xcind-config` | Used in config dump |
 
 ## Development
@@ -35,7 +35,7 @@ macOS ships with Bash 3.2 (due to GPLv3 licensing). Targeting 3.2+ ensures Xcind
 
 ### Why yq over other YAML tools?
 
-yq is POSIX-friendly, handles Docker Compose YAML well, and is widely available across package managers. The proxy and workspace hooks generate compose overlay files by constructing YAML programmatically --- yq provides reliable YAML merging and construction without pulling in heavyweight dependencies.
+yq is POSIX-friendly, handles Docker Compose YAML well, and is widely available across package managers. Several default-registered hooks (proxy, app-env, host-gateway, workspace, assigned-ports, app identity) generate compose overlay files by constructing YAML programmatically --- yq provides reliable YAML merging and construction without pulling in heavyweight dependencies. Because the default hook set is broad enough that every real xcind install needs yq, it is promoted to a required dependency rather than an optional one.
 
 ### Why shell scripts over a compiled binary?
 
