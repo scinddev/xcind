@@ -20,7 +20,7 @@ lib/xcind/                     # Shared libraries (sourced by executables)
 test/                          # Test suites
 ├── lib/                       # Shared test infrastructure (sourced by suites)
 │   ├── assert.sh              # assert_eq / assert_contains / assert_not_contains
-│   └── setup.sh               # _register_tmp, reset_xcind_state, EXIT-trap cleanup
+│   └── setup.sh               # mktemp_d, reset_xcind_state, EXIT-trap cleanup
 ├── test-xcind.sh              # Core test suite
 └── test-xcind-proxy.sh        # Proxy test suite
 

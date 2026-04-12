@@ -249,12 +249,14 @@ xcind-workspace status --json                # JSON output
 > **Trust boundary:** unlike `xcind-compose` and `xcind-config`, which walk
 > *upward* from `$PWD` (so the user has already chosen to `cd` into the
 > directory whose `.xcind.sh` is sourced), `xcind-workspace status` walks
-> *downward* through subdirectories and invokes `xcind-config` on each
-> child. Every `.xcind.sh` under the workspace root is therefore sourced,
-> and any `$(cmd)` substitutions in path patterns will execute. The
-> workspace model assumes every app subdirectory is trusted — do not run
-> `xcind-workspace status` inside a workspace root that contains untrusted
-> checkouts or downloaded archives.
+> *downward* through the workspace root's immediate non-hidden
+> subdirectories and invokes `xcind-config` on each one whose `.xcind.sh`
+> is an app (nested workspaces and hidden dirs like `.git` are skipped).
+> Each discovered app's `.xcind.sh` is therefore sourced, and any
+> `$(cmd)` substitutions in its path patterns will execute. The workspace
+> model assumes every immediate app subdirectory is trusted — do not run
+> `xcind-workspace status` inside a workspace root that contains
+> untrusted checkouts or downloaded archives as top-level children.
 
 ---
 
