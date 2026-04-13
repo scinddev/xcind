@@ -26,7 +26,7 @@ For schema definitions and field references, see [Configuration Reference](../re
 
 ### Level 1: Global Proxy (`~/.config/xcind/proxy/config.sh`)
 
-Machine-wide proxy settings. Created by `xcind-proxy init`, never overwritten on re-init.
+Machine-wide proxy settings. Created by `xcind-proxy init`. Existing config values are preserved as defaults on re-init; the file is always regenerated.
 
 Variables: `XCIND_PROXY_DOMAIN`, `XCIND_PROXY_IMAGE`, `XCIND_PROXY_HTTP_PORT`, `XCIND_PROXY_DASHBOARD`, `XCIND_PROXY_DASHBOARD_PORT`.
 
@@ -68,7 +68,7 @@ XCIND_PROXY_EXPORTS=("web:3000")
 - `xcind-proxy init`: Creates directory structure, config file, and Docker Compose/Traefik files
 - `xcind-proxy up`: Starts Traefik (calls `__xcind-proxy-ensure-running`)
 - `xcind-proxy down`: Stops Traefik
-- Auto-start: `xcind-proxy-hook` starts the proxy automatically when `XCIND_PROXY_EXPORTS` is configured
+- Auto-start: the `__xcind-proxy-execute-hook` (EXECUTE phase) starts the proxy automatically when `XCIND_PROXY_EXPORTS` is configured
 
 ### Recovery
 
@@ -92,8 +92,11 @@ Hooks run after file resolution as the final step before executing `docker compo
 | Hook | Source | Purpose |
 |------|--------|---------|
 | `xcind-naming-hook` | `xcind-naming-lib.bash` | Sets Docker Compose project `name:` |
-| `xcind-app-env-hook` | `xcind-lib.bash` | Injects `XCIND_APP_ENV_FILES` |
+| `xcind-app-hook` | `xcind-app-lib.bash` | App identity labels on all services |
+| `xcind-app-env-hook` | `xcind-app-env-lib.bash` | Injects `XCIND_APP_ENV_FILES` |
+| `xcind-host-gateway-hook` | `xcind-host-gateway-lib.bash` | Maps `host.docker.internal` via `extra_hosts` |
 | `xcind-proxy-hook` | `xcind-proxy-lib.bash` | Generates Traefik labels and proxy network |
+| `xcind-assigned-hook` | `xcind-assigned-lib.bash` | Stable host port bindings |
 | `xcind-workspace-hook` | `xcind-workspace-lib.bash` | Generates workspace network aliases |
 
 ### Template Resolution

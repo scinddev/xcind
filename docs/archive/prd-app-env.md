@@ -3,7 +3,7 @@
 **Status:** Draft
 **Author:** —
 **Date:** 2026-03-26
-**Depends on:** [PRD: xcind-proxy](archive/prd-proxy.md) (hook system)
+**Depends on:** [PRD: xcind-proxy](./prd-proxy.md) (hook system)
 
 ---
 

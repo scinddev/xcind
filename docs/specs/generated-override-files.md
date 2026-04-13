@@ -21,6 +21,7 @@ Each hook writes a separate compose file:
 | `xcind-app-env-hook` | `compose.app-env.yaml` | Injects `XCIND_APP_ENV_FILES` via `env_file:` |
 | `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Maps `host.docker.internal` via `extra_hosts` |
 | `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, export labels |
+| `xcind-assigned-hook` | `compose.assigned.yaml` | Stable host port bindings with flock-serialized state |
 | `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases and identity labels |
 
 These files are gitignored and regenerated on cache miss.
@@ -195,6 +196,7 @@ docker compose \
   -f .xcind/generated/{sha}/compose.app-env.yaml \
   -f .xcind/generated/{sha}/compose.host-gateway.yaml \
   -f .xcind/generated/{sha}/compose.proxy.yaml \
+  -f .xcind/generated/{sha}/compose.assigned.yaml \
   -f .xcind/generated/{sha}/compose.workspace.yaml
 ```
 

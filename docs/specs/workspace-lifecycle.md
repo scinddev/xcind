@@ -1,29 +1,33 @@
 # Workspace Lifecycle
 
-> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind has no `workspace init/destroy` commands; the lifecycle is: create `.xcind.sh` → run `xcind-compose`.
+> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init` and `xcind-workspace status` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
 
 ---
 
 ## Overview
 
-Xcind workspaces are lightweight — there is no explicit initialization, state management, or destruction. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
+Xcind workspaces are lightweight — initialization creates a `.xcind.sh` file, and there is no separate state management or destruction. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
 
 ## Lifecycle
 
 ### Creating a Workspace
 
-1. Create a directory for the workspace
-2. Add a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`
-3. Optionally set `XCIND_PROXY_DOMAIN` and other workspace-level settings
-4. Add application subdirectories, each with their own `.xcind.sh`
+Use `xcind-workspace init` or create the configuration manually:
 
 ```bash
+# Using the init command
+xcind-workspace init ~/dev
+xcind-workspace init --name myworkspace --proxy-domain xcind.localhost
+
+# Or manually
 mkdir dev
 cat > dev/.xcind.sh <<'EOF'
 XCIND_IS_WORKSPACE=1
 XCIND_PROXY_DOMAIN="xcind.localhost"
 EOF
 ```
+
+See the [CLI Reference](../reference/cli.md#xcind-workspace) for full `init` and `status` options.
 
 ### Running Applications
 

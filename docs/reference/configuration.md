@@ -200,6 +200,33 @@ XCIND_PROXY_EXPORTS=(
 
 When the port is omitted, it is inferred from the service's port mapping (requires exactly one port mapping). `yq` is required by `xcind-proxy-hook` whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
 
+### `XCIND_ASSIGNED_EXPORTS`
+
+Array of service export declarations for the assigned-port hook. Each entry maps an export name to a compose service and port, reserving a stable host port binding via flock-serialized state.
+
+**Default:** `()` (empty)
+
+**Format:** Same as `XCIND_PROXY_EXPORTS` — `export_name[=compose_service][:port]`
+
+```bash
+XCIND_ASSIGNED_EXPORTS=(
+    "db=postgres:5432"
+    "redis:6379"
+)
+```
+
+When configured, `xcind-assigned-hook` generates `compose.assigned.yaml` with host port mappings. Port assignments are persisted in the proxy state directory and remain stable across restarts. `yq` is required.
+
+### `XCIND_PROXY_AUTO_START`
+
+Controls whether the proxy execute hook automatically starts Traefik when `XCIND_PROXY_EXPORTS` is configured.
+
+**Default:** `1` (enabled)
+
+```bash
+XCIND_PROXY_AUTO_START=0  # disable proxy auto-start
+```
+
 ### `XCIND_PROXY_DOMAIN`
 
 Domain suffix for generated proxy hostnames. Can be set in the workspace `.xcind.sh` or in the global proxy config.
@@ -310,7 +337,7 @@ With `APP_ENV=dev`, xcind checks for `compose.dev.yaml` and `compose.dev.overrid
 | `XCIND_PROXY_DASHBOARD` | `"false"` | Enable Traefik dashboard |
 | `XCIND_PROXY_DASHBOARD_PORT` | `"8080"` | Dashboard port (if enabled) |
 
-Edit this file to customize the proxy. Run `xcind-proxy init` again to regenerate the Docker Compose and Traefik files (the config file is never overwritten).
+Edit this file to customize the proxy. Run `xcind-proxy init` again to regenerate all files (existing config values are preserved as defaults).
 
 ---
 

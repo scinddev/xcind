@@ -9,12 +9,15 @@
 ```
 ~/.config/xcind/
 └── proxy/
-    ├── config.sh                     # User-editable proxy configuration
+    └── config.sh                     # User-editable proxy configuration
+
+~/.local/state/xcind/
+└── proxy/
     ├── docker-compose.yaml           # Generated Traefik service definition
     └── traefik.yaml                  # Generated Traefik static configuration
 ```
 
-Created by `xcind-proxy init`. The `config.sh` file is never overwritten; `docker-compose.yaml` and `traefik.yaml` are regenerated on each init.
+Created by `xcind-proxy init`. Config values are preserved on re-init; `docker-compose.yaml` and `traefik.yaml` are regenerated on each init.
 
 ---
 
@@ -32,8 +35,11 @@ myapp/
 │   │   └── resolved-config.yaml
 │   └── generated/{sha}/             # Hook-generated compose files
 │       ├── compose.naming.yaml
+│       ├── compose.app.yaml
 │       ├── compose.app-env.yaml
+│       ├── compose.host-gateway.yaml
 │       ├── compose.proxy.yaml
+│       ├── compose.assigned.yaml
 │       └── compose.workspace.yaml
 └── src/                              # Application source code
 ```
@@ -87,8 +93,11 @@ The `.xcind/` directory contains all generated and cached files:
 |------|---------|
 | `.xcind/cache/{sha}/resolved-config.yaml` | Merged compose config used by hooks for port inference and service validation |
 | `.xcind/generated/{sha}/compose.naming.yaml` | Docker Compose project name |
+| `.xcind/generated/{sha}/compose.app.yaml` | App identity labels |
 | `.xcind/generated/{sha}/compose.app-env.yaml` | App env file injection |
+| `.xcind/generated/{sha}/compose.host-gateway.yaml` | `host.docker.internal` mapping |
 | `.xcind/generated/{sha}/compose.proxy.yaml` | Traefik labels and proxy network |
+| `.xcind/generated/{sha}/compose.assigned.yaml` | Stable host port bindings |
 | `.xcind/generated/{sha}/compose.workspace.yaml` | Workspace network aliases |
 
 The `{sha}` is a SHA-256 hash of the configuration inputs. When inputs change, a new SHA directory is created and hooks re-run.

@@ -133,8 +133,10 @@ Manages the shared Traefik reverse proxy infrastructure.
 | `init [OPTIONS]` | Create proxy infrastructure files (with optional configuration) |
 | `up [--force]` | Start the shared Traefik proxy (`--force` recreates the network) |
 | `down` | Stop the shared Traefik proxy |
-| `status [--json]` | Show proxy state (running/stopped, image, port, network) |
+| `status [--json]` | Show proxy state (running/stopped, image, port, network, assigned ports) |
 | `logs [OPTS]` | Show Traefik proxy logs (supports `docker compose logs` flags) |
+| `release PORT` | Release an assigned port from the state file |
+| `prune` | Remove assigned-port entries whose app path no longer exists |
 
 ### Init Options
 
