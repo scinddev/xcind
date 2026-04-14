@@ -243,12 +243,28 @@ XCIND_PROXY_SERVICE_TEMPLATE_APEX='  {compose_service}:
 # --------------------------------------------------------------------------
 
 # Parse a single XCIND_PROXY_EXPORTS entry into its components.
-# Format: export_name[=compose_service][:port]
+# Format: export_name[=compose_service][:port][;key=value[;key=value…]]
 #
-# Sets: _export_name, _compose_service, _port (empty if not specified)
+# Sets: _export_name, _compose_service, _port (empty if not specified),
+#       _type (defaults to "proxied")
+#
+# Recognized metadata keys:
+#   type = proxied | assigned
+#
+# Unknown keys and invalid type values produce an error and return 1.
 __xcind-proxy-parse-entry() {
   local entry="$1"
-  local right
+  local orig="$entry"
+  local right meta=""
+
+  # Reset metadata defaults on every call — must not leak between invocations.
+  _type="proxied"
+
+  # Strip metadata tail (everything after the first ';').
+  if [[ $entry == *";"* ]]; then
+    meta="${entry#*;}"
+    entry="${entry%%;*}"
+  fi
 
   # Split on = (export_name=compose_service_and_port or just export_and_port)
   if [[ $entry == *=* ]]; then
@@ -273,6 +289,39 @@ __xcind-proxy-parse-entry() {
   # If no = was present, export name = compose service name
   if [ -z "$_export_name" ]; then
     _export_name="$_compose_service"
+  fi
+
+  # Parse metadata key=value pairs
+  if [[ -n $meta ]]; then
+    # Save and restore IFS around the split (see __xcind-resolve-tools for
+    # the same pattern; `unset IFS` would expose the inherited value).
+    local _old_ifs="$IFS"
+    IFS=';'
+    local pairs
+    # shellcheck disable=SC2206
+    pairs=($meta)
+    IFS="$_old_ifs"
+    local pair key val
+    for pair in "${pairs[@]}"; do
+      [[ -z $pair ]] && continue
+      key="${pair%%=*}"
+      val="${pair#*=}"
+      case "$key" in
+      type)
+        case "$val" in
+        proxied | assigned) _type="$val" ;;
+        *)
+          echo "Error: invalid XCIND_PROXY_EXPORTS type '$val' in '$orig' (expected 'proxied' or 'assigned')" >&2
+          return 1
+          ;;
+        esac
+        ;;
+      *)
+        echo "Error: unknown XCIND_PROXY_EXPORTS attribute '$key' in '$orig'" >&2
+        return 1
+        ;;
+      esac
+    done
   fi
 }
 
@@ -385,9 +434,14 @@ xcind-proxy-hook() {
   local apex_router=""
 
   local entry
+  local is_first_proxied=true
   for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
-    local _export_name _compose_service _port
-    __xcind-proxy-parse-entry "$entry"
+    local _export_name _compose_service _port _type
+    __xcind-proxy-parse-entry "$entry" || return 1
+
+    # This hook only handles proxied entries. Assigned entries flow through
+    # xcind-assigned-hook, which reads the same array.
+    [[ $_type == "proxied" ]] || continue
 
     # Validate service exists
     __xcind-proxy-validate-service "$_compose_service" "$resolved_config" || return 1
@@ -409,8 +463,10 @@ xcind-proxy-hook() {
       workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
       export "$_export_name" protocol "http")
 
-    # Generate apex hostname and router for primary export only
-    if [[ ${#export_names[@]} -eq 0 && -n $apex_service_template ]]; then
+    # Generate apex hostname and router for the first proxied entry only.
+    # Order within the unified array still selects the apex anchor, but an
+    # assigned entry placed earlier does not consume the apex slot.
+    if [[ $is_first_proxied == true && -n $apex_service_template ]]; then
       apex_hostname=$(__xcind-render-template "$XCIND_APP_APEX_URL_TEMPLATE" \
         workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
         domain "$XCIND_PROXY_DOMAIN")
@@ -418,6 +474,7 @@ xcind-proxy-hook() {
         workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
         protocol "http")
     fi
+    is_first_proxied=false
 
     export_names+=("$_export_name")
     compose_services+=("$_compose_service")
@@ -425,6 +482,9 @@ xcind-proxy-hook() {
     hostnames+=("$hostname")
     routers+=("$router")
   done
+
+  # Nothing proxied after filtering: no compose overlay, no -f flag.
+  [[ ${#export_names[@]} -gt 0 ]] || return 0
 
   # Build output grouped by compose service
   local output="services:"
@@ -510,7 +570,9 @@ xcind-proxy-hook() {
 # --------------------------------------------------------------------------
 
 # EXECUTE hook: ensure proxy is running before docker compose executes.
-# Runs on every invocation (not cached). Skips if XCIND_PROXY_EXPORTS is unset.
+# Runs on every invocation (not cached). Skips unless XCIND_PROXY_EXPORTS
+# contains at least one `type=proxied` entry — a config with only
+# `type=assigned` entries needs no Traefik.
 __xcind-proxy-execute-hook() {
   # shellcheck disable=SC2034  # app_root required by hook interface
   local app_root="$1"
@@ -518,6 +580,19 @@ __xcind-proxy-execute-hook() {
   if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
     return 0
   fi
+
+  # Parse defensively; validation errors are surfaced by the GENERATE hook.
+  local entry _export_name _compose_service _port _type
+  local has_proxied=0
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    if __xcind-proxy-parse-entry "$entry" 2>/dev/null; then
+      if [[ $_type == "proxied" ]]; then
+        has_proxied=1
+        break
+      fi
+    fi
+  done
+  [[ $has_proxied -eq 1 ]] || return 0
 
   __xcind-proxy-ensure-running
 }

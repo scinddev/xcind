@@ -408,6 +408,7 @@ __xcind-proxy-parse-entry "web"
 assert_eq "parse 'web' export" "web" "$_export_name"
 assert_eq "parse 'web' service" "web" "$_compose_service"
 assert_eq "parse 'web' port" "" "$_port"
+assert_eq "parse 'web' type defaults to proxied" "proxied" "$_type"
 
 # Format: "api:3000" (export=service, explicit port)
 __xcind-proxy-parse-entry "api:3000"
@@ -426,6 +427,40 @@ __xcind-proxy-parse-entry "db=postgres:5432"
 assert_eq "parse 'db=postgres:5432' export" "db" "$_export_name"
 assert_eq "parse 'db=postgres:5432' service" "postgres" "$_compose_service"
 assert_eq "parse 'db=postgres:5432' port" "5432" "$_port"
+
+# Metadata: type=assigned
+__xcind-proxy-parse-entry "worker:9000;type=assigned"
+assert_eq "parse type=assigned export" "worker" "$_export_name"
+assert_eq "parse type=assigned service" "worker" "$_compose_service"
+assert_eq "parse type=assigned port" "9000" "$_port"
+assert_eq "parse type=assigned type" "assigned" "$_type"
+
+# Metadata with explicit type=proxied
+__xcind-proxy-parse-entry "web;type=proxied"
+assert_eq "parse explicit type=proxied" "proxied" "$_type"
+
+# Metadata with full syntax
+__xcind-proxy-parse-entry "database=db:3306;type=assigned"
+assert_eq "parse full syntax export" "database" "$_export_name"
+assert_eq "parse full syntax service" "db" "$_compose_service"
+assert_eq "parse full syntax port" "3306" "$_port"
+assert_eq "parse full syntax type" "assigned" "$_type"
+
+# Sentinel reset: _type must not leak across calls. Seed $_type=assigned,
+# then parse an entry without metadata — it should come back as proxied.
+_type="assigned"
+__xcind-proxy-parse-entry "web"
+assert_eq "parse sentinel reset (no metadata)" "proxied" "$_type"
+
+# Unknown attribute produces an error and non-zero status
+unknown_err=$(__xcind-proxy-parse-entry "web;visibility=public" 2>&1) && unknown_rc=0 || unknown_rc=$?
+assert_eq "parse unknown attribute returns non-zero" "1" "$unknown_rc"
+assert_contains "parse unknown attribute error text" "unknown XCIND_PROXY_EXPORTS attribute 'visibility'" "$unknown_err"
+
+# Invalid type value rejected
+invalid_err=$(__xcind-proxy-parse-entry "web;type=bogus" 2>&1) && invalid_rc=0 || invalid_rc=$?
+assert_eq "parse invalid type returns non-zero" "1" "$invalid_rc"
+assert_contains "parse invalid type error text" "invalid XCIND_PROXY_EXPORTS type 'bogus'" "$invalid_err"
 
 # ======================================================================
 echo ""
@@ -562,6 +597,27 @@ rm -rf "$XCIND_GENERATED_DIR"
 mkdir -p "$XCIND_GENERATED_DIR"
 unset_output=$(xcind-proxy-hook "$HOOK_APP")
 assert_eq "unset exports = no output" "" "$unset_output"
+
+# Test: array populated but no type=proxied entries → no output, no file.
+# The proxy hook must ignore assigned-only entries entirely (they're owned
+# by xcind-assigned-hook).
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("worker:9000;type=assigned" "db=postgres:5432;type=assigned")
+noprox_output=$(xcind-proxy-hook "$HOOK_APP")
+assert_eq "no proxied entries = no output" "" "$noprox_output"
+assert_eq "no proxied entries = no file" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.proxy.yaml" ] && echo true || echo false)"
+
+# Test: mixed array — proxy hook sees only the proxied entries.
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web" "db=postgres:5432;type=assigned" "api:3000")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+mixed_proxy_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "mixed: yaml has web service" "  web:" "$mixed_proxy_yaml"
+assert_contains "mixed: yaml has api service" "  api:" "$mixed_proxy_yaml"
+assert_not_contains "mixed: yaml omits assigned postgres" "postgres:" "$mixed_proxy_yaml"
 
 # Test: multi-export grouping (two exports on same compose service)
 rm -rf "$XCIND_GENERATED_DIR"
@@ -1057,6 +1113,19 @@ unset XCIND_PROXY_EXPORTS
 __xcind-proxy-execute-hook "/tmp/test-app"
 assert_eq "execute hook: skips when exports unset" "" "$PROXY_EXEC_CALLED"
 
+# Should skip when the array contains only type=assigned entries —
+# Traefik is not needed for a config that only reserves host ports.
+PROXY_EXEC_CALLED=""
+XCIND_PROXY_EXPORTS=("worker:9000;type=assigned")
+__xcind-proxy-execute-hook "/tmp/test-app"
+assert_eq "execute hook: skips when only assigned entries" "" "$PROXY_EXEC_CALLED"
+
+# Should run when the array has at least one proxied entry (mixed)
+PROXY_EXEC_CALLED=""
+XCIND_PROXY_EXPORTS=("worker:9000;type=assigned" "web")
+__xcind-proxy-execute-hook "/tmp/test-app"
+assert_eq "execute hook: runs when mixed has proxied entry" "yes" "$PROXY_EXEC_CALLED"
+
 # ======================================================================
 echo ""
 echo "=== Test: __xcind-workspace-execute-hook ==="
@@ -1091,9 +1160,11 @@ echo "=== Test: __xcind-assigned-* state file helpers ==="
 
 ASSIGNED_HOME=$(mktemp_d)
 _orig_assigned_home="$HOME"
+_orig_xdg_state="${XDG_STATE_HOME:-}"
 export HOME="$ASSIGNED_HOME"
-# Re-derive paths from new HOME
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+unset XDG_STATE_HOME
+# Re-derive paths from new HOME (default XDG_STATE_HOME = $HOME/.local/state)
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
@@ -1102,13 +1173,16 @@ assert_file_exists "state file created with header" "$XCIND_ASSIGNED_PORTS_FILE"
 
 header_line=$(head -1 "$XCIND_ASSIGNED_PORTS_FILE")
 assert_contains "state file header has port" "port" "$header_line"
+assert_contains "state file header has workspace" "workspace" "$header_line"
+assert_contains "state file header has application" "application" "$header_line"
+assert_contains "state file header has service" "service" "$header_line"
 assert_contains "state file header has app_path" "app_path" "$header_line"
 
-# Insert two entries for /tmp/foo and /tmp/bar
+# Insert three entries — mix of workspaceless (empty workspace) and workspace rows
 mkdir -p "$ASSIGNED_HOME/foo" "$ASSIGNED_HOME/bar"
-__xcind-assigned-upsert 3306 foo db 3306 "$ASSIGNED_HOME/foo"
-__xcind-assigned-upsert 6379 foo cache 6379 "$ASSIGNED_HOME/foo"
-__xcind-assigned-upsert 5432 bar db 5432 "$ASSIGNED_HOME/bar"
+__xcind-assigned-upsert 3306 "" foo db 3306 "$ASSIGNED_HOME/foo"
+__xcind-assigned-upsert 6379 "" foo cache 6379 "$ASSIGNED_HOME/foo"
+__xcind-assigned-upsert 5432 dev bar db 5432 "$ASSIGNED_HOME/bar"
 
 # Lookup
 looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "db")
@@ -1118,12 +1192,18 @@ assert_eq "lookup bar/db → 5432" "5432" "$looked"
 looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache")
 assert_eq "lookup foo/cache → 6379" "6379" "$looked"
 
+# Workspace value persisted to TSV
+bar_row=$(awk -F'\t' '$3 == "bar" {print; exit}' "$XCIND_ASSIGNED_PORTS_FILE")
+assert_contains "bar row has workspace=dev" $'\tdev\t' "$bar_row"
+foo_row=$(awk -F'\t' '$3 == "foo" && $4 == "db" {print; exit}' "$XCIND_ASSIGNED_PORTS_FILE")
+assert_contains "foo row has empty workspace" $'\t\tfoo\t' "$foo_row"
+
 # Nonexistent lookup returns 1
 __xcind-assigned-lookup "$ASSIGNED_HOME/foo" "nothing" >/dev/null && lookup_rc=0 || lookup_rc=$?
 assert_eq "missing lookup exits 1" "1" "$lookup_rc"
 
 # Upsert with same identity (foo/db) replaces the row with the new port
-__xcind-assigned-upsert 3307 foo db 3306 "$ASSIGNED_HOME/foo"
+__xcind-assigned-upsert 3307 "" foo db 3306 "$ASSIGNED_HOME/foo"
 looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "db")
 assert_eq "upsert replaces identity" "3307" "$looked"
 
@@ -1131,7 +1211,7 @@ row_count=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
 assert_eq "upsert keeps three rows" "3" "$row_count"
 
 # Upsert that collides with an existing host port removes the old collider
-__xcind-assigned-upsert 6379 bar cache 6379 "$ASSIGNED_HOME/bar"
+__xcind-assigned-upsert 6379 dev bar cache 6379 "$ASSIGNED_HOME/bar"
 # Now (foo, cache, 6379) should be gone; (bar, cache, 6379) should exist
 __xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache" >/dev/null && collided_rc=0 || collided_rc=$?
 assert_eq "collision removes old owner" "1" "$collided_rc"
@@ -1153,8 +1233,9 @@ __xcind-assigned-remove-port 9999 && no_port_rc=0 || no_port_rc=$?
 assert_eq "remove-port missing → 1" "1" "$no_port_rc"
 
 export HOME="$_orig_assigned_home"
+[[ -n $_orig_xdg_state ]] && export XDG_STATE_HOME="$_orig_xdg_state"
 rm -rf "$ASSIGNED_HOME"
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
@@ -1169,8 +1250,10 @@ echo "=== Test: __xcind-with-assigned-lock serializes concurrent writers ==="
 if command -v flock >/dev/null 2>&1; then
   LOCK_HOME=$(mktemp_d)
   _orig_lock_home="$HOME"
+  _orig_lock_xdg="${XDG_STATE_HOME:-}"
   export HOME="$LOCK_HOME"
-  XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+  unset XDG_STATE_HOME
+  XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
   XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
   XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
   __xcind-assigned-ensure-state-file
@@ -1179,7 +1262,7 @@ if command -v flock >/dev/null 2>&1; then
   for i in $(seq 1 $N); do
     (
       __xcind-with-assigned-lock __xcind-assigned-upsert \
-        "$((3300 + i))" "app$i" "web" "80" "/tmp/xcind-lock-test/app$i"
+        "$((3300 + i))" "" "app$i" "web" "80" "/tmp/xcind-lock-test/app$i"
     ) &
   done
   wait
@@ -1191,17 +1274,18 @@ if command -v flock >/dev/null 2>&1; then
     "$XCIND_ASSIGNED_PORTS_FILE" | sort -u | wc -l | tr -d ' ')
   assert_eq "locked: no duplicate ports" "$N" "$unique_ports"
 
-  unique_paths=$(awk -F'\t' '!/^#/ && NF>0 {print $5}' \
+  unique_paths=$(awk -F'\t' '!/^#/ && NF>0 {print $6}' \
     "$XCIND_ASSIGNED_PORTS_FILE" | sort -u | wc -l | tr -d ' ')
   assert_eq "locked: all distinct app_paths persisted" "$N" "$unique_paths"
 
-  malformed=$(awk -F'\t' '!/^#/ && NF>0 && NF!=6 {print}' \
+  malformed=$(awk -F'\t' '!/^#/ && NF>0 && NF!=7 {print}' \
     "$XCIND_ASSIGNED_PORTS_FILE" | wc -l | tr -d ' ')
   assert_eq "locked: no malformed rows" "0" "$malformed"
 
   export HOME="$_orig_lock_home"
+  [[ -n $_orig_lock_xdg ]] && export XDG_STATE_HOME="$_orig_lock_xdg"
   rm -rf "$LOCK_HOME"
-  XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+  XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
   XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
   XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 else
@@ -1219,8 +1303,10 @@ echo "=== Test: __xcind-with-assigned-lock unlocked fallback produces valid TSV 
 # function override so the else branch of __xcind-with-assigned-lock runs.
 NOLOCK_HOME=$(mktemp_d)
 _orig_nolock_home="$HOME"
+_orig_nolock_xdg="${XDG_STATE_HOME:-}"
 export HOME="$NOLOCK_HOME"
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 __xcind-assigned-ensure-state-file
@@ -1237,7 +1323,7 @@ N=10
 for i in $(seq 1 $N); do
   (
     __xcind-with-assigned-lock __xcind-assigned-upsert \
-      "$((3400 + i))" "app$i" "web" "80" "/tmp/xcind-nolock-test/app$i"
+      "$((3400 + i))" "" "app$i" "web" "80" "/tmp/xcind-nolock-test/app$i"
   ) &
 done
 wait
@@ -1256,8 +1342,9 @@ assert_eq "unlocked: at least one row persisted" "0" \
   "$([ "$row_count" -ge 1 ] && echo 0 || echo 1)"
 
 export HOME="$_orig_nolock_home"
+[[ -n $_orig_nolock_xdg ]] && export XDG_STATE_HOME="$_orig_nolock_xdg"
 rm -rf "$NOLOCK_HOME"
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
@@ -1267,15 +1354,17 @@ echo "=== Test: __xcind-assigned-prune ==="
 
 PRUNE_HOME=$(mktemp_d)
 _orig_prune_home="$HOME"
+_orig_prune_xdg="${XDG_STATE_HOME:-}"
 export HOME="$PRUNE_HOME"
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
 mkdir -p "$PRUNE_HOME/alive"
-__xcind-assigned-upsert 3306 alive db 3306 "$PRUNE_HOME/alive"
-__xcind-assigned-upsert 5432 gone db 5432 "$PRUNE_HOME/deleted"
-__xcind-assigned-upsert 6379 alive cache 6379 "$PRUNE_HOME/alive"
+__xcind-assigned-upsert 3306 "" alive db 3306 "$PRUNE_HOME/alive"
+__xcind-assigned-upsert 5432 "" gone db 5432 "$PRUNE_HOME/deleted"
+__xcind-assigned-upsert 6379 "" alive cache 6379 "$PRUNE_HOME/alive"
 
 pruned_count=$(__xcind-assigned-prune)
 assert_eq "prune removed stale entry" "1" "$pruned_count"
@@ -1289,8 +1378,9 @@ __xcind-assigned-lookup "$PRUNE_HOME/deleted" "db" >/dev/null && gone_rc=0 || go
 assert_eq "prune drops deleted/db" "1" "$gone_rc"
 
 export HOME="$_orig_prune_home"
+[[ -n $_orig_prune_xdg ]] && export XDG_STATE_HOME="$_orig_prune_xdg"
 rm -rf "$PRUNE_HOME"
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
@@ -1483,13 +1573,16 @@ echo "=== Test: xcind-assigned-hook (YAML + sticky) ==="
 
 AHOOK_APP=$(mktemp_d)
 _orig_ahook_home="$HOME"
+_orig_ahook_xdg="${XDG_STATE_HOME:-}"
 HOME=$(mktemp_d)
 export HOME
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
 export XCIND_APP="myapp"
+export XCIND_WORKSPACE=""
 export XCIND_SHA="assignedhook123"
 export XCIND_CACHE_DIR="$AHOOK_APP/.xcind/cache/$XCIND_SHA"
 export XCIND_GENERATED_DIR="$AHOOK_APP/.xcind/generated/$XCIND_SHA"
@@ -1512,7 +1605,7 @@ YAML
 __xcind-assigned-port-available() { return 0; }
 
 # First run: expected to allocate 3306 and 6379 from clean state
-XCIND_ASSIGNED_EXPORTS=("db=mysql:3306" "cache=redis:6379")
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned" "cache=redis:6379;type=assigned")
 hook_out=$(xcind-assigned-hook "$AHOOK_APP")
 assert_contains "hook emits -f flag" "-f $XCIND_GENERATED_DIR/compose.assigned.yaml" "$hook_out"
 assert_file_exists "compose.assigned.yaml created" "$XCIND_GENERATED_DIR/compose.assigned.yaml"
@@ -1544,7 +1637,7 @@ __xcind-assigned-port-available() {
   return 0
 }
 rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
-XCIND_ASSIGNED_EXPORTS=("db=mysql:3306")
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
 xcind-assigned-hook "$AHOOK_APP" >/dev/null
 reassigned_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
 assert_contains "reallocates away from taken port" '"3307:3306"' "$reassigned_yaml"
@@ -1561,9 +1654,9 @@ services:
 YAML
 # Reset state
 : >"$XCIND_ASSIGNED_PORTS_FILE"
-printf '# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at\n' >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
 rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
-XCIND_ASSIGNED_EXPORTS=("db=mysql:3306" "db-alt=mysql:3307")
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned" "db-alt=mysql:3307;type=assigned")
 xcind-assigned-hook "$AHOOK_APP" >/dev/null
 grouped=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
 mysql_blocks=$(echo "$grouped" | grep -c '^  mysql:' || true)
@@ -1572,7 +1665,7 @@ assert_contains "grouped: has 3306 port" '"3306:3306"' "$grouped"
 assert_contains "grouped: has 3307 port" '"3307:3307"' "$grouped"
 
 # Empty exports → no output
-XCIND_ASSIGNED_EXPORTS=()
+XCIND_PROXY_EXPORTS=()
 rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
 empty_out=$(xcind-assigned-hook "$AHOOK_APP")
 assert_eq "empty exports → no output" "" "$empty_out"
@@ -1580,9 +1673,38 @@ assert_eq "empty exports → no file" "false" \
   "$([ -f "$XCIND_GENERATED_DIR/compose.assigned.yaml" ] && echo true || echo false)"
 
 # Unset exports → no output (set -u safe)
-unset XCIND_ASSIGNED_EXPORTS
+unset XCIND_PROXY_EXPORTS
 unset_out=$(xcind-assigned-hook "$AHOOK_APP")
 assert_eq "unset exports → no output" "" "$unset_out"
+
+# Array populated but with no type=assigned entries → no output, no file
+XCIND_PROXY_EXPORTS=("web" "api:3000")
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+noassigned_out=$(xcind-assigned-hook "$AHOOK_APP")
+assert_eq "no assigned entries → no output" "" "$noassigned_out"
+assert_eq "no assigned entries → no file" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.assigned.yaml" ] && echo true || echo false)"
+
+# Mixed array: proxied entries are skipped by the assigned hook
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+  web:
+    image: nginx
+    ports:
+      - target: 80
+YAML
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+XCIND_PROXY_EXPORTS=("web" "db=mysql:3306;type=assigned")
+xcind-assigned-hook "$AHOOK_APP" >/dev/null
+mixed_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+assert_contains "mixed: emits mysql entry" '"3306:3306"' "$mixed_yaml"
+assert_not_contains "mixed: omits proxied web service" $'\n  web:' "$mixed_yaml"
 
 # Port inference from compose
 cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
@@ -1593,14 +1715,25 @@ services:
       - target: 6379
 YAML
 : >"$XCIND_ASSIGNED_PORTS_FILE"
-printf '# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at\n' >"$XCIND_ASSIGNED_PORTS_FILE"
-XCIND_ASSIGNED_EXPORTS=("redis")
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+XCIND_PROXY_EXPORTS=("redis;type=assigned")
 xcind-assigned-hook "$AHOOK_APP" >/dev/null
 infer_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
 assert_contains "inferred port 6379 from compose" '"6379:6379"' "$infer_yaml"
 
+# Workspace column persisted when XCIND_WORKSPACE is set
+XCIND_WORKSPACE_SAVED="$XCIND_WORKSPACE"
+export XCIND_WORKSPACE="dev"
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+XCIND_PROXY_EXPORTS=("redis;type=assigned")
+xcind-assigned-hook "$AHOOK_APP" >/dev/null
+ws_row=$(awk -F'\t' '!/^#/ && NF>0 {print; exit}' "$XCIND_ASSIGNED_PORTS_FILE")
+assert_contains "workspace row has dev" $'\tdev\t' "$ws_row"
+export XCIND_WORKSPACE="$XCIND_WORKSPACE_SAVED"
+
 # Service validation error
-XCIND_ASSIGNED_EXPORTS=("missing=nosuchservice:1234")
+XCIND_PROXY_EXPORTS=("missing=nosuchservice:1234;type=assigned")
 missing_result=$(xcind-assigned-hook "$AHOOK_APP" 2>&1) && missing_rc=0 || missing_rc=$?
 assert_eq "missing service → error" "1" "$missing_rc"
 assert_contains "missing service mentions not found" "not found" "$missing_result"
@@ -1617,8 +1750,8 @@ services:
         protocol: tcp
 YAML
 : >"$XCIND_ASSIGNED_PORTS_FILE"
-printf '# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at\n' >"$XCIND_ASSIGNED_PORTS_FILE"
-XCIND_ASSIGNED_EXPORTS=("db=mysql:3306")
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
 conflict_stderr=$(xcind-assigned-hook "$AHOOK_APP" 2>&1 >/dev/null)
 assert_contains "compose conflict: warning emitted" "already maps container port 3306" "$conflict_stderr"
 assert_contains "compose conflict: mentions host 3307" "3307" "$conflict_stderr"
@@ -1629,10 +1762,11 @@ unset -f __xcind-assigned-port-available
 rm -rf "$AHOOK_APP" "$HOME"
 HOME="$_orig_ahook_home"
 export HOME
-XCIND_ASSIGNED_DIR="${HOME}/.config/xcind"
+[[ -n $_orig_ahook_xdg ]] && export XDG_STATE_HOME="$_orig_ahook_xdg"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
-unset XCIND_ASSIGNED_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
 
 # ======================================================================
 echo ""
@@ -1650,20 +1784,24 @@ exit 0
 MOCKEOF
 chmod +x "$CLI_HOME/bin/docker"
 
-# Seed state directly so release/prune have something to operate on
-mkdir -p "$CLI_HOME/.config/xcind" "$CLI_HOME/alive"
-cat >"$CLI_HOME/.config/xcind/assigned-ports.tsv" <<EOF
-# port	app	export	container_port	app_path	assigned_at
-3306	alive	db	3306	$CLI_HOME/alive	2026-04-10T00:00:00Z
-5432	gone	db	5432	$CLI_HOME/missing	2026-04-10T00:00:00Z
-6379	alive	cache	6379	$CLI_HOME/alive	2026-04-10T00:00:00Z
+# Seed state directly so release/prune have something to operate on. State
+# now lives under $XDG_STATE_HOME/xcind/proxy/; unset it so the default
+# $HOME/.local/state path is used.
+_orig_cli_xdg="${XDG_STATE_HOME:-}"
+unset XDG_STATE_HOME
+mkdir -p "$CLI_HOME/.local/state/xcind/proxy" "$CLI_HOME/alive"
+cat >"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv" <<EOF
+# port	workspace	application	service	container_port	app_path	assigned_at
+3306		alive	db	3306	$CLI_HOME/alive	2026-04-10T00:00:00Z
+5432		gone	db	5432	$CLI_HOME/missing	2026-04-10T00:00:00Z
+6379	dev	alive	cache	6379	$CLI_HOME/alive	2026-04-10T00:00:00Z
 EOF
 
 # release an existing port
 release_out=$("$XCIND_ROOT/bin/xcind-proxy" release 3306 2>&1) && release_rc=0 || release_rc=$?
 assert_eq "release existing exits 0" "0" "$release_rc"
 assert_contains "release prints confirmation" "Released assigned port 3306" "$release_out"
-state_after_release=$(<"$CLI_HOME/.config/xcind/assigned-ports.tsv")
+state_after_release=$(<"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv")
 assert_not_contains "state no longer has 3306 row" $'\n3306\t' "$state_after_release"
 
 # release a port that does not exist → exit 1
@@ -1685,17 +1823,43 @@ assert_contains "release non-numeric error" "must be a positive integer" "$relea
 prune_out=$("$XCIND_ROOT/bin/xcind-proxy" prune 2>&1) && prune_rc=0 || prune_rc=$?
 assert_eq "prune exits 0" "0" "$prune_rc"
 assert_contains "prune reports count" "Pruned 1" "$prune_out"
-state_after_prune=$(<"$CLI_HOME/.config/xcind/assigned-ports.tsv")
+state_after_prune=$(<"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv")
 assert_not_contains "prune removed gone row" "gone" "$state_after_prune"
 assert_contains "prune kept alive row" "alive" "$state_after_prune"
 
-# Status (text mode) renders the assigned-ports section
+# Status (text mode) renders the assigned-ports section with new prefix.
+# The workspaceless row (alive/db was 3306, released; but bar-ish-shaped
+# remaining workspaceless row was already pruned; the remaining row is
+# 6379 with workspace=dev) should show the three-segment prefix.
 status_out=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1)
 assert_contains "status text shows Assigned ports header" "Assigned ports:" "$status_out"
 assert_contains "status text shows 6379 row" "6379" "$status_out"
+assert_contains "status text shows workspace/app/service prefix" "dev/alive/cache" "$status_out"
+
+# Seed another row without workspace to assert the two-segment fallback
+cat >>"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv" <<EOF
+9000		alive	debug	9000	$CLI_HOME/alive	2026-04-10T00:00:00Z
+EOF
+status_out2=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1)
+assert_contains "status text shows app/service fallback prefix" "alive/debug" "$status_out2"
+
+# --json includes new column names. Status --json short-circuits when the
+# proxy isn't initialized, so lay down a minimal fake compose file to take
+# the `initialized: true` branch.
+mkdir -p "$CLI_HOME/.local/state/xcind/proxy" "$CLI_HOME/.config/xcind/proxy"
+cat >"$CLI_HOME/.local/state/xcind/proxy/docker-compose.yaml" <<'YAML'
+name: xcind-proxy
+services:
+  traefik: { image: traefik:v3 }
+YAML
+status_json=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>&1)
+assert_contains "status json has application field" '"application":"alive"' "$status_json"
+assert_contains "status json has service field" '"service":"cache"' "$status_json"
+assert_contains "status json has workspace field" '"workspace":"dev"' "$status_json"
 
 export HOME="$REAL_CLI_HOME"
 export PATH="$REAL_CLI_PATH"
+[[ -n $_orig_cli_xdg ]] && export XDG_STATE_HOME="$_orig_cli_xdg"
 rm -rf "$CLI_HOME"
 
 # ======================================================================

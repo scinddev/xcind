@@ -193,20 +193,29 @@ Override either array to `()` in your `.xcind.sh` to disable the corresponding h
 
 ### `XCIND_PROXY_EXPORTS`
 
-Array of service export declarations for the proxy hook. Each entry maps an
-export name to a compose service and port. See [Proxy](#proxy).
+Array of service export declarations. Each entry names an exported service
+and picks between the two port-exposure mechanisms via an optional `type`
+attribute: `proxied` (default) routes traffic through Traefik, `assigned`
+reserves a stable host port. See [Proxy](#proxy).
 
 **Default:** `()` (empty)
 
-Format: `export_name[=compose_service][:port]`
+Format: `export_name[=compose_service][:port][;key=value[;key=value…]]`
 
 ```bash
 XCIND_PROXY_EXPORTS=(
-    "api=app:3000"          # export "api" from service "app" on port 3000
-    "web:8080"              # export "web" from service "web" on port 8080
-    "app"                   # export "app" from service "app", port from compose config
+    "api=app:3000"                   # proxied (default), service "app", port 3000
+    "web:8080"                       # proxied, service "web", port 8080
+    "app"                            # proxied, port inferred from compose config
+    "worker:9000;type=assigned"      # assigned host port 9000 (sticky across runs)
+    "database=db:3306;type=assigned" # assigned host port 3306, compose service "db"
 )
 ```
+
+`type=proxied` entries flow through `xcind-proxy-hook` (Traefik labels).
+`type=assigned` entries flow through `xcind-assigned-hook`, which publishes
+the container port on a stable host port and persists the binding under
+`${XDG_STATE_HOME:-~/.local/state}/xcind/proxy/assigned-ports.tsv`.
 
 ### `XCIND_PROXY_DOMAIN`
 

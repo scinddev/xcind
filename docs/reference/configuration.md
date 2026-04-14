@@ -178,44 +178,30 @@ See [Hook Lifecycle](../specs/hook-lifecycle.md) for details on all hook phases.
 
 ### `XCIND_PROXY_EXPORTS`
 
-Array of service export declarations for the proxy hook. Each entry maps an export name to a compose service and port.
+Array of service export declarations. Each entry names an exported service and — via an optional `type` attribute — chooses between the two port-exposure mechanisms: routing through the shared Traefik proxy (`type=proxied`, default) or reserving a stable host port (`type=assigned`).
 
 **Default:** `()` (empty)
 
-**Format:** `export_name[=compose_service][:port]`
+**Format:** `export_name[=compose_service][:port][;key=value[;key=value…]]`
 
-| Entry | Export Name | Compose Service | Port |
-|-------|-----------|-----------------|------|
-| `"api=app:3000"` | `api` | `app` | `3000` |
-| `"web:8080"` | `web` | `web` | `8080` |
-| `"app"` | `app` | `app` | *(inferred from compose config)* |
+| Metadata Key | Default | Description |
+|--------------|---------|-------------|
+| `type` | `"proxied"` | `proxied` routes traffic through Traefik on a generated hostname. `assigned` reserves a stable host port, persisted across restarts. |
+
+Unknown metadata keys and invalid `type` values cause the generation hooks to fail fast — the surface is kept minimal until additional Scind attributes (`protocol`, `visibility`) are wired up.
 
 ```bash
 XCIND_PROXY_EXPORTS=(
-    "api=app:3000"
-    "web:8080"
-    "app"
+    "web"                            # proxied (default), service=web, port inferred
+    "api=uvicorn:8080"               # proxied, name=api, service=uvicorn, port 8080
+    "worker:9000;type=assigned"      # assigned, name=worker, service=worker, port 9000
+    "database=db:3306;type=assigned" # assigned, name=database, service=db, port 3306
 )
 ```
 
-When the port is omitted, it is inferred from the service's port mapping (requires exactly one port mapping). `yq` is required by `xcind-proxy-hook` whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
+When the port is omitted, it is inferred from the compose service's port mapping (requires exactly one port mapping). `yq` is required whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
 
-### `XCIND_ASSIGNED_EXPORTS`
-
-Array of service export declarations for the assigned-port hook. Each entry maps an export name to a compose service and port, reserving a stable host port binding via flock-serialized state.
-
-**Default:** `()` (empty)
-
-**Format:** Same as `XCIND_PROXY_EXPORTS` — `export_name[=compose_service][:port]`
-
-```bash
-XCIND_ASSIGNED_EXPORTS=(
-    "db=postgres:5432"
-    "redis:6379"
-)
-```
-
-When configured, `xcind-assigned-hook` generates `compose.assigned.yaml` with host port mappings. Port assignments are persisted in the proxy state directory and remain stable across restarts. `yq` is required.
+`xcind-proxy-hook` owns entries with `type=proxied` and emits `compose.proxy.yaml` with Traefik routing labels. `xcind-assigned-hook` owns entries with `type=assigned`, emits `compose.assigned.yaml` with host-port mappings, and persists assignments under `${XDG_STATE_HOME:-~/.local/state}/xcind/proxy/assigned-ports.tsv` via flock-serialized state.
 
 ### `XCIND_PROXY_AUTO_START`
 

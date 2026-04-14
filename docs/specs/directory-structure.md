@@ -14,10 +14,12 @@
 ~/.local/state/xcind/
 └── proxy/
     ├── docker-compose.yaml           # Generated Traefik service definition
-    └── traefik.yaml                  # Generated Traefik static configuration
+    ├── traefik.yaml                  # Generated Traefik static configuration
+    ├── assigned-ports.tsv            # Host-port assignment ledger (type=assigned entries)
+    └── assigned-ports.lock           # flock(1) serialization file
 ```
 
-Created by `xcind-proxy init`. Config values are preserved on re-init; `docker-compose.yaml` and `traefik.yaml` are regenerated on each init.
+Created by `xcind-proxy init`. Config values are preserved on re-init; `docker-compose.yaml` and `traefik.yaml` are regenerated on each init. `assigned-ports.tsv` is written lazily by `xcind-assigned-hook` whenever an application declares a `type=assigned` entry in `XCIND_PROXY_EXPORTS`.
 
 ---
 

@@ -273,14 +273,21 @@ __xcind-proxy-status-assigned-text() {
 }
 
 __xcind-proxy-status-assigned-text-row() {
-  local L_port="$1" L_app="$2" L_xport="$3" L_cport="$4" L_path="$5"
+  local L_port="$1" L_workspace="$2" L_application="$3" L_service="$4"
+  local L_cport="$5" L_path="$6"
   if [ "$__xcind_proxy_status_text_any" -eq 0 ]; then
     echo ""
     echo "Assigned ports:"
     __xcind_proxy_status_text_any=1
   fi
-  printf '  %s  %s/%s  → container port %s  (%s)\n' \
-    "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path"
+  local prefix
+  if [[ -n $L_workspace ]]; then
+    prefix="$L_workspace/$L_application/$L_service"
+  else
+    prefix="$L_application/$L_service"
+  fi
+  printf '  %s  %s  → container port %s  (%s)\n' \
+    "$L_port" "$prefix" "$L_cport" "$L_path"
 }
 
 # Render the assigned-ports section as a JSON array.
@@ -296,15 +303,17 @@ __xcind-proxy-status-assigned-json() {
 }
 
 __xcind-proxy-status-assigned-json-row() {
-  local L_port="$1" L_app="$2" L_xport="$3" L_cport="$4" L_path="$5" L_ts="$6"
+  local L_port="$1" L_workspace="$2" L_application="$3" L_service="$4"
+  local L_cport="$5" L_path="$6" L_ts="$7"
   __xcind_proxy_status_json_result=$(printf '%s' "$__xcind_proxy_status_json_result" | jq \
     --argjson port "$L_port" \
-    --arg app "$L_app" \
-    --arg xport "$L_xport" \
+    --arg workspace "$L_workspace" \
+    --arg application "$L_application" \
+    --arg service "$L_service" \
     --argjson cport "$L_cport" \
     --arg path "$L_path" \
     --arg ts "$L_ts" \
-    '. + [{host_port: $port, app: $app, export: $xport, container_port: $cport, app_path: $path, assigned_at: $ts}]')
+    '. + [{host_port: $port, workspace: $workspace, application: $application, service: $service, container_port: $cport, app_path: $path, assigned_at: $ts}]')
 }
 
 __xcind-proxy-release() {

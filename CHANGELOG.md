@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking**: Unified `XCIND_PROXY_EXPORTS` and `XCIND_ASSIGNED_EXPORTS`
+  into a single `XCIND_PROXY_EXPORTS` array. Entry type is selected via a
+  `;type=proxied|assigned` metadata attribute on each entry (default:
+  `proxied`). Old `XCIND_ASSIGNED_EXPORTS` values are silently ignored —
+  apps using assigned ports must migrate their entries into
+  `XCIND_PROXY_EXPORTS` with `;type=assigned`.
+- **Breaking**: Moved the assigned-ports state file from
+  `${XDG_CONFIG_HOME:-~/.config}/xcind/assigned-ports.tsv` to
+  `${XDG_STATE_HOME:-~/.local/state}/xcind/proxy/assigned-ports.tsv`
+  (runtime state belongs under `XDG_STATE_HOME`, and it is now nested
+  under `proxy/` alongside the other proxy-component files). No migration
+  is performed; stale entries can be re-created on next run.
+- **Breaking**: Rewrote the assigned-ports TSV schema to
+  `port, workspace, application, service, container_port, app_path,
+  assigned_at` (Scind vocabulary). `xcind-proxy status --json` output
+  fields `app`/`export` were renamed to `application`/`service`, and a
+  `workspace` field was added.
+- `xcind-proxy status` assigned-port rows now display
+  `workspace/application/service` (falling back to `application/service`
+  when no workspace is in play).
+- `__xcind-proxy-execute-hook` no longer starts Traefik when
+  `XCIND_PROXY_EXPORTS` contains only `type=assigned` entries.
+
 ## [0.5.0] - 2026-04-07
 
 ### Added
