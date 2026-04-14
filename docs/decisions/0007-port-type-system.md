@@ -10,23 +10,26 @@ Services need different handling based on how they're accessed — some need HTT
 
 ## Decision
 
-Each exported service declares how it should be accessed. In Xcind, exports are declared via the `XCIND_PROXY_EXPORTS` array:
+Each exported service declares how it should be accessed. In Xcind, all exports are declared in a single `XCIND_PROXY_EXPORTS` array; the `type` metadata attribute picks between the two port-exposure mechanisms:
 
 ```bash
 XCIND_PROXY_EXPORTS=(
-    "web=nginx:8080"    # export "web" from service "nginx" on port 8080
-    "api=app:3000"      # export "api" from service "app" on port 3000
-    "app"               # export "app" from service "app", port from compose config
+    "web=nginx:8080"                 # proxied (default): Traefik routing on a hostname
+    "api=app:3000"                   # proxied: Traefik routing on a hostname
+    "app"                            # proxied, port inferred from compose config
+    "worker:9000;type=assigned"      # assigned: stable host-port binding
+    "database=db:3306;type=assigned" # assigned: stable host-port binding
 )
 ```
 
-The proxy hook generates Traefik labels for HTTP/HTTPS routing. The first entry in the array is implicitly primary and receives an apex hostname.
+`type=proxied` entries are handled by `xcind-proxy-hook`, which generates Traefik routing labels. The first proxied entry is implicitly primary and receives an apex hostname. `type=assigned` entries are handled by `xcind-assigned-hook`, which publishes the container port on a free host port (sticky across restarts via a TSV state file).
 
 ## Consequences
 
 - Proxied services route through Traefik by hostname
+- Assigned services bind directly to a host port, stable across restarts
 - Supports multiple exports per application
-- Position-based primary designation (first entry = apex URL) avoids additional configuration
+- Position-based primary designation (first *proxied* entry = apex URL) avoids additional configuration
 - Environment variables use proxy values (port 80/443) for proxied services
 
 ## Related Decisions

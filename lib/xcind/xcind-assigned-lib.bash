@@ -2,30 +2,36 @@
 # xcind-assigned-lib.bash — Assigned-port hook and lifecycle helpers
 #
 # Provides xcind-assigned-hook (GENERATE), which reserves stable host port
-# bindings for services declared in XCIND_ASSIGNED_EXPORTS and emits
-# compose.assigned.yaml with matching "ports:" entries.
+# bindings for entries of XCIND_PROXY_EXPORTS whose metadata declares
+# `type=assigned`, and emits compose.assigned.yaml with matching "ports:"
+# entries. Proxied entries are handled by xcind-proxy-hook.
 #
-# Assignments are persisted in a flat TSV state file under the XDG config
-# directory. Concurrent access is serialized with flock(1) when available.
-# Port availability is checked via ss(8) (preferred), netstat(8), or a
-# bash /dev/tcp probe as a last-resort fallback.
+# Assignments are persisted in a flat TSV state file under the XDG state
+# directory, nested under proxy/ since the proxy component owns the
+# infrastructure. Concurrent access is serialized with flock(1) when
+# available. Port availability is checked via ss(8) (preferred),
+# netstat(8), or a bash /dev/tcp probe as a last-resort fallback.
 #
 # This file is auto-sourced by xcind-lib.bash. The hook is registered by
-# default; apps only need to declare XCIND_ASSIGNED_EXPORTS to use it.
+# default; apps only need to add `;type=assigned` metadata to entries in
+# XCIND_PROXY_EXPORTS to use it.
 
 # --------------------------------------------------------------------------
 # Constants
 # --------------------------------------------------------------------------
 
-XCIND_ASSIGNED_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xcind"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 
 # Maximum number of contiguous ports probed when allocating a new host port.
 XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS=100
 
-# TSV header written to new state files for human readability.
-XCIND_ASSIGNED_PORTS_HEADER=$'# port\tapp\texport\tcontainer_port\tapp_path\tassigned_at'
+# TSV header written to new state files for human readability. Column names
+# follow the Scind vocabulary: workspace, application, service (the exported
+# service name, which doubles as the compose service unless the entry uses
+# `name=compose_service` syntax).
+XCIND_ASSIGNED_PORTS_HEADER=$'# port\tworkspace\tapplication\tservice\tcontainer_port\tapp_path\tassigned_at'
 
 # --------------------------------------------------------------------------
 # State file initialization
@@ -59,8 +65,36 @@ __xcind-assigned-ensure-state-file() {
 # __xcind-assigned-iter is read-only. __xcind-assigned-rewrite rewrites the
 # file via a temp file + mv; callers must hold the assigned-ports lock.
 
+# Split a tab-separated line into seven named fields, preserving empty
+# fields. Bash's `read -r` with `IFS=$'\t'` collapses runs of consecutive
+# tabs because tab is an IFS-whitespace character, which would silently
+# drop the `workspace` column whenever it is empty. Manual prefix-strip
+# splitting sidesteps that and keeps empties intact.
+#
+# Consumes one line argument; sets the seven L_* variables in the caller's
+# scope. The caller must declare them `local` so they don't leak.
+__xcind-assigned-split-row() {
+  local line="$1"
+  L_port="${line%%$'\t'*}"
+  line="${line#*$'\t'}"
+  L_workspace="${line%%$'\t'*}"
+  line="${line#*$'\t'}"
+  L_application="${line%%$'\t'*}"
+  line="${line#*$'\t'}"
+  L_service="${line%%$'\t'*}"
+  line="${line#*$'\t'}"
+  L_cport="${line%%$'\t'*}"
+  line="${line#*$'\t'}"
+  L_path="${line%%$'\t'*}"
+  line="${line#*$'\t'}"
+  L_ts="$line"
+}
+
 # Iterate data rows of the assigned-ports state file, invoking $callback
-# with the six TSV fields followed by any extra arguments passed to iter.
+# with the seven TSV fields followed by any extra arguments passed to iter.
+#
+# Callback signature:
+#   L_port L_workspace L_application L_service L_cport L_path L_ts "$@"
 #
 # Iteration stops as soon as the callback returns a non-zero status, and
 # that status is propagated back to the caller. Callers that want "found"
@@ -74,17 +108,20 @@ __xcind-assigned-iter() {
   local callback="$1"
   shift
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    "$callback" "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" "$@" || return $?
+  local L_port L_workspace L_application L_service L_cport L_path L_ts
+  local __row
+  while IFS= read -r __row; do
+    [[ -z $__row ]] && continue
+    [[ ${__row:0:1} == "#" ]] && continue
+    __xcind-assigned-split-row "$__row"
+    "$callback" "$L_port" "$L_workspace" "$L_application" "$L_service" \
+      "$L_cport" "$L_path" "$L_ts" "$@" || return $?
   done <"$XCIND_ASSIGNED_PORTS_FILE"
   return 0
 }
 
 # Rewrite the assigned-ports state file in place, keeping only rows for
-# which $predicate returns 0. The predicate receives the six TSV fields
+# which $predicate returns 0. The predicate receives the seven TSV fields
 # followed by any extra arguments passed to rewrite.
 #
 # Callers MUST already hold the assigned-ports lock
@@ -99,13 +136,17 @@ __xcind-assigned-rewrite() {
   local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
   printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
 
-  local L_port L_app L_xport L_cport L_path L_ts
-  while IFS=$'\t' read -r L_port L_app L_xport L_cport L_path L_ts; do
-    [[ -z $L_port ]] && continue
-    [[ ${L_port:0:1} == "#" ]] && continue
-    if "$predicate" "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" "$@"; then
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$L_port" "$L_app" "$L_xport" "$L_cport" "$L_path" "$L_ts" >>"$tmp"
+  local L_port L_workspace L_application L_service L_cport L_path L_ts
+  local __row
+  while IFS= read -r __row; do
+    [[ -z $__row ]] && continue
+    [[ ${__row:0:1} == "#" ]] && continue
+    __xcind-assigned-split-row "$__row"
+    if "$predicate" "$L_port" "$L_workspace" "$L_application" "$L_service" \
+      "$L_cport" "$L_path" "$L_ts" "$@"; then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$L_port" "$L_workspace" "$L_application" "$L_service" \
+        "$L_cport" "$L_path" "$L_ts" >>"$tmp"
     fi
   done <"$XCIND_ASSIGNED_PORTS_FILE"
 
@@ -174,17 +215,17 @@ __xcind-assigned-port-available() {
 # State file I/O (callers must hold the assigned-ports lock)
 # --------------------------------------------------------------------------
 
-# Look up the host port assigned to (app_path, export). Prints the port and
+# Look up the host port assigned to (app_path, service). Prints the port and
 # returns 0 on hit; returns 1 (no output) otherwise.
 #
 # Uses the iterator helper: the match callback sets a module-level result
 # variable and returns 1 to short-circuit iteration. If iter returns 0 the
 # whole file was scanned without a hit, so we return 1 (not found).
 __xcind-assigned-lookup() {
-  local app_path="$1" xport="$2"
+  local app_path="$1" service="$2"
   __xcind_assigned_lookup_result=""
   if __xcind-assigned-iter __xcind-assigned-lookup-match \
-    "$app_path" "$xport"; then
+    "$app_path" "$service"; then
     return 1
   fi
   printf '%s\n' "$__xcind_assigned_lookup_result"
@@ -192,9 +233,9 @@ __xcind-assigned-lookup() {
 }
 
 __xcind-assigned-lookup-match() {
-  local L_port="$1" L_xport="$3" L_path="$5"
-  local target_path="$7" target_xport="$8"
-  if [[ $L_path == "$target_path" && $L_xport == "$target_xport" ]]; then
+  local L_port="$1" L_service="$4" L_path="$6"
+  local target_path="$8" target_service="$9"
+  if [[ $L_path == "$target_path" && $L_service == "$target_service" ]]; then
     __xcind_assigned_lookup_result="$L_port"
     return 1
   fi
@@ -202,23 +243,24 @@ __xcind-assigned-lookup-match() {
 }
 
 # Insert-or-update a single assignment. Any pre-existing row with the same
-# (app_path, export) identity OR the same host port is removed first, then
+# (app_path, service) identity OR the same host port is removed first, then
 # the new row is appended.
 __xcind-assigned-upsert() {
-  local port="$1" app="$2" xport="$3" cport="$4" app_path="$5"
+  local port="$1" workspace="$2" application="$3" service="$4" \
+    cport="$5" app_path="$6"
   __xcind-assigned-ensure-state-file
 
   local ts
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
 
   # Step 1: rewrite the state file, dropping any row that collides with the
-  # incoming assignment on (app_path, export) identity or on host port.
+  # incoming assignment on (app_path, service) identity or on host port.
   __xcind_assigned_upsert_path="$app_path"
-  __xcind_assigned_upsert_xport="$xport"
+  __xcind_assigned_upsert_service="$service"
   __xcind_assigned_upsert_port="$port"
   __xcind-assigned-rewrite __xcind-assigned-upsert-keep
   local rewrite_status=$?
-  unset __xcind_assigned_upsert_path __xcind_assigned_upsert_xport \
+  unset __xcind_assigned_upsert_path __xcind_assigned_upsert_service \
     __xcind_assigned_upsert_port
   # If the rewrite failed (e.g. mv couldn't replace the state file), bail
   # out before appending — otherwise we'd emit a new row on top of the
@@ -227,31 +269,31 @@ __xcind-assigned-upsert() {
   [[ $rewrite_status -eq 0 ]] || return "$rewrite_status"
 
   # Step 2: append the new row.
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$port" "$app" "$xport" "$cport" "$app_path" "$ts" \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$port" "$workspace" "$application" "$service" "$cport" "$app_path" "$ts" \
     >>"$XCIND_ASSIGNED_PORTS_FILE"
 }
 
 __xcind-assigned-upsert-keep() {
-  local L_port="$1" L_xport="$3" L_path="$5"
+  local L_port="$1" L_service="$4" L_path="$6"
   [[ $L_path == "$__xcind_assigned_upsert_path" &&
-    $L_xport == "$__xcind_assigned_upsert_xport" ]] && return 1
+    $L_service == "$__xcind_assigned_upsert_service" ]] && return 1
   [[ $L_port == "$__xcind_assigned_upsert_port" ]] && return 1
   return 0
 }
 
-# Remove any entry matching (app_path, export). No-op if not found.
+# Remove any entry matching (app_path, service). No-op if not found.
 __xcind-assigned-remove-entry() {
-  local app_path="$1" xport="$2"
+  local app_path="$1" service="$2"
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
   __xcind-assigned-rewrite __xcind-assigned-keep-not-entry \
-    "$app_path" "$xport"
+    "$app_path" "$service"
 }
 
 __xcind-assigned-keep-not-entry() {
-  local L_xport="$3" L_path="$5"
-  local target_path="$7" target_xport="$8"
-  [[ $L_path == "$target_path" && $L_xport == "$target_xport" ]] && return 1
+  local L_service="$4" L_path="$6"
+  local target_path="$8" target_service="$9"
+  [[ $L_path == "$target_path" && $L_service == "$target_service" ]] && return 1
   return 0
 }
 
@@ -267,7 +309,7 @@ __xcind-assigned-remove-port() {
 
 __xcind-assigned-keep-not-port() {
   local L_port="$1"
-  local target_port="$7"
+  local target_port="$8"
   if [[ $L_port == "$target_port" ]]; then
     __xcind_assigned_remove_port_found=0
     return 1
@@ -284,7 +326,7 @@ __xcind-assigned-prune() {
 }
 
 __xcind-assigned-keep-existing-path() {
-  local L_path="$5"
+  local L_path="$6"
   if [[ ! -d $L_path ]]; then
     __xcind_assigned_prune_count=$((__xcind_assigned_prune_count + 1))
     return 1
@@ -350,14 +392,30 @@ __xcind-assigned-warn-compose-conflict() {
 # --------------------------------------------------------------------------
 
 # Main hook function. Executes the full allocation + generation pipeline
-# inside the assigned-ports lock. No-op when XCIND_ASSIGNED_EXPORTS is unset
-# or empty.
+# inside the assigned-ports lock. No-op when XCIND_PROXY_EXPORTS is unset
+# or contains no `type=assigned` entries.
 xcind-assigned-hook() {
   local app_root="$1"
 
-  if [[ -z ${XCIND_ASSIGNED_EXPORTS+set} || ${#XCIND_ASSIGNED_EXPORTS[@]} -eq 0 ]]; then
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
     return 0
   fi
+
+  # Count assigned entries without allocating anything yet. We parse
+  # defensively here so a malformed entry still surfaces as an error at
+  # GENERATE time, but delegate the authoritative error reporting to the
+  # locked body's own parse loop.
+  local entry _export_name _compose_service _port _type
+  local has_assigned=0
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    if __xcind-proxy-parse-entry "$entry" 2>/dev/null; then
+      [[ $_type == "assigned" ]] && {
+        has_assigned=1
+        break
+      }
+    fi
+  done
+  [[ $has_assigned -eq 1 ]] || return 0
 
   __xcind-with-assigned-lock __xcind-assigned-hook-locked "$app_root"
 }
@@ -373,14 +431,18 @@ __xcind-assigned-hook-locked() {
 
   local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
   local app="${XCIND_APP:-$(basename "$app_root")}"
+  local workspace="${XCIND_WORKSPACE:-}"
 
-  # Pass 1: parse entries, validate services, resolve container ports.
+  # Pass 1: parse entries, skip proxied entries, validate services, resolve
+  # container ports.
   local -a exp_names=() exp_services=() exp_cports=()
 
   local entry
-  for entry in "${XCIND_ASSIGNED_EXPORTS[@]}"; do
-    local _export_name _compose_service _port
-    __xcind-proxy-parse-entry "$entry"
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    local _export_name _compose_service _port _type
+    __xcind-proxy-parse-entry "$entry" || return 1
+
+    [[ $_type == "assigned" ]] || continue
 
     __xcind-proxy-validate-service "$_compose_service" "$resolved_config" || return 1
 
@@ -397,6 +459,9 @@ __xcind-assigned-hook-locked() {
     exp_services+=("$_compose_service")
     exp_cports+=("$_port")
   done
+
+  # Nothing assigned after filtering: no compose overlay, no -f flag.
+  [[ ${#exp_names[@]} -gt 0 ]] || return 0
 
   # Pass 2: allocate host ports (sticky when still available, fresh otherwise).
   __xcind-assigned-ensure-state-file
@@ -421,7 +486,7 @@ __xcind-assigned-hook-locked() {
       host_port=$(__xcind-assigned-allocate-new "$cport") || return 1
     fi
 
-    __xcind-assigned-upsert "$host_port" "$app" "$xport" "$cport" "$app_root"
+    __xcind-assigned-upsert "$host_port" "$workspace" "$app" "$xport" "$cport" "$app_root"
     exp_host_ports+=("$host_port")
 
     __xcind-assigned-warn-compose-conflict \
@@ -480,8 +545,9 @@ __xcind-assigned-hook-locked() {
 # Inner fields: compose_service, container_port, host_port, declared_port.
 # Requires jq. Returns "{}" when no assignments exist or jq is unavailable.
 #
-# compose_service is resolved from the current XCIND_ASSIGNED_EXPORTS array
-# when available (the state file does not store it).
+# compose_service is resolved from the current XCIND_PROXY_EXPORTS array
+# (filtered to type=assigned) when available — the state file does not
+# store it.
 __xcind-assigned-json-for-app() {
   local app_path="$1"
   if ! command -v jq &>/dev/null; then
@@ -493,17 +559,18 @@ __xcind-assigned-json-for-app() {
     return 0
   fi
 
-  # Map export_name → compose_service from the current declaration, if any.
+  # Map service → compose_service from the current declaration, if any.
   # These arrays are consumed by the iter callback below; declaring them at
   # module scope is intentional because Bash 3.2 has no declare -g and the
   # callback can't see function locals.
   __xcind_assigned_json_xps=()
   __xcind_assigned_json_svcs=()
-  if [[ -n ${XCIND_ASSIGNED_EXPORTS+set} ]] && [[ ${#XCIND_ASSIGNED_EXPORTS[@]} -gt 0 ]]; then
+  if [[ -n ${XCIND_PROXY_EXPORTS+set} ]] && [[ ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]]; then
     local entry
-    for entry in "${XCIND_ASSIGNED_EXPORTS[@]}"; do
-      local _export_name _compose_service _port
-      __xcind-proxy-parse-entry "$entry"
+    for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+      local _export_name _compose_service _port _type
+      __xcind-proxy-parse-entry "$entry" 2>/dev/null || continue
+      [[ $_type == "assigned" ]] || continue
       __xcind_assigned_json_xps+=("$_export_name")
       __xcind_assigned_json_svcs+=("$_compose_service")
     done
@@ -517,14 +584,14 @@ __xcind-assigned-json-for-app() {
 }
 
 __xcind-assigned-json-for-app-row() {
-  local L_port="$1" L_xport="$3" L_cport="$4" L_path="$5"
-  local target_path="$7"
+  local L_port="$1" L_service="$4" L_cport="$5" L_path="$6"
+  local target_path="$8"
   [[ $L_path != "$target_path" ]] && return 0
 
   local svc=""
   local j=0
   while [[ $j -lt ${#__xcind_assigned_json_xps[@]} ]]; do
-    if [[ ${__xcind_assigned_json_xps[$j]} == "$L_xport" ]]; then
+    if [[ ${__xcind_assigned_json_xps[$j]} == "$L_service" ]]; then
       svc="${__xcind_assigned_json_svcs[$j]}"
       break
     fi
@@ -532,7 +599,7 @@ __xcind-assigned-json-for-app-row() {
   done
 
   __xcind_assigned_json_result=$(printf '%s' "$__xcind_assigned_json_result" | jq \
-    --arg name "$L_xport" \
+    --arg name "$L_service" \
     --arg svc "$svc" \
     --argjson cport "$L_cport" \
     --argjson hport "$L_port" \

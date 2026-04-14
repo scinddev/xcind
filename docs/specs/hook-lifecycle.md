@@ -154,9 +154,9 @@ when `yq` is nevertheless absent at runtime:
   end of the run listing every hook that skipped.
 - **Hard-fail** — the hook prints an error to stderr and returns `1`, which
   aborts the pipeline. All hard-failing hooks are either opt-in (triggered
-  by a user-set variable like `XCIND_PROXY_EXPORTS`, `XCIND_APP_ENV_FILES`,
-  or `XCIND_ASSIGNED_EXPORTS`) or produce *load-bearing* output whose
-  absence would silently break routing, env injection, or port stability.
+  by a user-set variable like `XCIND_PROXY_EXPORTS` or `XCIND_APP_ENV_FILES`)
+  or produce *load-bearing* output whose absence would silently break
+  routing, env injection, or port stability.
 
 **Important:** GENERATE hooks must be **pure generators** — no runtime side effects. Side effects (creating networks, starting services) belong in EXECUTE hooks. GENERATE hooks may be skipped entirely on cache hit.
 
