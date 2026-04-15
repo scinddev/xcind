@@ -337,10 +337,11 @@ Edit this file to customize the proxy. Run `xcind-proxy init` again to regenerat
 
 In `auto` mode, certificates are provisioned in this order (first hit wins):
 
-1. User-provided wildcard at `~/.config/xcind/proxy/certs/wildcard.{crt,key}`
-2. `mkcert` if available on `PATH` — produces a locally-trusted wildcard for `*.${XCIND_PROXY_DOMAIN}`
-3. `openssl` if available on `PATH` — self-signed wildcard (browser warning, but functional)
-4. Error — install `mkcert` or `openssl`, provide files at (1), or set `XCIND_PROXY_TLS_MODE=disabled`
+1. User-provided wildcard at `~/.config/xcind/proxy/certs/wildcard.{crt,key}` — always wins; copied into the state cert when newer than the existing state copy
+2. Previously generated state cert for the same domain (fast path, skipped automatically when `XCIND_PROXY_DOMAIN` changes)
+3. `mkcert` if available on `PATH` — produces a locally-trusted wildcard for `*.${XCIND_PROXY_DOMAIN}`
+4. `openssl` if available on `PATH` — self-signed wildcard (browser warning, but functional)
+5. Error — install `mkcert` or `openssl`, provide files at (1), or set `XCIND_PROXY_TLS_MODE=disabled`
 
 Certificates are written to `~/.local/state/xcind/proxy/certs/wildcard.{crt,key}` alongside a `domain` marker file; changing `XCIND_PROXY_DOMAIN` triggers regeneration on the next `xcind-proxy up`.
 

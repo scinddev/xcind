@@ -177,7 +177,7 @@ Governed by `XCIND_PROXY_TLS_MODE` (see [ADR-0009](../decisions/0009-flexible-tl
 
 | Mode | Behaviour |
 |------|-----------|
-| `auto` (default) | Resolve (in order): user-provided wildcard at `$XCIND_PROXY_CONFIG_DIR/certs/wildcard.{crt,key}` → `mkcert` → openssl self-signed fallback. |
+| `auto` (default) | Resolve (in order): user-provided wildcard at `$XCIND_PROXY_CONFIG_DIR/certs/wildcard.{crt,key}` (always wins; copied into state when newer) → previously generated state cert for the same domain (fast path) → `mkcert` → openssl self-signed fallback. |
 | `custom` | Use `XCIND_PROXY_TLS_CERT_FILE` and `XCIND_PROXY_TLS_KEY_FILE` (both required). |
 | `disabled` | Skip cert provisioning; no `websecure` entrypoint, no HTTPS routers. |
 

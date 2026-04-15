@@ -221,9 +221,11 @@ EOF
 #
 # Resolution order (auto mode):
 #   1. user-provided certs at $XCIND_PROXY_CONFIG_DIR/certs/wildcard.{crt,key}
-#   2. mkcert (if on PATH) → mints a locally-trusted wildcard
-#   3. openssl (if on PATH) → self-signed wildcard fallback
-#   4. error with installation guidance
+#      (always wins — copied into the state cert when newer)
+#   2. previously generated state cert for the same domain (fast path)
+#   3. mkcert (if on PATH) → mints a locally-trusted wildcard
+#   4. openssl (if on PATH) → self-signed wildcard fallback
+#   5. error with installation guidance
 #
 # Custom mode copies the configured XCIND_PROXY_TLS_CERT_FILE / KEY_FILE.
 # Disabled mode is a no-op.
@@ -270,25 +272,33 @@ __xcind-proxy-ensure-certs() {
     return 0
   fi
 
-  # auto mode — reuse existing cert if already present for this domain.
+  # auto mode — check user-provided wildcard first (developer-curated
+  # certs always win over previously-generated state), then fall back to
+  # the state cache, then generate via mkcert / openssl.
+
+  # 1. User-provided wildcard in config dir
+  local user_cert="$XCIND_PROXY_CONFIG_DIR/certs/wildcard.crt"
+  local user_key="$XCIND_PROXY_CONFIG_DIR/certs/wildcard.key"
+  if [[ -r $user_cert && -r $user_key ]]; then
+    # Refresh only when the user files changed (or we haven't copied yet)
+    # so we don't rewrite the state cert on every `xcind-proxy up`.
+    if [[ ! -s $cert || ! -s $key || $user_cert -nt $cert || $user_key -nt $key ]]; then
+      cp "$user_cert" "$cert"
+      cp "$user_key" "$key"
+      chmod 600 "$key"
+      echo "xcind-proxy: installed TLS cert from $XCIND_PROXY_CONFIG_DIR/certs/" >&2
+    fi
+    printf '%s\n' "$domain" >"$marker"
+    return 0
+  fi
+
+  # 2. Reuse previously generated state cert for this domain
   if [[ -s $cert && -s $key ]]; then
     printf '%s\n' "$domain" >"$marker"
     return 0
   fi
 
-  # 1. User-provided wildcard in config dir (developer-curated)
-  local user_cert="$XCIND_PROXY_CONFIG_DIR/certs/wildcard.crt"
-  local user_key="$XCIND_PROXY_CONFIG_DIR/certs/wildcard.key"
-  if [[ -r $user_cert && -r $user_key ]]; then
-    cp "$user_cert" "$cert"
-    cp "$user_key" "$key"
-    chmod 600 "$key"
-    printf '%s\n' "$domain" >"$marker"
-    echo "xcind-proxy: installed TLS cert from $XCIND_PROXY_CONFIG_DIR/certs/" >&2
-    return 0
-  fi
-
-  # 2. mkcert (preferred — produces locally-trusted cert)
+  # 3. mkcert (preferred — produces locally-trusted cert)
   if command -v mkcert >/dev/null 2>&1; then
     echo "xcind-proxy: minting wildcard cert for *.${domain} via mkcert..." >&2
     if mkcert -cert-file "$cert" -key-file "$key" "*.${domain}" "${domain}" >&2; then
@@ -299,7 +309,7 @@ __xcind-proxy-ensure-certs() {
     echo "xcind-proxy: mkcert failed; falling back to self-signed." >&2
   fi
 
-  # 3. openssl self-signed wildcard fallback
+  # 4. openssl self-signed wildcard fallback
   if command -v openssl >/dev/null 2>&1; then
     echo "xcind-proxy: generating self-signed wildcard cert for *.${domain} via openssl..." >&2
     local cnf
@@ -398,10 +408,14 @@ XCIND_PROXY_HTTP_ROUTER_TEMPLATE='      - "traefik.http.routers.{router}.rule=Ho
       - "traefik.http.services.{router}.loadbalancer.server.port={port}"'
 
 # HTTP router labels that also trigger the redirect-to-HTTPS middleware
-# (used when per-export tls=require).
+# (used when per-export tls=require). Redirect-only routers pin service to
+# `noop@internal` so Traefik doesn't have to guess which backend service the
+# router should resolve to — the request is redirected before ever reaching
+# a backend, so no real service is needed.
 # shellcheck disable=SC2016
 XCIND_PROXY_HTTP_REDIRECT_ROUTER_TEMPLATE='      - "traefik.http.routers.{router}.rule=Host(`{hostname}`)"
       - "traefik.http.routers.{router}.entrypoints=web"
+      - "traefik.http.routers.{router}.service=noop@internal"
       - "traefik.http.routers.{router}.middlewares=xcind-redirect-to-https@docker"'
 
 # HTTPS router labels for a proxy export.
@@ -430,9 +444,13 @@ XCIND_PROXY_APEX_HTTP_ROUTER_TEMPLATE='      - "traefik.http.routers.{apex_route
       - "traefik.http.routers.{apex_router}.entrypoints=web"
       - "traefik.http.routers.{apex_router}.service={apex_router}"
       - "traefik.http.services.{apex_router}.loadbalancer.server.port={port}"'
+# Apex HTTP router labels that trigger the redirect-to-HTTPS middleware.
+# Redirect-only routers pin service to `noop@internal` for the same reason
+# as the per-export redirect template above.
 # shellcheck disable=SC2016
 XCIND_PROXY_APEX_HTTP_REDIRECT_ROUTER_TEMPLATE='      - "traefik.http.routers.{apex_router}.rule=Host(`{apex_hostname}`)"
       - "traefik.http.routers.{apex_router}.entrypoints=web"
+      - "traefik.http.routers.{apex_router}.service=noop@internal"
       - "traefik.http.routers.{apex_router}.middlewares=xcind-redirect-to-https@docker"'
 # shellcheck disable=SC2016
 XCIND_PROXY_APEX_HTTPS_ROUTER_TEMPLATE='      - "traefik.http.routers.{apex_router_https}.rule=Host(`{apex_hostname}`)"
@@ -764,7 +782,6 @@ xcind-proxy-hook() {
   # Build output grouped by compose service
   local output="services:"
   local -a seen_services=()
-  local middleware_emitted=false
 
   local i=0
   while [ "$i" -lt "${#export_names[@]}" ]; do
@@ -792,11 +809,14 @@ xcind-proxy-hook() {
     service_block=$(__xcind-render-template "$XCIND_PROXY_SERVICE_HEADER_TEMPLATE" \
       compose_service "$svc")
 
-    # Emit the shared redirect middleware exactly once, on the first service
-    # block that appears when at least one export uses tls=require.
-    if [[ $needs_redirect_middleware == true && $middleware_emitted == false ]]; then
+    # Emit the shared redirect middleware on every rendered service block
+    # when at least one export uses tls=require. Traefik's Docker provider
+    # only discovers labels from running containers, so emitting this on a
+    # single "first" service can leave other independently-started services
+    # without the middleware they reference. Repeated definitions with the
+    # same name/value are idempotent in Traefik.
+    if [[ $needs_redirect_middleware == true ]]; then
       service_block+=$'\n'"$XCIND_PROXY_REDIRECT_MIDDLEWARE_LABELS"
-      middleware_emitted=true
     fi
 
     # Walk every export targeting this compose service, appending router +

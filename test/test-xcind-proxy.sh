@@ -957,21 +957,62 @@ xcind-proxy-hook "$HOOK_APP" >/dev/null
 tls_req_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
 assert_contains "tls require: HTTP router attaches redirect middleware" \
   "myapp-web-http.middlewares=xcind-redirect-to-https@docker" "$tls_req_yaml"
-assert_not_contains "tls require: HTTP router has no service loadbalancer" \
-  "myapp-web-http.service=" "$tls_req_yaml"
+# Redirect-only routers pin service to noop@internal so Traefik never tries
+# to resolve a backend for a URL it will 301 away anyway.
+assert_contains "tls require: HTTP router pins service to noop@internal" \
+  "myapp-web-http.service=noop@internal" "$tls_req_yaml"
+assert_not_contains "tls require: HTTP router has no backend loadbalancer" \
+  "traefik.http.services.myapp-web-http.loadbalancer" "$tls_req_yaml"
 assert_contains "tls require: HTTPS router present" "myapp-web-https.entrypoints=websecure" "$tls_req_yaml"
 assert_contains "tls require: redirect middleware defined" \
   "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme=https" "$tls_req_yaml"
 assert_contains "tls require: redirect is permanent" \
   "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.permanent=true" "$tls_req_yaml"
-# Middleware must only appear once, even with multiple exports
+# Middleware is defined on every rendered service block (one per compose
+# service), not "exactly once" — Traefik's Docker provider only loads
+# labels from running containers, so the referenced middleware has to be
+# present on each service that may be the only one started.
 rm -rf "$XCIND_GENERATED_DIR"
 mkdir -p "$XCIND_GENERATED_DIR"
 XCIND_PROXY_EXPORTS=("web;tls=require" "api:3000;tls=require")
 xcind-proxy-hook "$HOOK_APP" >/dev/null
 multi_req_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
 mw_count=$(echo "$multi_req_yaml" | grep -c 'xcind-redirect-to-https.redirectscheme.scheme=https' || true)
-assert_eq "tls require: middleware defined exactly once" "1" "$mw_count"
+# Two distinct compose services (web + api) → middleware on both blocks.
+assert_eq "tls require: middleware emitted on every service block" "2" "$mw_count"
+# Multiple exports on the same compose service still yield a single block
+# for that service (so a single middleware emission there).
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  nginx:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+      - target: 443
+        published: "8443"
+YAML
+XCIND_PROXY_EXPORTS=("web=nginx:80;tls=require" "admin=nginx:443;tls=require")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+grouped_req_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+mw_count_grouped=$(echo "$grouped_req_yaml" | grep -c 'xcind-redirect-to-https.redirectscheme.scheme=https' || true)
+assert_eq "tls require: grouped exports share one middleware emission" "1" "$mw_count_grouped"
+# Restore resolved-config for remaining scenarios in this block.
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+  api:
+    image: node
+    ports:
+      - target: 3000
+        published: "3001"
+YAML
 
 # --- tls=disable export keeps HTTP-only even when proxy TLS is enabled
 rm -rf "$XCIND_GENERATED_DIR"
@@ -995,7 +1036,7 @@ assert_not_contains "mixed: api (disable) has no HTTPS router" "myapp-api-https"
 assert_contains "mixed: admin (require) has HTTPS router" "myapp-admin-https" "$mix_yaml"
 assert_contains "mixed: admin HTTP router redirects" \
   "myapp-admin-http.middlewares=xcind-redirect-to-https@docker" "$mix_yaml"
-assert_contains "mixed: redirect middleware emitted once" \
+assert_contains "mixed: redirect middleware present" \
   "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme=https" "$mix_yaml"
 
 # --- Proxy TLS disabled overrides per-export tls=require (collapse to HTTP)
@@ -1036,26 +1077,19 @@ if command -v openssl >/dev/null 2>&1; then
   XCIND_PROXY_STATE_DIR="$HOME/.local/state/xcind/proxy"
   mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
 
-  # Force openssl branch by hiding mkcert from PATH.
+  # Force openssl branch by shadowing mkcert with a failing stub. Keeping
+  # the rest of PATH intact means openssl (and anything else that lives in
+  # the same directory as mkcert — a common case on Linux distros) remains
+  # available to the code under test.
   _cert_orig_PATH="$PATH"
   CERT_BIN="$CERT_HOME/bin-no-mkcert"
   mkdir -p "$CERT_BIN"
-  # Rebuild a PATH that keeps system dirs but excludes any mkcert shim.
-  # Restore IFS after the colon-split — `unset IFS` leaves it unbound, which
-  # breaks any subsequent `$IFS` reference (including parse-entry's metadata
-  # splitter) under the suite's `set -u`.
-  _filtered_path=""
-  _saved_ifs="$IFS"
-  IFS=':'
-  for _p in $_cert_orig_PATH; do
-    if [[ -x "$_p/mkcert" ]]; then
-      continue
-    fi
-    _filtered_path="${_filtered_path:+$_filtered_path:}$_p"
-  done
-  IFS="$_saved_ifs"
-  unset _saved_ifs
-  export PATH="$CERT_BIN:$_filtered_path"
+  cat >"$CERT_BIN/mkcert" <<'MKCERT_STUB'
+#!/usr/bin/env bash
+exit 1
+MKCERT_STUB
+  chmod +x "$CERT_BIN/mkcert"
+  export PATH="$CERT_BIN:$_cert_orig_PATH"
 
   XCIND_PROXY_TLS_MODE="auto"
   XCIND_PROXY_DOMAIN="test.localhost"
@@ -1097,13 +1131,47 @@ if command -v openssl >/dev/null 2>&1; then
   assert_eq "ensure-certs custom: missing files exits non-zero" "1" "$custom_rc"
   assert_contains "ensure-certs custom: message mentions env vars" "XCIND_PROXY_TLS_CERT_FILE" "$custom_err"
 
+  # auto mode: user-provided wildcard in the config dir wins over a
+  # previously-generated state cert. This exercises ADR-0009's documented
+  # resolution order: config-dir certs override the state fast-path.
+  # Use the same marker domain as the state cert below so the domain-mismatch
+  # early-rm branch doesn't wipe the seeded STALE content before the
+  # user-override logic gets to decide.
+  XCIND_PROXY_TLS_MODE="auto"
+  XCIND_PROXY_DOMAIN="seeded.localhost"
+  mkdir -p "$XCIND_PROXY_CONFIG_DIR/certs" "$XCIND_PROXY_STATE_DIR/certs"
+  echo "STALE" >"$XCIND_PROXY_STATE_DIR/certs/wildcard.crt"
+  echo "STALE" >"$XCIND_PROXY_STATE_DIR/certs/wildcard.key"
+  printf '%s\n' "$XCIND_PROXY_DOMAIN" >"$XCIND_PROXY_STATE_DIR/certs/domain"
+  # Backdate the state cert so filesystems with 1-second mtime resolution
+  # still see the user cert as newer when we write it below.
+  touch -t 200001010000 "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" \
+    "$XCIND_PROXY_STATE_DIR/certs/wildcard.key"
+  echo "USER_CERT" >"$XCIND_PROXY_CONFIG_DIR/certs/wildcard.crt"
+  echo "USER_KEY" >"$XCIND_PROXY_CONFIG_DIR/certs/wildcard.key"
+  __xcind-proxy-ensure-certs 2>/dev/null
+  state_cert_content=$(<"$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
+  state_key_content=$(<"$XCIND_PROXY_STATE_DIR/certs/wildcard.key")
+  assert_eq "ensure-certs auto: user-provided cert wins over stale state" "USER_CERT" "$state_cert_content"
+  assert_eq "ensure-certs auto: user-provided key wins over stale state" "USER_KEY" "$state_key_content"
+
+  # Second call is idempotent — user files haven't changed, so state mtime
+  # should not be bumped. This validates the "refresh only when newer"
+  # fast-path and prevents a stat/copy storm on every `xcind-proxy up`.
+  first_user_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
+  sleep 1
+  __xcind-proxy-ensure-certs 2>/dev/null
+  second_user_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
+  assert_eq "ensure-certs auto: user-provided cert not rewritten on re-run" \
+    "$first_user_mtime" "$second_user_mtime"
+
   export PATH="$_cert_orig_PATH"
   export HOME="$_cert_orig_HOME"
   rm -rf "$CERT_HOME"
   XCIND_PROXY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy"
   XCIND_PROXY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
   unset XCIND_PROXY_TLS_MODE XCIND_PROXY_DOMAIN XCIND_PROXY_TLS_CERT_FILE XCIND_PROXY_TLS_KEY_FILE
-  unset _cert_orig_HOME _cert_orig_PATH _filtered_path _p
+  unset _cert_orig_HOME _cert_orig_PATH
 else
   echo "  (skipped — openssl not on PATH)"
 fi
