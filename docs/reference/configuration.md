@@ -187,13 +187,17 @@ Array of service export declarations. Each entry names an exported service and �
 | Metadata Key | Default | Description |
 |--------------|---------|-------------|
 | `type` | `"proxied"` | `proxied` routes traffic through Traefik on a generated hostname. `assigned` reserves a stable host port, persisted across restarts. |
+| `tls` | `"auto"` | Per-export TLS behaviour (only meaningful for `type=proxied`). `auto` emits both HTTP and HTTPS routers. `require` emits HTTPS only and redirects HTTP → HTTPS. `disable` emits HTTP only, even when proxy TLS is enabled. |
 
-Unknown metadata keys and invalid `type` values cause the generation hooks to fail fast — the surface is kept minimal until additional Scind attributes (`protocol`, `visibility`) are wired up.
+Unknown metadata keys, invalid `type` values, and invalid `tls` values cause the generation hooks to fail fast.
+
+When `XCIND_PROXY_TLS_MODE=disabled` (global), every `type=proxied` export collapses to HTTP-only regardless of its `tls=` setting.
 
 ```bash
 XCIND_PROXY_EXPORTS=(
-    "web"                            # proxied (default), service=web, port inferred
-    "api=uvicorn:8080"               # proxied, name=api, service=uvicorn, port 8080
+    "web"                            # proxied, service=web, port inferred, tls=auto (http + https)
+    "api=uvicorn:8080;tls=require"   # proxied, https only, http router redirects to https
+    "legacy:8080;tls=disable"        # proxied, http only even when proxy TLS is on
     "worker:9000;type=assigned"      # assigned, name=worker, service=worker, port 9000
     "database=db:3306;type=assigned" # assigned, name=database, service=db, port 3306
 )
@@ -268,7 +272,7 @@ Set an apex template to an empty string to disable apex URL generation.
 | `{workspace}` | Workspace name (basename of workspace directory) |
 | `{export}` | Export name from `XCIND_PROXY_EXPORTS` |
 | `{domain}` | Domain suffix (`XCIND_PROXY_DOMAIN`) |
-| `{protocol}` | Protocol (currently always `http`) |
+| `{protocol}` | Protocol — `http` or `https` depending on which router is being rendered |
 | `{service}` | Compose service name |
 
 ---
@@ -317,13 +321,28 @@ With `APP_ENV=dev`, xcind checks for `compose.dev.yaml` and `compose.dev.overrid
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XCIND_PROXY_DOMAIN` | `"localhost"` | Domain suffix for hostnames |
+| `XCIND_PROXY_DOMAIN` | `"localhost"` | Domain suffix for hostnames (and wildcard cert `*.${XCIND_PROXY_DOMAIN}`) |
 | `XCIND_PROXY_IMAGE` | `"traefik:v3"` | Traefik Docker image |
 | `XCIND_PROXY_HTTP_PORT` | `"80"` | Host port for HTTP traffic |
+| `XCIND_PROXY_TLS_MODE` | `"auto"` | TLS mode: `auto` (mkcert → openssl fallback), `custom` (user-provided cert), or `disabled` (HTTP-only) |
+| `XCIND_PROXY_HTTPS_PORT` | `"443"` | Host port for HTTPS traffic (ignored when TLS is disabled) |
+| `XCIND_PROXY_TLS_CERT_FILE` | `""` | Absolute path to TLS cert (used only when `XCIND_PROXY_TLS_MODE=custom`) |
+| `XCIND_PROXY_TLS_KEY_FILE` | `""` | Absolute path to TLS key (used only when `XCIND_PROXY_TLS_MODE=custom`) |
 | `XCIND_PROXY_DASHBOARD` | `"false"` | Enable Traefik dashboard |
 | `XCIND_PROXY_DASHBOARD_PORT` | `"8080"` | Dashboard port (if enabled) |
 
 Edit this file to customize the proxy. Run `xcind-proxy init` again to regenerate all files (existing config values are preserved as defaults).
+
+### TLS Certificate Resolution
+
+In `auto` mode, certificates are provisioned in this order (first hit wins):
+
+1. User-provided wildcard at `~/.config/xcind/proxy/certs/wildcard.{crt,key}`
+2. `mkcert` if available on `PATH` — produces a locally-trusted wildcard for `*.${XCIND_PROXY_DOMAIN}`
+3. `openssl` if available on `PATH` — self-signed wildcard (browser warning, but functional)
+4. Error — install `mkcert` or `openssl`, provide files at (1), or set `XCIND_PROXY_TLS_MODE=disabled`
+
+Certificates are written to `~/.local/state/xcind/proxy/certs/wildcard.{crt,key}` alongside a `domain` marker file; changing `XCIND_PROXY_DOMAIN` triggers regeneration on the next `xcind-proxy up`.
 
 ---
 

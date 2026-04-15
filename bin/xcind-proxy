@@ -41,6 +41,10 @@ __xcind-proxy-init() {
   local _flag_image=""
   local _flag_dashboard=""
   local _flag_dashboard_port=""
+  local _flag_tls_mode=""
+  local _flag_https_port=""
+  local _flag_tls_cert_file=""
+  local _flag_tls_key_file=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -64,12 +68,40 @@ __xcind-proxy-init() {
       _flag_dashboard_port="$2"
       shift 2
       ;;
+    --tls-mode)
+      _flag_tls_mode="$2"
+      shift 2
+      ;;
+    --https-port)
+      _flag_https_port="$2"
+      shift 2
+      ;;
+    --tls-cert-file)
+      _flag_tls_cert_file="$2"
+      shift 2
+      ;;
+    --tls-key-file)
+      _flag_tls_key_file="$2"
+      shift 2
+      ;;
     *)
       echo "Error: Unknown option for init: $1" >&2
       exit 1
       ;;
     esac
   done
+
+  # Validate --tls-mode value early — writing an invalid value into config.sh
+  # would produce confusing downstream errors.
+  if [[ -n $_flag_tls_mode ]]; then
+    case "$_flag_tls_mode" in
+    auto | custom | disabled) ;;
+    *)
+      echo "Error: --tls-mode must be 'auto', 'custom', or 'disabled' (got: $_flag_tls_mode)" >&2
+      exit 1
+      ;;
+    esac
+  fi
 
   mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
 
@@ -90,6 +122,14 @@ __xcind-proxy-init() {
   [[ -n "$_flag_dashboard" ]] && XCIND_PROXY_DASHBOARD="$_flag_dashboard"
   # shellcheck disable=SC2034
   [[ -n "$_flag_dashboard_port" ]] && XCIND_PROXY_DASHBOARD_PORT="$_flag_dashboard_port"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_tls_mode" ]] && XCIND_PROXY_TLS_MODE="$_flag_tls_mode"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_https_port" ]] && XCIND_PROXY_HTTPS_PORT="$_flag_https_port"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_tls_cert_file" ]] && XCIND_PROXY_TLS_CERT_FILE="$_flag_tls_cert_file"
+  # shellcheck disable=SC2034
+  [[ -n "$_flag_tls_key_file" ]] && XCIND_PROXY_TLS_KEY_FILE="$_flag_tls_key_file"
 
   # Write config (always — merges existing + overrides)
   __xcind-proxy-write-config
@@ -202,6 +242,10 @@ __xcind-proxy-status() {
 
   local image="${XCIND_PROXY_IMAGE:-traefik:v3}"
   local http_port="${XCIND_PROXY_HTTP_PORT:-80}"
+  local tls_mode="${XCIND_PROXY_TLS_MODE:-auto}"
+  local https_port="${XCIND_PROXY_HTTPS_PORT:-443}"
+  local tls_enabled=true
+  [[ $tls_mode == "disabled" ]] && tls_enabled=false
   local dashboard_enabled=false
   local dashboard_url=""
   if [ "${XCIND_PROXY_DASHBOARD:-false}" = "true" ]; then
@@ -224,6 +268,9 @@ __xcind-proxy-status() {
       --arg config "$config_status" \
       --arg image "$image" \
       --argjson http_port "$http_port" \
+      --arg tls_mode "$tls_mode" \
+      --argjson tls_enabled "$tls_enabled" \
+      --argjson https_port "$https_port" \
       --argjson dashboard_enabled "$dashboard_enabled" \
       --arg dashboard_url "$dashboard_url" \
       --arg network_name "$network_name" \
@@ -235,6 +282,9 @@ __xcind-proxy-status() {
         config: $config,
         image: $image,
         http_port: $http_port,
+        tls_mode: $tls_mode,
+        tls_enabled: $tls_enabled,
+        https_port: $https_port,
         dashboard_enabled: $dashboard_enabled,
         dashboard_url: $dashboard_url,
         network_name: $network_name,
@@ -250,6 +300,10 @@ __xcind-proxy-status() {
     fi
     echo "Image: $image"
     echo "HTTP port: $http_port"
+    echo "TLS mode: $tls_mode"
+    if [ "$tls_enabled" = true ]; then
+      echo "HTTPS port: $https_port"
+    fi
     if [ "$dashboard_enabled" = true ]; then
       echo "Dashboard: $dashboard_url"
     fi
@@ -371,6 +425,10 @@ __xcind-proxy-help() {
   echo "  --image IMAGE             Set Traefik Docker image (default: traefik:v3)"
   echo "  --dashboard BOOL          Enable Traefik dashboard (default: false)"
   echo "  --dashboard-port PORT     Set dashboard port (default: 8080)"
+  echo "  --tls-mode MODE           TLS mode: auto, custom, disabled (default: auto)"
+  echo "  --https-port PORT         Set HTTPS port (default: 443)"
+  echo "  --tls-cert-file PATH      Custom cert file (only used when --tls-mode custom)"
+  echo "  --tls-key-file PATH       Custom key file (only used when --tls-mode custom)"
   echo ""
   echo "Options:"
   echo "  --version, -V  Show version"

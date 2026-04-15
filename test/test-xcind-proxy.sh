@@ -69,6 +69,12 @@ config_content=$(<"$PROXY_CONFIG_DIR/config.sh")
 assert_contains "config has XCIND_PROXY_DOMAIN" "XCIND_PROXY_DOMAIN" "$config_content"
 assert_contains "config has XCIND_PROXY_IMAGE" "XCIND_PROXY_IMAGE" "$config_content"
 assert_contains "config has XCIND_PROXY_HTTP_PORT" "XCIND_PROXY_HTTP_PORT" "$config_content"
+# TLS config vars (ADR-0009)
+assert_contains "config has XCIND_PROXY_TLS_MODE" "XCIND_PROXY_TLS_MODE" "$config_content"
+assert_contains "config TLS defaults to auto" 'XCIND_PROXY_TLS_MODE="auto"' "$config_content"
+assert_contains "config has XCIND_PROXY_HTTPS_PORT" 'XCIND_PROXY_HTTPS_PORT="443"' "$config_content"
+assert_contains "config has XCIND_PROXY_TLS_CERT_FILE" "XCIND_PROXY_TLS_CERT_FILE" "$config_content"
+assert_contains "config has XCIND_PROXY_TLS_KEY_FILE" "XCIND_PROXY_TLS_KEY_FILE" "$config_content"
 
 # Verify docker-compose.yaml contents
 compose_content=$(<"$PROXY_STATE_DIR/docker-compose.yaml")
@@ -77,11 +83,26 @@ assert_contains "compose has xcind-proxy network" "xcind-proxy:" "$compose_conte
 assert_contains "compose has external network" "external: true" "$compose_content"
 assert_contains "compose has docker socket volume" "/var/run/docker.sock" "$compose_content"
 
-# Verify traefik.yaml contents
+# Verify traefik.yaml contents — TLS defaults to auto, so expect websecure + file provider
 traefik_content=$(<"$PROXY_STATE_DIR/traefik.yaml")
 assert_contains "traefik has web entrypoint" "web:" "$traefik_content"
 assert_contains "traefik has docker provider" "docker:" "$traefik_content"
 assert_contains "traefik has exposedByDefault false" "exposedByDefault: false" "$traefik_content"
+assert_contains "traefik has websecure entrypoint (TLS auto)" "websecure:" "$traefik_content"
+assert_contains "traefik has file provider (TLS auto)" "file:" "$traefik_content"
+assert_contains "traefik file provider watches dynamic dir" "/etc/traefik/dynamic" "$traefik_content"
+
+# Compose file should expose :443 and mount dynamic/ + certs/ by default
+assert_contains "compose exposes 443:443 (TLS auto)" "443:443" "$compose_content"
+assert_contains "compose mounts dynamic (TLS auto)" "./dynamic:/etc/traefik/dynamic:ro" "$compose_content"
+assert_contains "compose mounts certs (TLS auto)" "./certs:/etc/traefik/certs:ro" "$compose_content"
+
+# dynamic/tls.yaml and certs/ dir should exist
+assert_file_exists "dynamic/tls.yaml created (TLS auto)" "$PROXY_STATE_DIR/dynamic/tls.yaml"
+tls_dynamic=$(<"$PROXY_STATE_DIR/dynamic/tls.yaml")
+assert_contains "dynamic/tls.yaml points at wildcard cert" "wildcard.crt" "$tls_dynamic"
+assert_contains "dynamic/tls.yaml has default store" "defaultCertificate:" "$tls_dynamic"
+assert_eq "certs dir created" "true" "$([ -d "$PROXY_STATE_DIR/certs" ] && echo true || echo false)"
 
 # Test idempotency — config values should be preserved on re-init
 "$XCIND_ROOT/bin/xcind-proxy" init
@@ -142,6 +163,34 @@ assert_contains "no-flag reinit: image preserved" 'XCIND_PROXY_IMAGE="traefik:v3
 compose2=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
 assert_contains "compose reflects updated port" "8081:80" "$compose2"
 assert_contains "compose reflects updated image" "traefik:v3.2" "$compose2"
+
+# --tls-mode disabled drops HTTPS entrypoint, cert mounts, and dynamic TLS config
+"$XCIND_ROOT/bin/xcind-proxy" init --tls-mode disabled
+config_tls_disabled=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "flag: tls-mode disabled recorded" 'XCIND_PROXY_TLS_MODE="disabled"' "$config_tls_disabled"
+compose_disabled=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+assert_not_contains "compose has no :443 when TLS disabled" "443:443" "$compose_disabled"
+assert_not_contains "compose has no dynamic mount when TLS disabled" "/etc/traefik/dynamic" "$compose_disabled"
+assert_not_contains "compose has no certs mount when TLS disabled" "/etc/traefik/certs" "$compose_disabled"
+traefik_disabled=$(<"$PROXY_STATE_DIR2/traefik.yaml")
+assert_not_contains "traefik has no websecure when TLS disabled" "websecure:" "$traefik_disabled"
+assert_not_contains "traefik has no file provider when TLS disabled" "file:" "$traefik_disabled"
+assert_eq "no dynamic/tls.yaml when TLS disabled" "false" \
+  "$([ -f "$PROXY_STATE_DIR2/dynamic/tls.yaml" ] && echo true || echo false)"
+
+# Re-enable TLS via init --tls-mode auto
+"$XCIND_ROOT/bin/xcind-proxy" init --tls-mode auto --https-port 8443
+config_tls_auto=$(<"$PROXY_CONFIG_DIR2/config.sh")
+assert_contains "flag: tls-mode auto recorded" 'XCIND_PROXY_TLS_MODE="auto"' "$config_tls_auto"
+assert_contains "flag: https-port 8443 recorded" 'XCIND_PROXY_HTTPS_PORT="8443"' "$config_tls_auto"
+compose_auto=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+assert_contains "compose reflects 8443:443" "8443:443" "$compose_auto"
+assert_file_exists "dynamic/tls.yaml regenerated for auto" "$PROXY_STATE_DIR2/dynamic/tls.yaml"
+
+# Invalid --tls-mode value is rejected
+invalid_tls_mode=$("$XCIND_ROOT/bin/xcind-proxy" init --tls-mode weird 2>&1) && itm_rc=0 || itm_rc=$?
+assert_eq "--tls-mode invalid exits non-zero" "1" "$itm_rc"
+assert_contains "--tls-mode invalid mentions auto/custom/disabled" "auto" "$invalid_tls_mode"
 
 export HOME="$REAL_HOME"
 export PATH="$REAL_PATH"
@@ -462,6 +511,40 @@ invalid_err=$(__xcind-proxy-parse-entry "web;type=bogus" 2>&1) && invalid_rc=0 |
 assert_eq "parse invalid type returns non-zero" "1" "$invalid_rc"
 assert_contains "parse invalid type error text" "invalid XCIND_PROXY_EXPORTS type 'bogus'" "$invalid_err"
 
+# tls= metadata — defaults to "auto"
+__xcind-proxy-parse-entry "web"
+assert_eq "parse 'web' tls defaults to auto" "auto" "$_tls"
+
+# tls=require accepted
+__xcind-proxy-parse-entry "web;tls=require"
+assert_eq "parse tls=require" "require" "$_tls"
+
+# tls=disable accepted
+__xcind-proxy-parse-entry "web;tls=disable"
+assert_eq "parse tls=disable" "disable" "$_tls"
+
+# tls=auto explicit
+__xcind-proxy-parse-entry "web;tls=auto"
+assert_eq "parse tls=auto explicit" "auto" "$_tls"
+
+# type + tls combined
+__xcind-proxy-parse-entry "api=app:3000;type=proxied;tls=require"
+assert_eq "parse type+tls: export" "api" "$_export_name"
+assert_eq "parse type+tls: service" "app" "$_compose_service"
+assert_eq "parse type+tls: port" "3000" "$_port"
+assert_eq "parse type+tls: type" "proxied" "$_type"
+assert_eq "parse type+tls: tls" "require" "$_tls"
+
+# _tls sentinel must reset between calls — seed with "require" then parse plain entry
+_tls="require"
+__xcind-proxy-parse-entry "web"
+assert_eq "parse sentinel reset (tls)" "auto" "$_tls"
+
+# Invalid tls value rejected
+bad_tls_err=$(__xcind-proxy-parse-entry "web;tls=maybe" 2>&1) && bad_tls_rc=0 || bad_tls_rc=$?
+assert_eq "parse invalid tls returns non-zero" "1" "$bad_tls_rc"
+assert_contains "parse invalid tls error text" "invalid XCIND_PROXY_EXPORTS tls 'maybe'" "$bad_tls_err"
+
 # ======================================================================
 echo ""
 echo "=== Test: xcind-proxy-hook (YAML generation) ==="
@@ -674,7 +757,11 @@ apex_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
 assert_contains "apex: primary has apex hostname" "myapp.localhost" "$apex_yaml"
 assert_contains "apex: primary has apex router rule" 'traefik.http.routers.myapp-http.rule=Host(`myapp.localhost`)' "$apex_yaml"
 assert_contains "apex: primary has xcind.apex.host" "xcind.apex.host=myapp.localhost" "$apex_yaml"
-assert_contains "apex: primary has xcind.apex.url" "xcind.apex.url=http://myapp.localhost" "$apex_yaml"
+# TLS defaults to auto, so the preferred-scheme URL is https. Per-protocol
+# siblings (xcind.apex.http.url / xcind.apex.https.url) cover http readers.
+assert_contains "apex: primary has xcind.apex.url (https preferred)" "xcind.apex.url=https://myapp.localhost" "$apex_yaml"
+assert_contains "apex: primary has xcind.apex.http.url" "xcind.apex.http.url=http://myapp.localhost" "$apex_yaml"
+assert_contains "apex: primary has xcind.apex.https.url" "xcind.apex.https.url=https://myapp.localhost" "$apex_yaml"
 assert_contains "apex: primary still has export hostname" "myapp-web.localhost" "$apex_yaml"
 
 # Extract api service block (from "  api:" to next service or end)
@@ -802,10 +889,224 @@ auto_start_off_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
 assert_contains "auto-start=0: yaml has web service" "web:" "$auto_start_off_yaml"
 assert_contains "auto-start=0: yaml has traefik labels" "traefik.enable=true" "$auto_start_off_yaml"
 
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy-hook TLS modes ==="
+
+# Shared setup for TLS hook tests: workspaceless, apex enabled, yaml with web+api.
+XCIND_PROXY_AUTO_START=0
+export XCIND_WORKSPACELESS=1
+export XCIND_WORKSPACE=""
+export XCIND_WORKSPACE_ROOT=""
+export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+export XCIND_ROUTER_TEMPLATE='{app}-{export}-{protocol}'
+export XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+export XCIND_APEX_ROUTER_TEMPLATE='{app}-{protocol}'
+
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: "8080"
+  api:
+    image: node
+    ports:
+      - target: 3000
+        published: "3001"
+YAML
+
+# --- TLS disabled at proxy level → HTTP-only output, no redirect, no https labels
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+export XCIND_PROXY_TLS_MODE="disabled"
+XCIND_PROXY_EXPORTS=("web")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+tls_off_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "tls disabled: has HTTP router" "myapp-web-http" "$tls_off_yaml"
+assert_not_contains "tls disabled: no HTTPS router" "myapp-web-https" "$tls_off_yaml"
+assert_not_contains "tls disabled: no redirect middleware" "xcind-redirect-to-https" "$tls_off_yaml"
+assert_contains "tls disabled: url label is http" "xcind.export.web.url=http://myapp-web.localhost" "$tls_off_yaml"
+assert_not_contains "tls disabled: no https.url label" "xcind.export.web.https.url" "$tls_off_yaml"
+assert_contains "tls disabled: apex url is http" "xcind.apex.url=http://myapp.localhost" "$tls_off_yaml"
+
+# --- Default (TLS auto): both routers + preferred https url + per-protocol siblings
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+export XCIND_PROXY_TLS_MODE="auto"
+XCIND_PROXY_EXPORTS=("web")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+tls_auto_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "tls auto: has HTTP router" "myapp-web-http.rule=" "$tls_auto_yaml"
+assert_contains "tls auto: has HTTPS router" "myapp-web-https.rule=" "$tls_auto_yaml"
+assert_contains "tls auto: HTTPS router uses websecure" "myapp-web-https.entrypoints=websecure" "$tls_auto_yaml"
+assert_contains "tls auto: HTTPS router has tls=true" "myapp-web-https.tls=true" "$tls_auto_yaml"
+assert_contains "tls auto: http.url label" "xcind.export.web.http.url=http://myapp-web.localhost" "$tls_auto_yaml"
+assert_contains "tls auto: https.url label" "xcind.export.web.https.url=https://myapp-web.localhost" "$tls_auto_yaml"
+assert_contains "tls auto: preferred url is https" "xcind.export.web.url=https://myapp-web.localhost" "$tls_auto_yaml"
+assert_contains "tls auto: apex https router" "myapp-https.entrypoints=websecure" "$tls_auto_yaml"
+assert_contains "tls auto: apex preferred url is https" "xcind.apex.url=https://myapp.localhost" "$tls_auto_yaml"
+assert_not_contains "tls auto: no redirect middleware (all exports auto)" "xcind-redirect-to-https" "$tls_auto_yaml"
+
+# --- tls=require export → HTTP router becomes redirect, HTTPS router real, middleware emitted once
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web;tls=require")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+tls_req_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "tls require: HTTP router attaches redirect middleware" \
+  "myapp-web-http.middlewares=xcind-redirect-to-https@docker" "$tls_req_yaml"
+assert_not_contains "tls require: HTTP router has no service loadbalancer" \
+  "myapp-web-http.service=" "$tls_req_yaml"
+assert_contains "tls require: HTTPS router present" "myapp-web-https.entrypoints=websecure" "$tls_req_yaml"
+assert_contains "tls require: redirect middleware defined" \
+  "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme=https" "$tls_req_yaml"
+assert_contains "tls require: redirect is permanent" \
+  "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.permanent=true" "$tls_req_yaml"
+# Middleware must only appear once, even with multiple exports
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web;tls=require" "api:3000;tls=require")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+multi_req_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+mw_count=$(echo "$multi_req_yaml" | grep -c 'xcind-redirect-to-https.redirectscheme.scheme=https' || true)
+assert_eq "tls require: middleware defined exactly once" "1" "$mw_count"
+
+# --- tls=disable export keeps HTTP-only even when proxy TLS is enabled
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web;tls=disable")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+tls_dis_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "tls disable export: HTTP router present" "myapp-web-http.rule=" "$tls_dis_yaml"
+assert_not_contains "tls disable export: no HTTPS router" "myapp-web-https" "$tls_dis_yaml"
+assert_contains "tls disable export: url label is http" "xcind.export.web.url=http://myapp-web.localhost" "$tls_dis_yaml"
+assert_not_contains "tls disable export: no https.url label" "xcind.export.web.https.url" "$tls_dis_yaml"
+
+# --- Mixed per-export TLS on the same app (auto + disable + require)
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web" "api:3000;tls=disable" "admin=api:3000;tls=require")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+mix_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "mixed: web has HTTPS router" "myapp-web-https" "$mix_yaml"
+assert_not_contains "mixed: api (disable) has no HTTPS router" "myapp-api-https" "$mix_yaml"
+assert_contains "mixed: admin (require) has HTTPS router" "myapp-admin-https" "$mix_yaml"
+assert_contains "mixed: admin HTTP router redirects" \
+  "myapp-admin-http.middlewares=xcind-redirect-to-https@docker" "$mix_yaml"
+assert_contains "mixed: redirect middleware emitted once" \
+  "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme=https" "$mix_yaml"
+
+# --- Proxy TLS disabled overrides per-export tls=require (collapse to HTTP)
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+export XCIND_PROXY_TLS_MODE="disabled"
+XCIND_PROXY_EXPORTS=("web;tls=require")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+override_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "proxy disabled overrides require: HTTP router present" "myapp-web-http.rule=" "$override_yaml"
+assert_not_contains "proxy disabled overrides require: no HTTPS router" "myapp-web-https" "$override_yaml"
+assert_not_contains "proxy disabled overrides require: no redirect middleware" "xcind-redirect-to-https" "$override_yaml"
+
+# --- Invalid tls= value in XCIND_PROXY_EXPORTS fails the hook
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web;tls=bogus")
+bogus_err=$(xcind-proxy-hook "$HOOK_APP" 2>&1) && bogus_rc=0 || bogus_rc=$?
+assert_eq "hook: invalid tls value fails" "1" "$bogus_rc"
+assert_contains "hook: invalid tls message" "invalid XCIND_PROXY_EXPORTS tls 'bogus'" "$bogus_err"
+
+unset XCIND_PROXY_TLS_MODE
+
 unset -f docker
 rm -rf "$HOOK_APP" "$HOME"
 HOME="$_orig_HOME"
 unset XCIND_PROXY_CONFIG_DIR XCIND_PROXY_STATE_DIR XCIND_PROXY_DIR XCIND_PROXY_COMPOSE _orig_HOME
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-proxy-ensure-certs (openssl fallback) ==="
+
+if command -v openssl >/dev/null 2>&1; then
+  CERT_HOME=$(mktemp_d)
+  _cert_orig_HOME="$HOME"
+  export HOME="$CERT_HOME"
+  XCIND_PROXY_CONFIG_DIR="$HOME/.config/xcind/proxy"
+  XCIND_PROXY_STATE_DIR="$HOME/.local/state/xcind/proxy"
+  mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
+
+  # Force openssl branch by hiding mkcert from PATH.
+  _cert_orig_PATH="$PATH"
+  CERT_BIN="$CERT_HOME/bin-no-mkcert"
+  mkdir -p "$CERT_BIN"
+  # Rebuild a PATH that keeps system dirs but excludes any mkcert shim.
+  # Restore IFS after the colon-split — `unset IFS` leaves it unbound, which
+  # breaks any subsequent `$IFS` reference (including parse-entry's metadata
+  # splitter) under the suite's `set -u`.
+  _filtered_path=""
+  _saved_ifs="$IFS"
+  IFS=':'
+  for _p in $_cert_orig_PATH; do
+    if [[ -x "$_p/mkcert" ]]; then
+      continue
+    fi
+    _filtered_path="${_filtered_path:+$_filtered_path:}$_p"
+  done
+  IFS="$_saved_ifs"
+  unset _saved_ifs
+  export PATH="$CERT_BIN:$_filtered_path"
+
+  XCIND_PROXY_TLS_MODE="auto"
+  XCIND_PROXY_DOMAIN="test.localhost"
+  __xcind-proxy-ensure-certs 2>/dev/null
+  assert_file_exists "ensure-certs: wildcard.crt created" "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt"
+  assert_file_exists "ensure-certs: wildcard.key created" "$XCIND_PROXY_STATE_DIR/certs/wildcard.key"
+  assert_file_exists "ensure-certs: domain marker created" "$XCIND_PROXY_STATE_DIR/certs/domain"
+  marker_content=$(<"$XCIND_PROXY_STATE_DIR/certs/domain")
+  assert_eq "ensure-certs: marker matches domain" "test.localhost" "$marker_content"
+  # Second call should reuse the existing cert (fast path)
+  first_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
+  sleep 1
+  __xcind-proxy-ensure-certs 2>/dev/null
+  second_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
+  assert_eq "ensure-certs: reuses existing cert" "$first_mtime" "$second_mtime"
+  # Domain change triggers regeneration
+  XCIND_PROXY_DOMAIN="other.localhost"
+  __xcind-proxy-ensure-certs 2>/dev/null
+  new_marker=$(<"$XCIND_PROXY_STATE_DIR/certs/domain")
+  assert_eq "ensure-certs: marker updated on domain change" "other.localhost" "$new_marker"
+  third_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
+  # mtime must have advanced when the cert was regenerated for the new domain.
+  regenerated="no"
+  [[ $third_mtime -gt $second_mtime ]] && regenerated="yes"
+  assert_eq "ensure-certs: cert regenerated on domain change" "yes" "$regenerated"
+
+  # disabled mode is a no-op
+  rm -rf "$XCIND_PROXY_STATE_DIR/certs"
+  XCIND_PROXY_TLS_MODE="disabled"
+  __xcind-proxy-ensure-certs
+  assert_eq "ensure-certs disabled: no cert created" "false" \
+    "$([ -f "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" ] && echo true || echo false)"
+
+  # custom mode requires both files
+  XCIND_PROXY_TLS_MODE="custom"
+  XCIND_PROXY_TLS_CERT_FILE=""
+  XCIND_PROXY_TLS_KEY_FILE=""
+  custom_err=$(__xcind-proxy-ensure-certs 2>&1) && custom_rc=0 || custom_rc=$?
+  assert_eq "ensure-certs custom: missing files exits non-zero" "1" "$custom_rc"
+  assert_contains "ensure-certs custom: message mentions env vars" "XCIND_PROXY_TLS_CERT_FILE" "$custom_err"
+
+  export PATH="$_cert_orig_PATH"
+  export HOME="$_cert_orig_HOME"
+  rm -rf "$CERT_HOME"
+  XCIND_PROXY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy"
+  XCIND_PROXY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+  unset XCIND_PROXY_TLS_MODE XCIND_PROXY_DOMAIN XCIND_PROXY_TLS_CERT_FILE XCIND_PROXY_TLS_KEY_FILE
+  unset _cert_orig_HOME _cert_orig_PATH _filtered_path _p
+else
+  echo "  (skipped — openssl not on PATH)"
+fi
 
 # ======================================================================
 echo ""
