@@ -463,7 +463,8 @@ __xcind-assigned-hook-locked() {
   # Nothing assigned after filtering: no compose overlay, no -f flag.
   [[ ${#exp_names[@]} -gt 0 ]] || return 0
 
-  # Pass 2: allocate host ports (sticky when still available, fresh otherwise).
+  # Pass 2: allocate host ports. A sticky TSV hit is trusted without probing;
+  # only fresh allocations probe for availability.
   __xcind-assigned-ensure-state-file
 
   local -a exp_host_ports=()
