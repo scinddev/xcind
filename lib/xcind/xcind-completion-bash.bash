@@ -201,7 +201,19 @@ _xcind_workspace_completions() {
     return
   fi
 
-  local opts="init status --help -h --version -V"
+  # After "list", offer list-specific flags
+  if [[ $prev == "list" ]] || [[ " ${COMP_WORDS[*]} " == *" list "* && $cur == -* ]]; then
+    COMPREPLY=($(compgen -W "--json --prune" -- "$cur"))
+    return
+  fi
+
+  # After "register" or "forget", complete directories
+  if [[ $prev == "register" || $prev == "forget" ]]; then
+    COMPREPLY=($(compgen -d -- "$cur"))
+    return
+  fi
+
+  local opts="init status list register forget --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

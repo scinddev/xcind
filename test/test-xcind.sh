@@ -2439,6 +2439,209 @@ export PATH="$OLD_PATH"
 rm -rf "$MOCK_BIN"
 
 # ======================================================================
+echo ""
+echo "=== Test: workspace registry — __xcind-registry-add idempotent ==="
+
+reg_tmp=$(mktemp_d)
+XDG_STATE_HOME="$reg_tmp" \
+  XCIND_REGISTRY_DIR="$reg_tmp/xcind" \
+  XCIND_REGISTRY_FILE="$reg_tmp/xcind/workspaces.tsv" \
+  XCIND_REGISTRY_LOCK="$reg_tmp/xcind/workspaces.lock"
+
+# Module globals need to be rebound so the freshly-set XDG_STATE_HOME
+# takes effect for subsequent calls in this section.
+XCIND_REGISTRY_DIR="$reg_tmp/xcind"
+XCIND_REGISTRY_FILE="$reg_tmp/xcind/workspaces.tsv"
+XCIND_REGISTRY_LOCK="$reg_tmp/xcind/workspaces.lock"
+
+ws1="$reg_tmp/ws1"
+mkdir -p "$ws1"
+echo 'XCIND_IS_WORKSPACE=1' >"$ws1/.xcind.sh"
+
+__xcind-with-registry-lock __xcind-registry-add "$ws1"
+rows=$(grep -cv '^#' "$XCIND_REGISTRY_FILE" | tr -d '[:space:]')
+assert_eq "add writes one data row" "1" "$rows"
+
+__xcind-with-registry-lock __xcind-registry-add "$ws1"
+rows=$(grep -cv '^#' "$XCIND_REGISTRY_FILE" | tr -d '[:space:]')
+assert_eq "re-add is idempotent" "1" "$rows"
+
+ws2="$reg_tmp/ws2"
+mkdir -p "$ws2"
+echo 'XCIND_IS_WORKSPACE=1' >"$ws2/.xcind.sh"
+__xcind-with-registry-lock __xcind-registry-add "$ws2"
+rows=$(grep -cv '^#' "$XCIND_REGISTRY_FILE" | tr -d '[:space:]')
+assert_eq "second distinct add increments rows" "2" "$rows"
+
+# ======================================================================
+echo ""
+echo "=== Test: workspace registry — remove and prune ==="
+
+__xcind-with-registry-lock __xcind-registry-remove "$ws1"
+rows=$(grep -cv '^#' "$XCIND_REGISTRY_FILE" | tr -d '[:space:]')
+assert_eq "remove drops matching row" "1" "$rows"
+# Remaining row is ws2
+assert_contains "ws2 still present" "$ws2" "$(cat "$XCIND_REGISTRY_FILE")"
+
+# Put ws1 back and make it stale, then prune.
+__xcind-with-registry-lock __xcind-registry-add "$ws1"
+rm -rf "$ws1"
+pruned=$(__xcind-with-registry-lock __xcind-registry-prune | tr -d '[:space:]')
+assert_eq "prune returns count" "1" "$pruned"
+rows=$(grep -cv '^#' "$XCIND_REGISTRY_FILE" | tr -d '[:space:]')
+assert_eq "prune drops stale row" "1" "$rows"
+
+# Path that exists but isn't a workspace is also stale.
+not_ws="$reg_tmp/not-a-workspace"
+mkdir -p "$not_ws"
+__xcind-with-registry-lock __xcind-registry-add "$not_ws"
+pruned=$(__xcind-with-registry-lock __xcind-registry-prune | tr -d '[:space:]')
+assert_eq "prune drops non-workspace dir" "1" "$pruned"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace init auto-registers ==="
+
+init_tmp=$(mktemp_d)
+init_ws="$init_tmp/dev"
+XDG_STATE_HOME="$init_tmp/state" \
+  "$XCIND_ROOT/bin/xcind-workspace" init "$init_ws" \
+  --name dev-ws --proxy-domain dev.localhost >/dev/null
+tsv="$init_tmp/state/xcind/workspaces.tsv"
+assert_file_exists "init created the registry file" "$tsv"
+assert_contains "init registered the workspace path" "$init_ws" "$(cat "$tsv")"
+
+# Re-running init should not duplicate the row.
+XDG_STATE_HOME="$init_tmp/state" \
+  "$XCIND_ROOT/bin/xcind-workspace" init "$init_ws" >/dev/null
+rows=$(grep -cv '^#' "$tsv" | tr -d '[:space:]')
+assert_eq "re-init does not duplicate" "1" "$rows"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace list (text, JSON, stale, --prune) ==="
+
+list_tmp=$(mktemp_d)
+list_state="$list_tmp/state"
+ws_a="$list_tmp/ws-a"
+ws_b="$list_tmp/ws-b"
+
+XDG_STATE_HOME="$list_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" init "$ws_a" \
+  --name demo-a --proxy-domain a.local >/dev/null
+XDG_STATE_HOME="$list_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" init "$ws_b" \
+  --name demo-b >/dev/null
+
+# Two apps under ws_a; one under ws_b.
+mkdir -p "$ws_a/app1" "$ws_a/app2" "$ws_b/svc"
+echo '# app config' >"$ws_a/app1/.xcind.sh"
+echo '# app config' >"$ws_a/app2/.xcind.sh"
+echo '# app config' >"$ws_b/svc/.xcind.sh"
+
+list_out=$(XDG_STATE_HOME="$list_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" list)
+assert_contains "list shows demo-a" "demo-a" "$list_out"
+assert_contains "list shows demo-b" "demo-b" "$list_out"
+assert_contains "list shows a.local domain" "a.local" "$list_out"
+assert_contains "list shows ws_a path" "$ws_a" "$list_out"
+
+json_out=$(XDG_STATE_HOME="$list_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" list --json)
+apps_a=$(echo "$json_out" | jq -r '.workspaces[] | select(.name == "demo-a") | .apps')
+assert_eq "json reports 2 apps for demo-a" "2" "$apps_a"
+apps_b=$(echo "$json_out" | jq -r '.workspaces[] | select(.name == "demo-b") | .apps')
+assert_eq "json reports 1 app for demo-b" "1" "$apps_b"
+stale_count=$(echo "$json_out" | jq -r '.stale_count')
+assert_eq "json reports 0 stale" "0" "$stale_count"
+
+# Delete ws_b; it becomes stale.
+rm -rf "$ws_b"
+stale_out=$(XDG_STATE_HOME="$list_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" list)
+assert_not_contains "list hides stale demo-b" "demo-b" "$stale_out"
+assert_contains "list surfaces stale count" "1 stale entry" "$stale_out"
+
+# TSV still contains the stale path.
+stale_tsv="$list_state/xcind/workspaces.tsv"
+assert_contains "stale entry still in TSV" "$ws_b" "$(cat "$stale_tsv")"
+
+# --prune removes the stale entry.
+XDG_STATE_HOME="$list_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" list --prune >/dev/null
+assert_not_contains "prune removes stale from TSV" "$ws_b" "$(cat "$stale_tsv")"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-workspace register / forget ==="
+
+rf_tmp=$(mktemp_d)
+rf_state="$rf_tmp/state"
+good_ws="$rf_tmp/good"
+bad_dir="$rf_tmp/bad"
+mkdir -p "$good_ws" "$bad_dir"
+echo 'XCIND_IS_WORKSPACE=1' >"$good_ws/.xcind.sh"
+echo '# not a workspace' >"$bad_dir/.xcind.sh"
+
+register_status=$(XDG_STATE_HOME="$rf_state" capture_status \
+  "$XCIND_ROOT/bin/xcind-workspace" register "$bad_dir")
+assert_eq "register rejects non-workspace" "1" "$register_status"
+
+XDG_STATE_HOME="$rf_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" register "$good_ws" >/dev/null
+rf_tsv="$rf_state/xcind/workspaces.tsv"
+assert_contains "register adds workspace" "$good_ws" "$(cat "$rf_tsv")"
+
+# forget a moved/deleted workspace by path (directory doesn't need to exist).
+rm -rf "$good_ws"
+XDG_STATE_HOME="$rf_state" \
+  "$XCIND_ROOT/bin/xcind-workspace" forget "$good_ws" >/dev/null
+assert_not_contains "forget removes entry for deleted dir" "$good_ws" "$(cat "$rf_tsv")"
+
+# ======================================================================
+echo ""
+echo "=== Test: registry write failure does not break init ==="
+
+fail_tmp=$(mktemp_d)
+# A regular file can't host subdirs; mkdir -p underneath it fails. This
+# exercises the silent-failure contract for registry writes.
+touch "$fail_tmp/blocker"
+XDG_STATE_HOME="$fail_tmp/blocker/nowhere" \
+  "$XCIND_ROOT/bin/xcind-workspace" init "$fail_tmp/ws" \
+  --name demo >/dev/null 2>&1
+init_rc=$?
+assert_eq "init returns 0 despite registry failure" "0" "$init_rc"
+assert_file_exists "init still wrote .xcind.sh" "$fail_tmp/ws/.xcind.sh"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-discover-workspace auto-registers ==="
+
+disc_tmp=$(mktemp_d)
+disc_state="$disc_tmp/state"
+disc_ws="$disc_tmp/myws"
+disc_app="$disc_ws/api"
+mkdir -p "$disc_app"
+echo 'XCIND_IS_WORKSPACE=1' >"$disc_ws/.xcind.sh"
+echo '# app config' >"$disc_app/.xcind.sh"
+
+# Run discovery in a subshell so XCIND_* global mutations don't bleed
+# into later tests. Rebind registry constants to the per-test state dir
+# (read by the registry lib; exports silence SC2034).
+(
+  export XDG_STATE_HOME="$disc_state"
+  export XCIND_REGISTRY_DIR="$disc_state/xcind"
+  export XCIND_REGISTRY_FILE="$disc_state/xcind/workspaces.tsv"
+  export XCIND_REGISTRY_LOCK="$disc_state/xcind/workspaces.lock"
+  reset_xcind_state
+  __xcind-discover-workspace "$disc_app"
+)
+
+disc_tsv="$disc_state/xcind/workspaces.tsv"
+assert_file_exists "discovery created registry file" "$disc_tsv"
+assert_contains "discovery registered workspace root" "$disc_ws" "$(cat "$disc_tsv")"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

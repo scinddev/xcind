@@ -208,6 +208,9 @@ Manages xcind workspaces.
 |------------|-------------|
 | `init [DIR] [OPTIONS]` | Initialize a workspace directory |
 | `status [DIR] [OPTIONS]` | Show workspace-wide status |
+| `list [OPTIONS]` | List all workspaces the registry knows about |
+| `register PATH` | Add an existing workspace directory to the registry |
+| `forget PATH` | Remove a workspace from the registry |
 
 ### Init Options
 
@@ -222,6 +225,13 @@ Manages xcind workspaces.
 |--------|-------------|
 | `--json` | Output structured JSON |
 
+### List Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output structured JSON |
+| `--prune` | Remove stale registry entries (paths that are no longer workspaces) before listing |
+
 ### Usage
 
 ```bash
@@ -231,6 +241,11 @@ xcind-workspace init --proxy-domain xcind.localhost  # With proxy domain
 xcind-workspace init --name myws             # With explicit workspace name
 xcind-workspace status                       # Show workspace status
 xcind-workspace status --json                # JSON output
+xcind-workspace list                         # List all known workspaces
+xcind-workspace list --json                  # JSON list
+xcind-workspace list --prune                 # Drop stale registry entries
+xcind-workspace register ~/code/acme         # Register an existing workspace
+xcind-workspace forget ~/code/old-project    # Drop a registry entry
 ```
 
 ### Behavior
@@ -240,6 +255,7 @@ xcind-workspace status --json                # JSON output
 - `DIR` defaults to `.` (current directory).
 - If `.xcind.sh` already exists with `XCIND_IS_WORKSPACE=1`, re-running with flags updates the config; without flags reports "already initialized".
 - If `.xcind.sh` exists without `XCIND_IS_WORKSPACE=1` (an app config), the command prints a helpful error suggesting the correct workspace directory.
+- On success, the workspace is added to the global registry at `$XDG_STATE_HOME/xcind/workspaces.tsv`.
 
 **Status:**
 
@@ -248,17 +264,27 @@ xcind-workspace status --json                # JSON output
 - Shows workspace network and proxy status.
 - With `--json`, outputs structured JSON with per-app service details.
 
+**List / register / forget:**
+
+- `list` reads the registry and prints one row per workspace: name, proxy domain, app count, absolute path. Entries whose directory no longer exists (or is no longer a workspace) are hidden; a footer line reports the stale count.
+- `--prune` rewrites the registry to drop stale entries before listing.
+- `register PATH` adds an existing workspace to the registry. The path must be a directory whose `.xcind.sh` sets `XCIND_IS_WORKSPACE=1`; otherwise the command errors.
+- `forget PATH` removes the entry whose absolute path matches. The directory does not need to exist — use this to drop entries for moved or deleted workspaces.
+- Workspaces are also auto-registered on every runtime discovery (any `xcind-compose` or `xcind-config` invocation inside a workspace). Registry write failures are silent so state-home issues never break compose runs.
+
 > **Trust boundary:** unlike `xcind-compose` and `xcind-config`, which walk
 > *upward* from `$PWD` (so the user has already chosen to `cd` into the
 > directory whose `.xcind.sh` is sourced), `xcind-workspace status` walks
 > *downward* through the workspace root's immediate non-hidden
 > subdirectories and invokes `xcind-config` on each one whose `.xcind.sh`
 > is an app (nested workspaces and hidden dirs like `.git` are skipped).
-> Each discovered app's `.xcind.sh` is therefore sourced, and any
-> `$(cmd)` substitutions in its path patterns will execute. The workspace
-> model assumes every immediate app subdirectory is trusted — do not run
-> `xcind-workspace status` inside a workspace root that contains
-> untrusted checkouts or downloaded archives as top-level children.
+> `xcind-workspace list` similarly sources each registered workspace's
+> `.xcind.sh` in a subshell to resolve its name and proxy domain. Each
+> discovered `.xcind.sh` is therefore executed, and any `$(cmd)`
+> substitutions in it will run. Do not run `xcind-workspace status` or
+> `list` against workspaces you do not trust; if a hostile workspace ends
+> up in your registry (e.g. via auto-registration after a stray
+> `xcind-compose` invocation), drop it with `xcind-workspace forget PATH`.
 
 ---
 
