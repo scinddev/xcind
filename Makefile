@@ -1,4 +1,5 @@
 SHELL_FILES = \
+	bin/xcind-application \
 	bin/xcind-compose \
 	bin/xcind-config \
 	bin/xcind-proxy \

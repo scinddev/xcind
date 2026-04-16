@@ -3,6 +3,8 @@
   "version": "0.5.0",
   "description": "Slim shell wrapper around docker compose with per-application config",
   "bin": {
+    "xcind-app": "bin/xcind-application",
+    "xcind-application": "bin/xcind-application",
     "xcind-compose": "bin/xcind-compose",
     "xcind-config": "bin/xcind-config",
     "xcind-proxy": "bin/xcind-proxy",

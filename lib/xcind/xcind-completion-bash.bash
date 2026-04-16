@@ -223,9 +223,41 @@ _xcind_workspace_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-application: native completion
+# -----------------------------------------------------------------------------
+
+_xcind_application_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+  # After "init", offer init-specific flags and directory completion
+  if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
+    COMPREPLY=($(compgen -W "--name" -- "$cur"))
+    return
+  fi
+
+  # After --name, let default completion handle values
+  if [[ $prev == "--name" ]]; then
+    return
+  fi
+
+  # After "status" or "list", offer --json and directory completion
+  if [[ $prev == "status" || $prev == "list" ]]; then
+    COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    return
+  fi
+
+  local opts="init status list --help -h --version -V"
+  COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
+complete -F _xcind_application_completions xcind-application
+complete -F _xcind_application_completions xcind-app
 complete -F _xcind_compose_completions xcind-compose
 complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy
