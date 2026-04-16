@@ -84,6 +84,10 @@ __xcind-proxy-init() {
       _flag_tls_key_file="$2"
       shift 2
       ;;
+    --help | -h)
+      __xcind-proxy-init-help
+      exit 0
+      ;;
     *)
       echo "Error: Unknown option for init: $1" >&2
       exit 1
@@ -413,6 +417,24 @@ __xcind-proxy-logs() {
 # --------------------------------------------------------------------------
 # Help
 # --------------------------------------------------------------------------
+
+__xcind-proxy-init-help() {
+  echo "Usage: xcind-proxy init [OPTIONS]"
+  echo ""
+  echo "Create proxy infrastructure files (config.sh, docker-compose.yaml, Traefik config)."
+  echo ""
+  echo "Options:"
+  echo "  --proxy-domain DOMAIN     Set domain suffix (default: localhost)"
+  echo "  --http-port PORT          Set HTTP port (default: 80)"
+  echo "  --image IMAGE             Set Traefik Docker image (default: traefik:v3)"
+  echo "  --dashboard BOOL          Enable Traefik dashboard (default: false)"
+  echo "  --dashboard-port PORT     Set dashboard port (default: 8080)"
+  echo "  --tls-mode MODE           TLS mode: auto, custom, disabled (default: auto)"
+  echo "  --https-port PORT         Set HTTPS port (default: 443)"
+  echo "  --tls-cert-file PATH      Custom cert file (only used when --tls-mode custom)"
+  echo "  --tls-key-file PATH       Custom key file (only used when --tls-mode custom)"
+  echo "  --help, -h                Show this help"
+}
 
 __xcind-proxy-help() {
   echo "Usage: xcind-proxy <subcommand>"
