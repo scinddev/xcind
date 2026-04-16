@@ -27,8 +27,10 @@ See [ADR-0008: Traefik for Reverse Proxy](../decisions/0008-traefik-reverse-prox
 | Entrypoint | Port | Purpose |
 |------------|------|---------|
 | `web` | Configurable (`XCIND_PROXY_HTTP_PORT`, default `80`) | HTTP traffic |
+| `websecure` | Configurable (`XCIND_PROXY_HTTPS_PORT`, default `443`) | HTTPS traffic (only when `XCIND_PROXY_TLS_MODE != disabled`) |
 
 The dashboard entrypoint is only added when `XCIND_PROXY_DASHBOARD=true`.
+The `websecure` entrypoint and a `file` provider (watching `$XCIND_PROXY_STATE_DIR/dynamic/`) are only emitted when TLS is enabled.
 
 ### Dynamic Routing
 
@@ -44,17 +46,20 @@ See [Docker Labels — Traefik Routing Labels](./docker-labels.md#traefik-routin
 
 Creates proxy infrastructure across two directories:
 
-- **Config** (`~/.config/xcind/proxy/`): user-editable `config.sh`
-- **State** (`~/.local/state/xcind/proxy/`): generated `docker-compose.yaml` and `traefik.yaml`
+- **Config** (`~/.config/xcind/proxy/`): user-editable `config.sh`; optional `certs/wildcard.{crt,key}` for user-supplied certificates
+- **State** (`~/.local/state/xcind/proxy/`): generated `compose.yaml`, `traefik.yaml`, `dynamic/tls.yaml`, and `certs/`
 
 Steps:
 
 1. Creates `config.sh` (only if it doesn't exist — never overwrites user config)
 2. Sources `config.sh` for variable expansion
-3. Generates `docker-compose.yaml` (always regenerated) in state dir
-4. Generates `traefik.yaml` (always regenerated) in state dir
-5. Removes any stale generated files from the config dir (migration cleanup)
-6. Creates `xcind-proxy` Docker network if it doesn't exist
+3. Generates `compose.yaml` (always regenerated) in state dir; includes `:443`, `./certs`, and `./dynamic` bind mounts when TLS is enabled
+4. Generates `traefik.yaml` (always regenerated) in state dir; includes `websecure` entrypoint and file provider when TLS is enabled
+5. Generates `dynamic/tls.yaml` pointing at the wildcard cert (TLS-enabled modes only)
+6. Removes any stale generated files from legacy locations — `docker-compose.yaml` / `traefik.yaml` in the config dir (pre-config/state split) and `docker-compose.yaml` in the state dir (pre-rename to Compose-Specification-standard `compose.yaml`)
+7. Creates `xcind-proxy` Docker network if it doesn't exist
+
+Certificate provisioning happens lazily on `xcind-proxy up` / auto-start — see [TLS Certificate Management](#tls-certificate-management).
 
 ### `xcind-proxy up`
 
@@ -95,11 +100,16 @@ For complete configuration examples, see the [Proxy Infrastructure Appendix](./a
 entryPoints:
   web:
     address: ":80"
+  websecure:              # only when TLS is enabled
+    address: ":443"
 
 providers:
   docker:
     exposedByDefault: false
     network: xcind-proxy
+  file:                   # only when TLS is enabled
+    directory: /etc/traefik/dynamic
+    watch: true
 
 log:
   level: INFO
@@ -113,7 +123,23 @@ api:
   insecure: true
 ```
 
-### Generated `docker-compose.yaml`
+### Generated `dynamic/tls.yaml`
+
+Emitted into `$XCIND_PROXY_STATE_DIR/dynamic/tls.yaml` when TLS is enabled. Points Traefik at the wildcard cert written by the cert-provisioning helper.
+
+```yaml
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/wildcard.crt
+      keyFile: /etc/traefik/certs/wildcard.key
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/certs/wildcard.crt
+        keyFile: /etc/traefik/certs/wildcard.key
+```
+
+### Generated `compose.yaml`
 
 ```yaml
 name: xcind-proxy
@@ -141,6 +167,23 @@ networks:
 ```
 
 Dashboard port mapping and `--api.dashboard=true` command are added when `XCIND_PROXY_DASHBOARD=true`.
+HTTPS port mapping, `./certs`, and `./dynamic` bind mounts are only added when `XCIND_PROXY_TLS_MODE != disabled`.
+
+---
+
+## TLS Certificate Management
+
+Governed by `XCIND_PROXY_TLS_MODE` (see [ADR-0009](../decisions/0009-flexible-tls-configuration.md)).
+
+| Mode | Behaviour |
+|------|-----------|
+| `auto` (default) | Resolve (in order): user-provided wildcard at `$XCIND_PROXY_CONFIG_DIR/certs/wildcard.{crt,key}` (always wins; copied into state when newer) → previously generated state cert for the same domain (fast path) → `mkcert` → openssl self-signed fallback. |
+| `custom` | Use `XCIND_PROXY_TLS_CERT_FILE` and `XCIND_PROXY_TLS_KEY_FILE` (both required). |
+| `disabled` | Skip cert provisioning; no `websecure` entrypoint, no HTTPS routers. |
+
+Certificates are written to `$XCIND_PROXY_STATE_DIR/certs/wildcard.{crt,key}`. A sibling `domain` marker file records the domain the cert was minted for so `xcind-proxy up` can detect a changed `XCIND_PROXY_DOMAIN` and regenerate.
+
+Wildcard certs cover `*.${XCIND_PROXY_DOMAIN}` and the bare domain, so every generated hostname works over HTTPS without per-app cert management.
 
 ---
 

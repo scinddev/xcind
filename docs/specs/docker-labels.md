@@ -23,40 +23,52 @@ Workspace labels are only present when the application is running in workspace m
 
 ## Export Labels
 
-Applied to containers with proxy exports, keyed by export name:
+Applied to containers with proxy exports, keyed by export name. The `.url` label carries the **preferred scheme** (HTTPS whenever the export has an HTTPS router, HTTP otherwise). `.http.url` is always emitted for proxied exports — every effective TLS mode produces an HTTP router (a normal one for `auto`/`disable`, a redirect-only one for `require`), so the HTTP URL is always reachable. `.https.url` is emitted only when an HTTPS router actually exists.
 
 ```
 xcind.export.{name}.host={hostname}
-xcind.export.{name}.url=http://{hostname}
+xcind.export.{name}.http.url=http://{hostname}    # always (HTTP router always exists)
+xcind.export.{name}.https.url=https://{hostname}  # only when HTTPS router exists
+xcind.export.{name}.url={preferred-scheme}://{hostname}
 ```
 
-**Example** — app with two exports (`api` and `web`):
+**Example** — app with two exports, proxy TLS enabled (HTTPS preferred):
 
 ```yaml
 labels:
   - "xcind.export.api.host=myapp-api.localhost"
-  - "xcind.export.api.url=http://myapp-api.localhost"
+  - "xcind.export.api.http.url=http://myapp-api.localhost"
+  - "xcind.export.api.https.url=https://myapp-api.localhost"
+  - "xcind.export.api.url=https://myapp-api.localhost"
   - "xcind.export.web.host=myapp-web.localhost"
-  - "xcind.export.web.url=http://myapp-web.localhost"
+  - "xcind.export.web.http.url=http://myapp-web.localhost"
+  - "xcind.export.web.https.url=https://myapp-web.localhost"
+  - "xcind.export.web.url=https://myapp-web.localhost"
 ```
+
+When the proxy runs with `XCIND_PROXY_TLS_MODE=disabled` (or an export sets `tls=disable`), only `.http.url` and an http `.url` label are emitted.
 
 ---
 
 ## Apex Labels
 
-Applied to the container running the primary (first) export when apex URL generation is enabled:
+Applied to the container running the primary (first) export when apex URL generation is enabled. Emits the same shape as the per-export labels — `.http.url` is always emitted (apex always has an HTTP router, redirect-only when the primary export uses `tls=require`), `.https.url` only when an HTTPS apex router exists:
 
 ```
 xcind.apex.host={apex_hostname}
-xcind.apex.url=http://{apex_hostname}
+xcind.apex.http.url=http://{apex_hostname}    # always (HTTP apex router always exists)
+xcind.apex.https.url=https://{apex_hostname}  # only when HTTPS apex router exists
+xcind.apex.url={preferred-scheme}://{apex_hostname}
 ```
 
-**Example** — frontend with `web` as primary export:
+**Example** — frontend with `web` as primary export, proxy TLS enabled:
 
 ```yaml
 labels:
   - "xcind.apex.host=dev-frontend.localhost"
-  - "xcind.apex.url=http://dev-frontend.localhost"
+  - "xcind.apex.http.url=http://dev-frontend.localhost"
+  - "xcind.apex.https.url=https://dev-frontend.localhost"
+  - "xcind.apex.url=https://dev-frontend.localhost"
 ```
 
 ---
@@ -81,27 +93,41 @@ Generated automatically by `xcind-proxy-hook` based on `XCIND_PROXY_EXPORTS`. Th
 | `traefik.enable` | Exposes container to Traefik | `true` |
 | `traefik.docker.network` | Network for Traefik to reach this container | `xcind-proxy` |
 | `traefik.http.routers.{name}.rule` | Routing rule (Host matcher) | ``Host(`myapp-api.localhost`)`` |
-| `traefik.http.routers.{name}.entrypoints` | Entry points to use | `web` |
+| `traefik.http.routers.{name}.entrypoints` | Entry points to use | `web` / `websecure` |
+| `traefik.http.routers.{name}.tls` | Enable TLS termination (HTTPS routers) | `true` |
 | `traefik.http.routers.{name}.service` | Service name for load balancer | `myapp-api-http` |
+| `traefik.http.routers.{name}.middlewares` | Attached middlewares (redirect) | `xcind-redirect-to-https@docker` |
 | `traefik.http.services.{name}.loadbalancer.server.port` | Container port | `3000` |
 
 ### Router Naming
 
-Router names follow the configured template patterns:
+An export can produce up to two routers — `-http` (entrypoint `web`) and `-https` (entrypoint `websecure`, `tls=true`). The suffix is part of the router **name**, not the entrypoint, so existing `-http` routers keep their names when HTTPS is added alongside.
 
-| Mode | Pattern | Example |
-|------|---------|---------|
-| Workspaceless | `{app}-{export}-{protocol}` | `myapp-api-http` |
-| Workspace | `{workspace}-{app}-{export}-{protocol}` | `dev-frontend-web-http` |
+| Mode | Pattern | Example (HTTP / HTTPS) |
+|------|---------|------------------------|
+| Workspaceless | `{app}-{export}-{protocol}` | `myapp-api-http` / `myapp-api-https` |
+| Workspace | `{workspace}-{app}-{export}-{protocol}` | `dev-frontend-web-http` / `dev-frontend-web-https` |
 
 **Apex router names** omit the export segment:
 
-| Mode | Pattern | Example |
-|------|---------|---------|
-| Workspaceless | `{app}-{protocol}` | `myapp-http` |
-| Workspace | `{workspace}-{app}-{protocol}` | `dev-frontend-http` |
+| Mode | Pattern | Example (HTTP / HTTPS) |
+|------|---------|------------------------|
+| Workspaceless | `{app}-{protocol}` | `myapp-http` / `myapp-https` |
+| Workspace | `{workspace}-{app}-{protocol}` | `dev-frontend-http` / `dev-frontend-https` |
 
-### Complete Label Example
+### TLS Modes
+
+Which routers are emitted per export is controlled by the `tls` metadata key on the export (and globally constrained by `XCIND_PROXY_TLS_MODE`):
+
+| Effective mode | HTTP router | HTTPS router |
+|---|---|---|
+| `auto` (default, proxy TLS on) | Yes | Yes |
+| `require` (proxy TLS on) | Yes — redirect-only, attaches `xcind-redirect-to-https@docker` middleware | Yes |
+| `disable` / proxy TLS disabled | Yes | No |
+
+When any export on the app uses `tls=require`, a shared `xcind-redirect-to-https` `redirectscheme` middleware is emitted on **every** rendered service block of the compose overlay. Traefik's Docker provider only loads labels from running containers, so emitting the middleware on a single "first" service would leave it unresolved whenever that service wasn't running. Repeated middleware definitions with the same name/value are idempotent in Traefik.
+
+### Complete Label Example (proxy TLS enabled, default `tls=auto`)
 
 Workspaceless app with a single proxy export `web` on port 3000:
 
@@ -110,24 +136,40 @@ labels:
   # Context labels (from xcind-app-hook)
   - "xcind.app.name=myapp"
   - "xcind.app.path=/Users/beau/myapp"
-  # Traefik routing (from xcind-proxy-hook)
+  # Traefik shared labels
   - "traefik.enable=true"
   - "traefik.docker.network=xcind-proxy"
+  # Per-export HTTP router
   - "traefik.http.routers.myapp-web-http.rule=Host(`myapp-web.localhost`)"
   - "traefik.http.routers.myapp-web-http.entrypoints=web"
   - "traefik.http.routers.myapp-web-http.service=myapp-web-http"
   - "traefik.http.services.myapp-web-http.loadbalancer.server.port=3000"
-  # Apex routing (primary export)
+  # Per-export HTTPS router
+  - "traefik.http.routers.myapp-web-https.rule=Host(`myapp-web.localhost`)"
+  - "traefik.http.routers.myapp-web-https.entrypoints=websecure"
+  - "traefik.http.routers.myapp-web-https.tls=true"
+  - "traefik.http.routers.myapp-web-https.service=myapp-web-https"
+  - "traefik.http.services.myapp-web-https.loadbalancer.server.port=3000"
+  # Apex routers (primary export)
   - "traefik.http.routers.myapp-http.rule=Host(`myapp.localhost`)"
   - "traefik.http.routers.myapp-http.entrypoints=web"
   - "traefik.http.routers.myapp-http.service=myapp-http"
   - "traefik.http.services.myapp-http.loadbalancer.server.port=3000"
+  - "traefik.http.routers.myapp-https.rule=Host(`myapp.localhost`)"
+  - "traefik.http.routers.myapp-https.entrypoints=websecure"
+  - "traefik.http.routers.myapp-https.tls=true"
+  - "traefik.http.routers.myapp-https.service=myapp-https"
+  - "traefik.http.services.myapp-https.loadbalancer.server.port=3000"
   # Export labels
   - "xcind.export.web.host=myapp-web.localhost"
-  - "xcind.export.web.url=http://myapp-web.localhost"
+  - "xcind.export.web.http.url=http://myapp-web.localhost"
+  - "xcind.export.web.https.url=https://myapp-web.localhost"
+  - "xcind.export.web.url=https://myapp-web.localhost"
   # Apex labels
   - "xcind.apex.host=myapp.localhost"
-  - "xcind.apex.url=http://myapp.localhost"
+  - "xcind.apex.http.url=http://myapp.localhost"
+  - "xcind.apex.https.url=https://myapp.localhost"
+  - "xcind.apex.url=https://myapp.localhost"
 ```
 
 ---

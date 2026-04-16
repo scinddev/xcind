@@ -19,9 +19,41 @@ Feature: Traefik Label Generation
 
   Scenario: Router rule uses Host matcher
     Given XCIND_PROXY_EXPORTS contains "web"
+    And XCIND_PROXY_TLS_MODE is "auto"
     When xcind-proxy-hook generates the compose overlay
     Then the generated YAML contains a Traefik router named "myapp-web-http"
     And the router rule matches Host "myapp-web.localhost"
+
+  Scenario: HTTPS router is emitted alongside HTTP when proxy TLS is enabled
+    Given XCIND_PROXY_EXPORTS contains "web"
+    And XCIND_PROXY_TLS_MODE is "auto"
+    When xcind-proxy-hook generates the compose overlay
+    Then the generated YAML contains a Traefik router named "myapp-web-https"
+    And the router uses entrypoint "websecure"
+    And the router has "tls=true"
+
+  Scenario: tls=require replaces HTTP router with a redirect to HTTPS
+    Given XCIND_PROXY_EXPORTS contains "web;tls=require"
+    And XCIND_PROXY_TLS_MODE is "auto"
+    When xcind-proxy-hook generates the compose overlay
+    Then the HTTP router "myapp-web-http" attaches middleware "xcind-redirect-to-https@docker"
+    And the generated YAML defines middleware "xcind-redirect-to-https" with scheme "https"
+    And the generated YAML contains a Traefik router named "myapp-web-https"
+
+  Scenario: tls=disable keeps the export on HTTP only
+    Given XCIND_PROXY_EXPORTS contains "web;tls=disable"
+    And XCIND_PROXY_TLS_MODE is "auto"
+    When xcind-proxy-hook generates the compose overlay
+    Then the generated YAML contains a Traefik router named "myapp-web-http"
+    And the generated YAML does not contain a Traefik router named "myapp-web-https"
+
+  Scenario: XCIND_PROXY_TLS_MODE=disabled collapses all exports to HTTP
+    Given XCIND_PROXY_EXPORTS contains "web" and "api:3000"
+    And XCIND_PROXY_TLS_MODE is "disabled"
+    When xcind-proxy-hook generates the compose overlay
+    Then the generated YAML contains a Traefik router named "myapp-web-http"
+    And the generated YAML does not contain a Traefik router named "myapp-web-https"
+    And the generated YAML does not contain label "xcind.export.web.https.url"
 
   Scenario: Service port is configured via loadbalancer
     Given XCIND_PROXY_EXPORTS contains "api:3000"
@@ -44,6 +76,21 @@ Feature: Traefik Label Generation
     When xcind-proxy-hook generates the compose overlay
     Then the generated YAML contains label "xcind.export.web.host" with value "myapp-web.localhost"
     And the generated YAML contains label "xcind.export.db.host" with value "myapp-db.localhost"
+
+  Scenario: Export URL label reflects the preferred scheme
+    Given XCIND_PROXY_EXPORTS contains "web"
+    And XCIND_PROXY_TLS_MODE is "auto"
+    When xcind-proxy-hook generates the compose overlay
+    Then the generated YAML contains label "xcind.export.web.http.url" with value "http://myapp-web.localhost"
+    And the generated YAML contains label "xcind.export.web.https.url" with value "https://myapp-web.localhost"
+    And the generated YAML contains label "xcind.export.web.url" with value "https://myapp-web.localhost"
+
+  Scenario: Export URL label is http-only when TLS is disabled at the proxy
+    Given XCIND_PROXY_EXPORTS contains "web"
+    And XCIND_PROXY_TLS_MODE is "disabled"
+    When xcind-proxy-hook generates the compose overlay
+    Then the generated YAML contains label "xcind.export.web.url" with value "http://myapp-web.localhost"
+    And the generated YAML does not contain label "xcind.export.web.https.url"
 
   Scenario: Proxy network is attached
     Given XCIND_PROXY_EXPORTS contains "web"
