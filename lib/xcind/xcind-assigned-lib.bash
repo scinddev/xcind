@@ -473,13 +473,14 @@ __xcind-assigned-hook-locked() {
     local cport="${exp_cports[$i]}"
     local host_port=""
 
+    # Sticky hit: trust the TSV. We cannot tell "our own running container"
+    # from "a foreign process" by probing the port — ss/netstat/dev-tcp all
+    # just see a listener. Probing here self-evicts whenever the container
+    # is up on a cache miss, causing the port to flap. If the port is truly
+    # stolen, `docker compose up` will surface a clear bind error.
     local sticky
     if sticky=$(__xcind-assigned-lookup "$app_root" "$xport"); then
-      if __xcind-assigned-port-available "$sticky"; then
-        host_port="$sticky"
-      else
-        __xcind-assigned-remove-entry "$app_root" "$xport"
-      fi
+      host_port="$sticky"
     fi
 
     if [[ -z $host_port ]]; then
