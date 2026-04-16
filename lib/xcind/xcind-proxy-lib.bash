@@ -473,8 +473,12 @@ XCIND_PROXY_APEX_HTTPS_URL_LABEL='      - "xcind.apex.https.url=https://{apex_ho
 # shellcheck disable=SC2016
 XCIND_PROXY_APEX_URL_LABEL='      - "xcind.apex.url={scheme}://{apex_hostname}"'
 
-# Shared HTTP→HTTPS redirect middleware. Emitted once (on the first service
-# block that needs it) when any export uses tls=require.
+# Shared HTTP→HTTPS redirect middleware. Appended to *every* rendered
+# service block when any export uses tls=require — Traefik's Docker
+# provider only loads labels from running containers, so a "first service
+# only" emission would orphan the middleware reference whenever that
+# service isn't running. Repeated definitions of the same middleware
+# name/value are idempotent in Traefik.
 XCIND_PROXY_REDIRECT_MIDDLEWARE_LABELS='      - "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.permanent=true"'
 
@@ -890,18 +894,20 @@ xcind-proxy-hook() {
           esac
         fi
 
-        # xcind.export.* host/url labels — one set per export, with the
-        # preferred-scheme URL reflecting the effective TLS mode.
+        # xcind.export.* host/url labels — one set per export.
+        # `.http.url` is emitted whenever the export has an HTTP router
+        # (always, for proxied exports — redirect-only counts) so consumers
+        # see a stable HTTP entry point. `.https.url` is emitted only when
+        # an HTTPS router actually exists. `.url` is the preferred-scheme
+        # canonical (https when TLS is reachable, otherwise http).
         local preferred_scheme="http"
         [[ $e_tls == "both" || $e_tls == "https" ]] && preferred_scheme="https"
         fragment=$(__xcind-render-template "$XCIND_PROXY_EXPORT_HOST_LABEL" \
           export "$e_export" hostname "$e_hostname")
         service_block+=$'\n'"$fragment"
-        if [[ $e_tls == "http" || $e_tls == "both" ]]; then
-          fragment=$(__xcind-render-template "$XCIND_PROXY_EXPORT_HTTP_URL_LABEL" \
-            export "$e_export" hostname "$e_hostname")
-          service_block+=$'\n'"$fragment"
-        fi
+        fragment=$(__xcind-render-template "$XCIND_PROXY_EXPORT_HTTP_URL_LABEL" \
+          export "$e_export" hostname "$e_hostname")
+        service_block+=$'\n'"$fragment"
         if [[ $e_tls == "https" || $e_tls == "both" ]]; then
           fragment=$(__xcind-render-template "$XCIND_PROXY_EXPORT_HTTPS_URL_LABEL" \
             export "$e_export" hostname "$e_hostname")
@@ -912,17 +918,18 @@ xcind-proxy-hook() {
         service_block+=$'\n'"$fragment"
 
         # xcind.apex.* host/url labels — rendered once on the first export.
+        # Symmetric with the per-export labels above: `.http.url` is always
+        # emitted (an HTTP apex router always exists, even as a redirect),
+        # `.https.url` only when an HTTPS apex router exists.
         if [[ $j -eq 0 && $apex_enabled == true ]]; then
           local apex_preferred_scheme="http"
           [[ $apex_tls == "both" || $apex_tls == "https" ]] && apex_preferred_scheme="https"
           fragment=$(__xcind-render-template "$XCIND_PROXY_APEX_HOST_LABEL" \
             apex_hostname "$apex_hostname")
           service_block+=$'\n'"$fragment"
-          if [[ $apex_tls == "http" || $apex_tls == "both" ]]; then
-            fragment=$(__xcind-render-template "$XCIND_PROXY_APEX_HTTP_URL_LABEL" \
-              apex_hostname "$apex_hostname")
-            service_block+=$'\n'"$fragment"
-          fi
+          fragment=$(__xcind-render-template "$XCIND_PROXY_APEX_HTTP_URL_LABEL" \
+            apex_hostname "$apex_hostname")
+          service_block+=$'\n'"$fragment"
           if [[ $apex_tls == "https" || $apex_tls == "both" ]]; then
             fragment=$(__xcind-render-template "$XCIND_PROXY_APEX_HTTPS_URL_LABEL" \
               apex_hostname "$apex_hostname")

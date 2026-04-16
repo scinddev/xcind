@@ -983,6 +983,19 @@ assert_contains "tls require: redirect middleware defined" \
   "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme=https" "$tls_req_yaml"
 assert_contains "tls require: redirect is permanent" \
   "traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.permanent=true" "$tls_req_yaml"
+# .http.url is still emitted for tls=require: an HTTP router exists (the
+# redirect-only one), so consumers see a stable HTTP entry point alongside
+# the canonical HTTPS one.
+assert_contains "tls require: http.url label still emitted" \
+  "xcind.export.web.http.url=http://myapp-web.localhost" "$tls_req_yaml"
+assert_contains "tls require: https.url label emitted" \
+  "xcind.export.web.https.url=https://myapp-web.localhost" "$tls_req_yaml"
+assert_contains "tls require: preferred url is https" \
+  "xcind.export.web.url=https://myapp-web.localhost" "$tls_req_yaml"
+assert_contains "tls require: apex http.url label still emitted" \
+  "xcind.apex.http.url=http://myapp.localhost" "$tls_req_yaml"
+assert_contains "tls require: apex https.url label emitted" \
+  "xcind.apex.https.url=https://myapp.localhost" "$tls_req_yaml"
 # Middleware is defined on every rendered service block (one per compose
 # service), not "exactly once" — Traefik's Docker provider only loads
 # labels from running containers, so the referenced middleware has to be

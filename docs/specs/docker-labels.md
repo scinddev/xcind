@@ -23,12 +23,12 @@ Workspace labels are only present when the application is running in workspace m
 
 ## Export Labels
 
-Applied to containers with proxy exports, keyed by export name. The `.url` label carries the **preferred scheme** (HTTPS whenever the export has an HTTPS router, HTTP otherwise); per-protocol siblings are emitted when the corresponding router exists:
+Applied to containers with proxy exports, keyed by export name. The `.url` label carries the **preferred scheme** (HTTPS whenever the export has an HTTPS router, HTTP otherwise). `.http.url` is always emitted for proxied exports — every effective TLS mode produces an HTTP router (a normal one for `auto`/`disable`, a redirect-only one for `require`), so the HTTP URL is always reachable. `.https.url` is emitted only when an HTTPS router actually exists.
 
 ```
 xcind.export.{name}.host={hostname}
-xcind.export.{name}.http.url=http://{hostname}    # when HTTP router exists
-xcind.export.{name}.https.url=https://{hostname}  # when HTTPS router exists
+xcind.export.{name}.http.url=http://{hostname}    # always (HTTP router always exists)
+xcind.export.{name}.https.url=https://{hostname}  # only when HTTPS router exists
 xcind.export.{name}.url={preferred-scheme}://{hostname}
 ```
 
@@ -52,12 +52,12 @@ When the proxy runs with `XCIND_PROXY_TLS_MODE=disabled` (or an export sets `tls
 
 ## Apex Labels
 
-Applied to the container running the primary (first) export when apex URL generation is enabled. Emits the same shape as the per-export labels:
+Applied to the container running the primary (first) export when apex URL generation is enabled. Emits the same shape as the per-export labels — `.http.url` is always emitted (apex always has an HTTP router, redirect-only when the primary export uses `tls=require`), `.https.url` only when an HTTPS apex router exists:
 
 ```
 xcind.apex.host={apex_hostname}
-xcind.apex.http.url=http://{apex_hostname}    # when HTTP apex router exists
-xcind.apex.https.url=https://{apex_hostname}  # when HTTPS apex router exists
+xcind.apex.http.url=http://{apex_hostname}    # always (HTTP apex router always exists)
+xcind.apex.https.url=https://{apex_hostname}  # only when HTTPS apex router exists
 xcind.apex.url={preferred-scheme}://{apex_hostname}
 ```
 
@@ -125,7 +125,7 @@ Which routers are emitted per export is controlled by the `tls` metadata key on 
 | `require` (proxy TLS on) | Yes — redirect-only, attaches `xcind-redirect-to-https@docker` middleware | Yes |
 | `disable` / proxy TLS disabled | Yes | No |
 
-When any export on the app uses `tls=require`, a shared `xcind-redirect-to-https` `redirectscheme` middleware is emitted once on the first service block of the compose overlay.
+When any export on the app uses `tls=require`, a shared `xcind-redirect-to-https` `redirectscheme` middleware is emitted on **every** rendered service block of the compose overlay. Traefik's Docker provider only loads labels from running containers, so emitting the middleware on a single "first" service would leave it unresolved whenever that service wasn't running. Repeated middleware definitions with the same name/value are idempotent in Traefik.
 
 ### Complete Label Example (proxy TLS enabled, default `tls=auto`)
 
