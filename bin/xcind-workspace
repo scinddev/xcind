@@ -48,6 +48,10 @@ XCIND_IS_WORKSPACE=1'
   fi
 
   echo "$content" >"$dir/.xcind.sh"
+
+  # Register the workspace so `xcind-workspace list` can find it. Silent on
+  # failure — an unwritable state home must never break init.
+  { __xcind-with-registry-lock __xcind-registry-add "$dir" >/dev/null 2>&1 || true; }
 }
 
 __xcind-workspace-init() {
@@ -581,6 +585,258 @@ __xcind-workspace-status() {
 }
 
 # --------------------------------------------------------------------------
+# List / register / forget
+# --------------------------------------------------------------------------
+
+# Count app subdirs inside a workspace. An "app" is an immediate
+# subdirectory containing .xcind.sh that is NOT itself a workspace.
+__xcind-workspace-count-apps() {
+  local ws="$1"
+  local d count=0
+  shopt -s nullglob
+  for d in "$ws"/*/; do
+    [[ -f "$d/.xcind.sh" ]] || continue
+    __xcind-is-workspace-dir "$d" && continue
+    count=$((count + 1))
+  done
+  shopt -u nullglob
+  printf '%s' "$count"
+}
+
+# Source .xcind.sh in a subshell and print the resolved workspace name and
+# proxy domain, tab-separated. Matches __xcind-is-workspace-dir's trust
+# model: sources user code in a subshell.
+__xcind-workspace-extract-meta() {
+  local ws="$1"
+  (
+    XCIND_WORKSPACE=""
+    XCIND_PROXY_DOMAIN=""
+    # shellcheck disable=SC1091
+    source "$ws/.xcind.sh" 2>/dev/null || true
+    local name="${XCIND_WORKSPACE:-$(basename "$ws")}"
+    local domain="${XCIND_PROXY_DOMAIN:-}"
+    printf '%s\t%s\n' "$name" "$domain"
+  )
+}
+
+# Callback invoked by __xcind-registry-iter inside __xcind-workspace-list.
+# Populates the caller's parallel arrays (names/paths/domains/apps_counts/
+# stale_flags) via bash dynamic scoping. Declared at file scope so the
+# indirect invocation through "$callback" is visible to shellcheck.
+__xcind-workspace-list-collect() {
+  local L_path="$1"
+  local name="" domain="" apps="0" stale="false"
+  if [[ -d "$L_path" ]] && __xcind-is-workspace-dir "$L_path"; then
+    local meta
+    meta=$(__xcind-workspace-extract-meta "$L_path")
+    name="${meta%%$'\t'*}"
+    domain="${meta#*$'\t'}"
+    apps=$(__xcind-workspace-count-apps "$L_path")
+  else
+    stale="true"
+    name="$(basename "$L_path")"
+  fi
+  names+=("$name")
+  paths+=("$L_path")
+  domains+=("$domain")
+  apps_counts+=("$apps")
+  stale_flags+=("$stale")
+  return 0
+}
+
+__xcind-workspace-list() {
+  local _flag_json=false
+  local _flag_prune=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --json)
+      _flag_json=true
+      shift
+      ;;
+    --prune)
+      _flag_prune=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-workspace list [--json] [--prune]"
+      echo ""
+      echo "List all workspaces the registry knows about."
+      echo ""
+      echo "Options:"
+      echo "  --json   Output structured JSON"
+      echo "  --prune  Remove stale registry entries (paths that are no"
+      echo "           longer workspaces) before listing"
+      return 0
+      ;;
+    *)
+      echo "Error: Unknown option for list: $1" >&2
+      exit 1
+      ;;
+    esac
+  done
+
+  if [[ "$_flag_prune" == true ]]; then
+    __xcind-with-registry-lock __xcind-registry-prune >/dev/null
+  fi
+
+  # Collect rows. Parallel arrays, keyed by insertion order; sorted by
+  # name before display. The collect callback (defined at file scope
+  # below) populates these via bash dynamic scoping, matching the pattern
+  # used by __xcind-assigned-iter callbacks.
+  local -a names=() paths=() domains=() apps_counts=() stale_flags=()
+
+  __xcind-registry-iter __xcind-workspace-list-collect
+
+  # Sort the parallel arrays by name (then path, for stability). Build an
+  # index list as "name\tpath\tidx", sort, then emit in sorted order.
+  local sorted_indices=()
+  if [[ ${#names[@]} -gt 0 ]]; then
+    local _i _sort_input _sorted_line
+    _sort_input=""
+    _i=0
+    while [[ $_i -lt ${#names[@]} ]]; do
+      _sort_input+="${names[$_i]}"$'\t'"${paths[$_i]}"$'\t'"$_i"$'\n'
+      _i=$((_i + 1))
+    done
+    while IFS= read -r _sorted_line; do
+      [[ -z "$_sorted_line" ]] && continue
+      # Trailing field after the last tab is the original index.
+      sorted_indices+=("${_sorted_line##*$'\t'}")
+    done < <(printf '%s' "$_sort_input" | sort -t $'\t' -k1,1 -k2,2)
+  fi
+
+  # Count stale entries.
+  local stale_count=0 _s
+  for _s in "${stale_flags[@]+"${stale_flags[@]}"}"; do
+    [[ "$_s" == "true" ]] && stale_count=$((stale_count + 1))
+  done
+
+  if [[ "$_flag_json" == true ]]; then
+    if ! command -v jq >/dev/null 2>&1; then
+      echo "Error: jq is required for --json output." >&2
+      exit 1
+    fi
+    local parts=() idx
+    for idx in "${sorted_indices[@]+"${sorted_indices[@]}"}"; do
+      parts+=("$(jq -n \
+        --arg name "${names[$idx]}" \
+        --arg path "${paths[$idx]}" \
+        --arg domain "${domains[$idx]}" \
+        --argjson apps "${apps_counts[$idx]}" \
+        --argjson stale "${stale_flags[$idx]}" \
+        '{name: $name, path: $path, domain: $domain, apps: $apps, stale: $stale}')")
+    done
+    local workspaces_json="[]"
+    if [[ ${#parts[@]} -gt 0 ]]; then
+      workspaces_json=$(printf '%s\n' "${parts[@]}" | jq -s .)
+    fi
+    jq -n \
+      --argjson workspaces "$workspaces_json" \
+      --argjson stale_count "$stale_count" \
+      '{workspaces: $workspaces, stale_count: $stale_count}'
+    return 0
+  fi
+
+  # Text output: skip stale entries in the table; surface a footer note.
+  if [[ ${#sorted_indices[@]} -eq 0 ]] || [[ $((${#sorted_indices[@]} - stale_count)) -eq 0 ]]; then
+    echo "No workspaces registered."
+    if [[ $stale_count -gt 0 ]]; then
+      echo ""
+      if [[ $stale_count -eq 1 ]]; then
+        echo "(1 stale entry — run 'xcind-workspace list --prune' to remove)"
+      else
+        echo "($stale_count stale entries — run 'xcind-workspace list --prune' to remove)"
+      fi
+    fi
+    return 0
+  fi
+
+  printf '%-20s %-20s %-5s %s\n' "NAME" "DOMAIN" "APPS" "PATH"
+  local idx
+  for idx in "${sorted_indices[@]}"; do
+    [[ "${stale_flags[$idx]}" == "true" ]] && continue
+    # "-" (ASCII, 1 byte) keeps printf width accounting correct when the
+    # workspace has no XCIND_PROXY_DOMAIN set.
+    local domain_disp="${domains[$idx]:--}"
+    printf '%-20s %-20s %-5s %s\n' \
+      "${names[$idx]}" "$domain_disp" "${apps_counts[$idx]}" "${paths[$idx]}"
+  done
+
+  if [[ $stale_count -gt 0 ]]; then
+    echo ""
+    if [[ $stale_count -eq 1 ]]; then
+      echo "(1 stale entry — run 'xcind-workspace list --prune' to remove)"
+    else
+      echo "($stale_count stale entries — run 'xcind-workspace list --prune' to remove)"
+    fi
+  fi
+}
+
+# Absolutize a path without requiring it to exist. Used by `forget` so
+# users can drop moved/deleted entries. Existing directories resolve via
+# cd+pwd (matching __xcind-workspace-find-root); other paths get a plain
+# $PWD prefix for relative inputs.
+__xcind-workspace-absolutize() {
+  local p="$1"
+  if [[ -d "$p" ]]; then
+    (cd "$p" && pwd)
+    return 0
+  fi
+  if [[ "$p" == /* ]]; then
+    printf '%s' "$p"
+  else
+    printf '%s' "$PWD/$p"
+  fi
+}
+
+__xcind-workspace-register() {
+  if [[ $# -eq 0 || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    echo "Usage: xcind-workspace register PATH"
+    echo ""
+    echo "Add an existing workspace directory to the registry. Use this"
+    echo "after cloning or copying a workspace onto a new machine."
+    [[ $# -eq 0 ]] && return 1
+    return 0
+  fi
+
+  local p="$1"
+  if [[ ! -d "$p" ]]; then
+    echo "Error: not a directory: $p" >&2
+    exit 1
+  fi
+  local abs
+  abs=$(__xcind-workspace-absolutize "$p")
+
+  if ! __xcind-is-workspace-dir "$abs"; then
+    echo "Error: not a workspace: $abs" >&2
+    echo "  ('.xcind.sh' must exist and set XCIND_IS_WORKSPACE=1)" >&2
+    exit 1
+  fi
+
+  __xcind-with-registry-lock __xcind-registry-add "$abs"
+  echo "Registered workspace at $abs"
+}
+
+__xcind-workspace-forget() {
+  if [[ $# -eq 0 || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    echo "Usage: xcind-workspace forget PATH"
+    echo ""
+    echo "Remove a workspace entry from the registry. The directory does"
+    echo "not need to exist — useful for cleaning up moved or deleted"
+    echo "workspaces."
+    [[ $# -eq 0 ]] && return 1
+    return 0
+  fi
+
+  local p="$1"
+  local abs
+  abs=$(__xcind-workspace-absolutize "$p")
+  __xcind-with-registry-lock __xcind-registry-remove "$abs"
+  echo "Forgot workspace at $abs"
+}
+
+# --------------------------------------------------------------------------
 # Help
 # --------------------------------------------------------------------------
 
@@ -590,6 +846,9 @@ __xcind-workspace-help() {
   echo "Subcommands:"
   echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
   echo "  status [DIR] [OPTIONS]   Show workspace-wide status"
+  echo "  list [OPTIONS]           List all known workspaces"
+  echo "  register PATH            Add an existing workspace to the registry"
+  echo "  forget PATH              Remove a workspace from the registry"
   echo ""
   echo "Init options:"
   echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
@@ -598,9 +857,15 @@ __xcind-workspace-help() {
   echo "Status options:"
   echo "  --json                   Output structured JSON"
   echo ""
-  echo "Note: 'status' sources the .xcind.sh file in every subdirectory of"
-  echo "the workspace root. Those files may execute arbitrary shell code."
-  echo "Only run 'status' inside workspace roots you control."
+  echo "List options:"
+  echo "  --json                   Output structured JSON"
+  echo "  --prune                  Remove stale registry entries"
+  echo ""
+  echo "Note: 'status' and 'list' source the .xcind.sh file of each"
+  echo "workspace (and 'status' of each subdirectory). Those files may"
+  echo "execute arbitrary shell code. Only run against workspaces you"
+  echo "control. If you accidentally registered an untrusted workspace,"
+  echo "run 'xcind-workspace forget PATH' to drop it from the registry."
   echo ""
   echo "Options:"
   echo "  --version, -V  Show version"
@@ -626,6 +891,18 @@ init)
 status)
   shift
   __xcind-workspace-status "$@"
+  ;;
+list)
+  shift
+  __xcind-workspace-list "$@"
+  ;;
+register)
+  shift
+  __xcind-workspace-register "$@"
+  ;;
+forget)
+  shift
+  __xcind-workspace-forget "$@"
   ;;
 --help | -h)
   __xcind-workspace-help

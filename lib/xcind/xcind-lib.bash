@@ -29,6 +29,8 @@ source "$__XCIND_LIB_DIR/xcind-assigned-lib.bash"
 source "$__XCIND_LIB_DIR/xcind-host-gateway-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
+# shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-registry-lib.bash"
 
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
@@ -852,6 +854,9 @@ __xcind-discover-workspace() {
     # shellcheck disable=SC1091
     source "$parent/.xcind.sh"
     __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
+    # Auto-register discovered workspaces. Silent on failure — never
+    # break a compose/config run because the registry is unwritable.
+    { __xcind-with-registry-lock __xcind-registry-add "$parent" >/dev/null 2>&1 || true; }
   else
     XCIND_WORKSPACELESS=1
     XCIND_WORKSPACE_ROOT=""

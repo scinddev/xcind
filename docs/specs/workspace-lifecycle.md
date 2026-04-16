@@ -71,7 +71,15 @@ rm -rf dev/
 
 ## State
 
-Xcind is stateless. There are no state files, registries, or manifests. Runtime state is determined by:
+Xcind maintains two narrowly-scoped state files under
+`${XDG_STATE_HOME:-$HOME/.local/state}/xcind/`:
+
+| File | Purpose |
+|------|---------|
+| `proxy/assigned-ports.tsv` | Sticky host-port assignments for `type=assigned` exports. |
+| `workspaces.tsv` | Discovery registry populated by `xcind-workspace init` and on every runtime workspace discovery. Consumed by `xcind-workspace list / register / forget`. |
+
+Everything else is runtime state, read from Docker or the filesystem on demand rather than tracked:
 
 | Aspect | Source |
 |--------|--------|

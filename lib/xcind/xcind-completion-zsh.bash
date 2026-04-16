@@ -225,6 +225,9 @@ _xcind-workspace() {
   local -a main_commands=(
     'init:Initialize a workspace directory'
     'status:Show workspace-wide status'
+    'list:List all known workspaces'
+    'register:Add an existing workspace to the registry'
+    'forget:Remove a workspace from the registry'
     '--help:Show help'
     '-h:Show help'
     '--version:Show version'
@@ -245,6 +248,18 @@ _xcind-workspace() {
   status)
     local -a status_opts=('--json:Output structured JSON')
     _describe 'status option' status_opts
+    _files -/
+    return
+    ;;
+  list)
+    local -a list_opts=(
+      '--json:Output structured JSON'
+      '--prune:Remove stale registry entries'
+    )
+    _describe 'list option' list_opts
+    return
+    ;;
+  register | forget)
     _files -/
     return
     ;;
