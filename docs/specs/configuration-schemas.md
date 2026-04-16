@@ -72,7 +72,7 @@ XCIND_PROXY_EXPORTS=("web:3000")
 
 ### Recovery
 
-If a user edits the proxy configuration, running `xcind-proxy init` regenerates `docker-compose.yaml` and `traefik.yaml` from `config.sh` (the config file itself is preserved).
+If a user edits the proxy configuration, running `xcind-proxy init` regenerates `compose.yaml` and `traefik.yaml` from `config.sh` (the config file itself is preserved).
 
 `xcind-proxy up --force` tears down everything and rebuilds from scratch.
 

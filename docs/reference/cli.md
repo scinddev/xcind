@@ -193,7 +193,7 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 
 | File | Purpose | Overwritten on re-init? |
 |------|---------|------------------------|
-| `docker-compose.yaml` | Traefik service definition | Yes (always regenerated) |
+| `compose.yaml` | Traefik service definition | Yes (always regenerated) |
 | `traefik.yaml` | Traefik static configuration | Yes (always regenerated) |
 
 ---

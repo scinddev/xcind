@@ -17,7 +17,7 @@
 
 XCIND_PROXY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy"
 XCIND_PROXY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
-XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
 XCIND_PROXY_NETWORK="xcind-proxy"
 # Backward compat alias for messages and hook references
 # shellcheck disable=SC2034 # Used externally by tests and CLI
@@ -80,7 +80,7 @@ EOF
 
 # Ensure proxy infrastructure files exist.
 # Creates config.sh (if missing) in XCIND_PROXY_CONFIG_DIR,
-# docker-compose.yaml and traefik.yaml in XCIND_PROXY_STATE_DIR.
+# compose.yaml and traefik.yaml in XCIND_PROXY_STATE_DIR.
 # Note: xcind-proxy init may regenerate config.sh explicitly via
 # __xcind-proxy-write-config when CLI flags are passed.
 # Calls __xcind-proxy-ensure-network after generating files.
@@ -208,8 +208,14 @@ EOF
     rm -f "$dynamic_dir/tls.yaml"
   fi
 
-  # Migration: remove generated files from old location (config dir)
-  rm -f "$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml" "$XCIND_PROXY_CONFIG_DIR/traefik.yaml"
+  # Migration: remove generated files from old locations.
+  # - Config dir: the previous config-dir → state-dir migration.
+  # - State dir/docker-compose.yaml: the previous docker-compose.yaml →
+  #   compose.yaml rename (Compose Specification v1.28+ convention).
+  rm -f \
+    "$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml" \
+    "$XCIND_PROXY_CONFIG_DIR/traefik.yaml" \
+    "$XCIND_PROXY_STATE_DIR/docker-compose.yaml"
 
   # Create Docker network if it doesn't exist
   __xcind-proxy-ensure-network

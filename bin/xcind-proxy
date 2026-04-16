@@ -173,9 +173,16 @@ __xcind-proxy-up() {
 __xcind-proxy-down() {
   local compose_file="$XCIND_PROXY_COMPOSE"
 
-  # Fallback: check old location for pre-migration installs
-  if [ ! -f "$compose_file" ] && [ -f "$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml" ]; then
-    compose_file="$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml"
+  # Fallback for pre-migration installs. Checked in ascending-recency
+  # order so the newest legacy location wins when multiple are present.
+  #   1. state dir / docker-compose.yaml — pre-rename install (<= v0.5)
+  #   2. config dir / docker-compose.yaml — pre-config/state split install
+  if [ ! -f "$compose_file" ]; then
+    if [ -f "$XCIND_PROXY_STATE_DIR/docker-compose.yaml" ]; then
+      compose_file="$XCIND_PROXY_STATE_DIR/docker-compose.yaml"
+    elif [ -f "$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml" ]; then
+      compose_file="$XCIND_PROXY_CONFIG_DIR/docker-compose.yaml"
+    fi
   fi
 
   if [ ! -f "$compose_file" ]; then

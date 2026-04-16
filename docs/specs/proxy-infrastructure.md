@@ -47,16 +47,16 @@ See [Docker Labels — Traefik Routing Labels](./docker-labels.md#traefik-routin
 Creates proxy infrastructure across two directories:
 
 - **Config** (`~/.config/xcind/proxy/`): user-editable `config.sh`; optional `certs/wildcard.{crt,key}` for user-supplied certificates
-- **State** (`~/.local/state/xcind/proxy/`): generated `docker-compose.yaml`, `traefik.yaml`, `dynamic/tls.yaml`, and `certs/`
+- **State** (`~/.local/state/xcind/proxy/`): generated `compose.yaml`, `traefik.yaml`, `dynamic/tls.yaml`, and `certs/`
 
 Steps:
 
 1. Creates `config.sh` (only if it doesn't exist — never overwrites user config)
 2. Sources `config.sh` for variable expansion
-3. Generates `docker-compose.yaml` (always regenerated) in state dir; includes `:443`, `./certs`, and `./dynamic` bind mounts when TLS is enabled
+3. Generates `compose.yaml` (always regenerated) in state dir; includes `:443`, `./certs`, and `./dynamic` bind mounts when TLS is enabled
 4. Generates `traefik.yaml` (always regenerated) in state dir; includes `websecure` entrypoint and file provider when TLS is enabled
 5. Generates `dynamic/tls.yaml` pointing at the wildcard cert (TLS-enabled modes only)
-6. Removes any stale generated files from the config dir (migration cleanup)
+6. Removes any stale generated files from legacy locations — `docker-compose.yaml` / `traefik.yaml` in the config dir (pre-config/state split) and `docker-compose.yaml` in the state dir (pre-rename to Compose-Specification-standard `compose.yaml`)
 7. Creates `xcind-proxy` Docker network if it doesn't exist
 
 Certificate provisioning happens lazily on `xcind-proxy up` / auto-start — see [TLS Certificate Management](#tls-certificate-management).
@@ -139,7 +139,7 @@ tls:
         keyFile: /etc/traefik/certs/wildcard.key
 ```
 
-### Generated `docker-compose.yaml`
+### Generated `compose.yaml`
 
 ```yaml
 name: xcind-proxy

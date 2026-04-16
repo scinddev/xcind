@@ -57,12 +57,17 @@ PROXY_CONFIG_DIR="${MOCK_HOME}/.config/xcind/proxy"
 PROXY_STATE_DIR="${MOCK_HOME}/.local/state/xcind/proxy"
 
 assert_file_exists "config.sh created" "$PROXY_CONFIG_DIR/config.sh"
-assert_file_exists "docker-compose.yaml created" "$PROXY_STATE_DIR/docker-compose.yaml"
+assert_file_exists "compose.yaml created" "$PROXY_STATE_DIR/compose.yaml"
 assert_file_exists "traefik.yaml created" "$PROXY_STATE_DIR/traefik.yaml"
 
-# Verify generated files are NOT in config dir (migration cleanup)
+# Verify generated files are NOT in config dir (migration cleanup). The old
+# filename is still asserted absent here so the config-dir → state-dir
+# migration remains covered.
 assert_eq "no docker-compose.yaml in config dir" "false" "$([ -f "$PROXY_CONFIG_DIR/docker-compose.yaml" ] && echo true || echo false)"
 assert_eq "no traefik.yaml in config dir" "false" "$([ -f "$PROXY_CONFIG_DIR/traefik.yaml" ] && echo true || echo false)"
+# Verify the legacy docker-compose.yaml is not left behind in the state dir
+# on fresh inits either (docker-compose.yaml → compose.yaml rename).
+assert_eq "no docker-compose.yaml in state dir" "false" "$([ -f "$PROXY_STATE_DIR/docker-compose.yaml" ] && echo true || echo false)"
 
 # Verify config.sh contents
 config_content=$(<"$PROXY_CONFIG_DIR/config.sh")
@@ -76,8 +81,8 @@ assert_contains "config has XCIND_PROXY_HTTPS_PORT" 'XCIND_PROXY_HTTPS_PORT="443
 assert_contains "config has XCIND_PROXY_TLS_CERT_FILE" "XCIND_PROXY_TLS_CERT_FILE" "$config_content"
 assert_contains "config has XCIND_PROXY_TLS_KEY_FILE" "XCIND_PROXY_TLS_KEY_FILE" "$config_content"
 
-# Verify docker-compose.yaml contents
-compose_content=$(<"$PROXY_STATE_DIR/docker-compose.yaml")
+# Verify compose.yaml contents
+compose_content=$(<"$PROXY_STATE_DIR/compose.yaml")
 assert_contains "compose has traefik service" "traefik:" "$compose_content"
 assert_contains "compose has xcind-proxy network" "xcind-proxy:" "$compose_content"
 assert_contains "compose has external network" "external: true" "$compose_content"
@@ -108,6 +113,16 @@ assert_eq "certs dir created" "true" "$([ -d "$PROXY_STATE_DIR/certs" ] && echo 
 "$XCIND_ROOT/bin/xcind-proxy" init
 config_after=$(<"$PROXY_CONFIG_DIR/config.sh")
 assert_contains "config values preserved on re-init" "XCIND_PROXY_DOMAIN" "$config_after"
+
+# Migration: pre-rename installs left a `docker-compose.yaml` alongside
+# the traefik.yaml in the state dir. `xcind-proxy init` must clean that
+# up when it writes the new `compose.yaml`, so we don't leak two
+# divergent compose files for the same proxy.
+echo "stale" >"$PROXY_STATE_DIR/docker-compose.yaml"
+"$XCIND_ROOT/bin/xcind-proxy" init
+assert_file_exists "migration: compose.yaml still present" "$PROXY_STATE_DIR/compose.yaml"
+assert_eq "migration: legacy docker-compose.yaml removed from state dir" "false" \
+  "$([ -f "$PROXY_STATE_DIR/docker-compose.yaml" ] && echo true || echo false)"
 
 export HOME="$REAL_HOME"
 export PATH="$REAL_PATH"
@@ -159,8 +174,8 @@ assert_contains "no-flag reinit: domain preserved" 'XCIND_PROXY_DOMAIN="xcind.lo
 assert_contains "no-flag reinit: port preserved" 'XCIND_PROXY_HTTP_PORT="8081"' "$config5"
 assert_contains "no-flag reinit: image preserved" 'XCIND_PROXY_IMAGE="traefik:v3.2"' "$config5"
 
-# Test: generated docker-compose.yaml reflects updated config
-compose2=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+# Test: generated compose.yaml reflects updated config
+compose2=$(<"$PROXY_STATE_DIR2/compose.yaml")
 assert_contains "compose reflects updated port" "8081:80" "$compose2"
 assert_contains "compose reflects updated image" "traefik:v3.2" "$compose2"
 
@@ -168,7 +183,7 @@ assert_contains "compose reflects updated image" "traefik:v3.2" "$compose2"
 "$XCIND_ROOT/bin/xcind-proxy" init --tls-mode disabled
 config_tls_disabled=$(<"$PROXY_CONFIG_DIR2/config.sh")
 assert_contains "flag: tls-mode disabled recorded" 'XCIND_PROXY_TLS_MODE="disabled"' "$config_tls_disabled"
-compose_disabled=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+compose_disabled=$(<"$PROXY_STATE_DIR2/compose.yaml")
 assert_not_contains "compose has no :443 when TLS disabled" "443:443" "$compose_disabled"
 assert_not_contains "compose has no dynamic mount when TLS disabled" "/etc/traefik/dynamic" "$compose_disabled"
 assert_not_contains "compose has no certs mount when TLS disabled" "/etc/traefik/certs" "$compose_disabled"
@@ -183,7 +198,7 @@ assert_eq "no dynamic/tls.yaml when TLS disabled" "false" \
 config_tls_auto=$(<"$PROXY_CONFIG_DIR2/config.sh")
 assert_contains "flag: tls-mode auto recorded" 'XCIND_PROXY_TLS_MODE="auto"' "$config_tls_auto"
 assert_contains "flag: https-port 8443 recorded" 'XCIND_PROXY_HTTPS_PORT="8443"' "$config_tls_auto"
-compose_auto=$(<"$PROXY_STATE_DIR2/docker-compose.yaml")
+compose_auto=$(<"$PROXY_STATE_DIR2/compose.yaml")
 assert_contains "compose reflects 8443:443" "8443:443" "$compose_auto"
 assert_file_exists "dynamic/tls.yaml regenerated for auto" "$PROXY_STATE_DIR2/dynamic/tls.yaml"
 
@@ -207,7 +222,7 @@ export HOME="$MOCK_HOME2"
 XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
 XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
 XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
-XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
 
 # Track which docker commands were called
 DOCKER_CALLS_FILE="$MOCK_HOME2/docker_calls.log"
@@ -237,7 +252,7 @@ docker() {
 # shellcheck disable=SC2218
 __xcind-proxy-ensure-running 2>/dev/null
 assert_file_exists "ensure-running: config.sh created" "$MOCK_HOME2/.config/xcind/proxy/config.sh"
-assert_file_exists "ensure-running: docker-compose.yaml created" "$MOCK_HOME2/.local/state/xcind/proxy/docker-compose.yaml"
+assert_file_exists "ensure-running: compose.yaml created" "$MOCK_HOME2/.local/state/xcind/proxy/compose.yaml"
 assert_file_exists "ensure-running: traefik.yaml created" "$MOCK_HOME2/.local/state/xcind/proxy/traefik.yaml"
 docker_calls=$(<"$DOCKER_CALLS_FILE")
 assert_contains "ensure-running: called docker ps" "ps --filter" "$docker_calls"
@@ -293,7 +308,7 @@ docker() {
   return 0
 }
 : >"$DOCKER_CALLS_FILE"
-# Touch config.sh to be newer than docker-compose.yaml
+# Touch config.sh to be newer than compose.yaml
 sleep 1
 touch "$XCIND_PROXY_CONFIG_DIR/config.sh"
 staleness_stderr=$(__xcind-proxy-ensure-running 2>&1 1>/dev/null)
@@ -304,7 +319,7 @@ export HOME="$REAL_HOME2"
 XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
 XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
 XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
-XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
 rm -rf "$MOCK_HOME2"
 
 # ======================================================================
@@ -559,7 +574,7 @@ HOME=$(mktemp_d)
 export XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
 export XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
 export XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
-export XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/docker-compose.yaml"
+export XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
 
 # Set up pipeline env vars
 export XCIND_APP="myapp"
@@ -2216,7 +2231,7 @@ assert_contains "status text shows app/service fallback prefix" "alive/debug" "$
 # proxy isn't initialized, so lay down a minimal fake compose file to take
 # the `initialized: true` branch.
 mkdir -p "$CLI_HOME/.local/state/xcind/proxy" "$CLI_HOME/.config/xcind/proxy"
-cat >"$CLI_HOME/.local/state/xcind/proxy/docker-compose.yaml" <<'YAML'
+cat >"$CLI_HOME/.local/state/xcind/proxy/compose.yaml" <<'YAML'
 name: xcind-proxy
 services:
   traefik: { image: traefik:v3 }
