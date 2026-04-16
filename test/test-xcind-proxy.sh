@@ -2040,7 +2040,10 @@ assigned_yaml2=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
 assert_contains "sticky: still 3306:3306" '"3306:3306"' "$assigned_yaml2"
 assert_contains "sticky: still 6379:6379" '"6379:6379"' "$assigned_yaml2"
 
-# Stale stickiness: pretend sticky port is no longer free so hook must reallocate
+# Self-eviction regression: when our own container is running on the
+# sticky port, port-available returns 1 (LISTEN found). The sticky path
+# must trust the TSV and reuse the port — probing and evicting caused
+# ports to flap on every cache miss while the container was up.
 # shellcheck disable=SC2317
 __xcind-assigned-port-available() {
   local port="$1"
@@ -2050,8 +2053,25 @@ __xcind-assigned-port-available() {
 rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
 XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
 xcind-assigned-hook "$AHOOK_APP" >/dev/null
-reassigned_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
-assert_contains "reallocates away from taken port" '"3307:3306"' "$reassigned_yaml"
+sticky_held_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+assert_contains "sticky held when port busy: still 3306:3306" '"3306:3306"' "$sticky_held_yaml"
+assert_not_contains "sticky held when port busy: no reassignment" '"3307:3306"' "$sticky_held_yaml"
+db_rows=$(grep -c $'\tdb\t' "$XCIND_ASSIGNED_PORTS_FILE" || true)
+assert_eq "sticky held when port busy: exactly one db row" "1" "$db_rows"
+db_port=$(awk -F'\t' '$4 == "db" { print $1 }' "$XCIND_ASSIGNED_PORTS_FILE")
+assert_eq "sticky held when port busy: db row still on 3306" "3306" "$db_port"
+
+# First-allocation probe: with no TSV entry for this identity, sticky
+# lookup misses and allocate-new runs. allocate-new must still probe
+# availability and skip a busy port.
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+xcind-assigned-hook "$AHOOK_APP" >/dev/null
+fresh_alloc_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+assert_contains "allocate-new skips busy 3306, picks 3307" '"3307:3306"' "$fresh_alloc_yaml"
+assert_not_contains "allocate-new: no 3306:3306 mapping" '"3306:3306"' "$fresh_alloc_yaml"
 
 # Grouping: two exports on same compose service
 # shellcheck disable=SC2317

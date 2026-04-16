@@ -463,7 +463,8 @@ __xcind-assigned-hook-locked() {
   # Nothing assigned after filtering: no compose overlay, no -f flag.
   [[ ${#exp_names[@]} -gt 0 ]] || return 0
 
-  # Pass 2: allocate host ports (sticky when still available, fresh otherwise).
+  # Pass 2: allocate host ports. A sticky TSV hit is trusted without probing;
+  # only fresh allocations probe for availability.
   __xcind-assigned-ensure-state-file
 
   local -a exp_host_ports=()
@@ -473,13 +474,14 @@ __xcind-assigned-hook-locked() {
     local cport="${exp_cports[$i]}"
     local host_port=""
 
+    # Sticky hit: trust the TSV. We cannot tell "our own running container"
+    # from "a foreign process" by probing the port — ss/netstat/dev-tcp all
+    # just see a listener. Probing here self-evicts whenever the container
+    # is up on a cache miss, causing the port to flap. If the port is truly
+    # stolen, `docker compose up` will surface a clear bind error.
     local sticky
     if sticky=$(__xcind-assigned-lookup "$app_root" "$xport"); then
-      if __xcind-assigned-port-available "$sticky"; then
-        host_port="$sticky"
-      else
-        __xcind-assigned-remove-entry "$app_root" "$xport"
-      fi
+      host_port="$sticky"
     fi
 
     if [[ -z $host_port ]]; then
