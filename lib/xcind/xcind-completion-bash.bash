@@ -231,9 +231,16 @@ _xcind_application_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
-  # After "init", offer init-specific flags and directory completion
+  # After "init", offer init-specific flags plus directory completion. When
+  # $cur starts with "-" we're completing a flag and should skip directories;
+  # otherwise include both so `xcind-application init <TAB>` can tab into a
+  # target directory. Mirrors the zsh version (which uses `_files -/`).
   if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
-    COMPREPLY=($(compgen -W "--name" -- "$cur"))
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--name" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--name" -- "$cur") $(compgen -d -- "$cur"))
+    fi
     return
   fi
 
@@ -242,9 +249,13 @@ _xcind_application_completions() {
     return
   fi
 
-  # After "status" or "list", offer --json and directory completion
+  # After "status" or "list", offer --json plus directory completion
   if [[ $prev == "status" || $prev == "list" ]]; then
-    COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--json" -- "$cur") $(compgen -d -- "$cur"))
+    fi
     return
   fi
 

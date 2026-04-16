@@ -1182,7 +1182,7 @@ __xcind-check-deps() {
 
   echo ""
   echo "Optional (needed for specific features):"
-  __xcind-check-deps-optional jq "JSON output (xcind-config --json, xcind-workspace --json, xcind-application --json)" || {
+  __xcind-check-deps-optional jq "JSON output (xcind-config --json, xcind-workspace --json) and xcind-application status / list" || {
     warnings=$((warnings + 1))
   }
 
