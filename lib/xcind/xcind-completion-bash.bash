@@ -139,17 +139,22 @@ _xcind_proxy_completions() {
 
   # After "init", offer init-specific flags
   if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
-    COMPREPLY=($(compgen -W "--proxy-domain --http-port --image --dashboard --dashboard-port --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "--proxy-domain --http-port --image --dashboard --dashboard-port --tls-mode --https-port --tls-cert-file --tls-key-file --help -h" -- "$cur"))
     return
   fi
 
   # After init flag names, complete values (directories for some, free text for others)
   if [[ $prev == "--proxy-domain" || $prev == "--http-port" || $prev == "--image" ||
-    $prev == "--dashboard-port" ]]; then
+    $prev == "--dashboard-port" || $prev == "--https-port" ||
+    $prev == "--tls-cert-file" || $prev == "--tls-key-file" ]]; then
     return
   fi
   if [[ $prev == "--dashboard" ]]; then
     COMPREPLY=($(compgen -W "true false" -- "$cur"))
+    return
+  fi
+  if [[ $prev == "--tls-mode" ]]; then
+    COMPREPLY=($(compgen -W "auto custom disabled" -- "$cur"))
     return
   fi
 

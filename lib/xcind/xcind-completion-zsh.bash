@@ -179,6 +179,10 @@ _xcind-proxy() {
       '--image:Set Traefik Docker image'
       '--dashboard:Enable Traefik dashboard'
       '--dashboard-port:Set dashboard port'
+      '--tls-mode:TLS mode (auto, custom, disabled)'
+      '--https-port:Set HTTPS port'
+      '--tls-cert-file:Custom TLS cert file'
+      '--tls-key-file:Custom TLS key file'
       '--help:Show help'
       '-h:Show help'
     )
@@ -188,6 +192,11 @@ _xcind-proxy() {
   --dashboard)
     local -a bool_vals=('true:Enable' 'false:Disable')
     _describe 'boolean' bool_vals
+    return
+    ;;
+  --tls-mode)
+    local -a tls_modes=('auto:Automatic self-signed' 'custom:Use provided cert/key' 'disabled:No TLS')
+    _describe 'tls mode' tls_modes
     return
     ;;
   up)
