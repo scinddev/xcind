@@ -179,6 +179,8 @@ _xcind-proxy() {
       '--image:Set Traefik Docker image'
       '--dashboard:Enable Traefik dashboard'
       '--dashboard-port:Set dashboard port'
+      '--help:Show help'
+      '-h:Show help'
     )
     _describe 'init option' init_opts
     return

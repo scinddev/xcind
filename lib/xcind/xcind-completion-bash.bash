@@ -139,7 +139,7 @@ _xcind_proxy_completions() {
 
   # After "init", offer init-specific flags
   if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
-    COMPREPLY=($(compgen -W "--proxy-domain --http-port --image --dashboard --dashboard-port" -- "$cur"))
+    COMPREPLY=($(compgen -W "--proxy-domain --http-port --image --dashboard --dashboard-port --help -h" -- "$cur"))
     return
   fi
 

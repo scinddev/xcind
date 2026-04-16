@@ -341,6 +341,20 @@ assert_contains "help mentions status" "status" "$help_output"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-proxy init --help / -h ==="
+
+init_help_long=$("$XCIND_ROOT/bin/xcind-proxy" init --help 2>&1) && init_help_long_rc=0 || init_help_long_rc=$?
+assert_eq "init --help exits 0" "0" "$init_help_long_rc"
+assert_contains "init --help shows usage" "Usage: xcind-proxy init" "$init_help_long"
+assert_contains "init --help mentions --proxy-domain" "--proxy-domain" "$init_help_long"
+assert_contains "init --help mentions --tls-mode" "--tls-mode" "$init_help_long"
+
+init_help_short=$("$XCIND_ROOT/bin/xcind-proxy" init -h 2>&1) && init_help_short_rc=0 || init_help_short_rc=$?
+assert_eq "init -h exits 0" "0" "$init_help_short_rc"
+assert_contains "init -h shows usage" "Usage: xcind-proxy init" "$init_help_short"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-proxy unknown subcommand ==="
 
 result=$("$XCIND_ROOT/bin/xcind-proxy" badcmd 2>&1) && status=0 || status=$?
