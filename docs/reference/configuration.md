@@ -50,6 +50,8 @@ Array of additional `.xcind.sh`-style config file patterns to source after the m
 XCIND_ADDITIONAL_CONFIG_FILES=('xcind.${APP_ENV}.sh')
 ```
 
+> **Override auto-sibling:** `.xcind.sh` itself automatically sources `.xcind.override.sh` if it exists — you do **not** need to declare `.xcind.sh` in this array. This matches the `compose.yaml` → `compose.override.yaml` convention. However, environment-specific variants like `.xcind.dev.override.sh` require their base (`.xcind.dev.sh`) to be listed here. In workspace mode, the workspace's `.xcind.sh` also auto-sources its `.xcind.override.sh` sibling.
+
 ### `XCIND_COMPOSE_DIR`
 
 Optional subdirectory where compose files live, relative to the app root. If set, compose file patterns are resolved relative to this directory.
@@ -203,7 +205,19 @@ XCIND_PROXY_EXPORTS=(
 )
 ```
 
-When the port is omitted, it is inferred from the compose service's port mapping (requires exactly one port mapping). `yq` is required whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
+When the port is omitted, it is inferred from the compose service's port mapping (requires exactly one port mapping). When the port is specified explicitly, no compose `ports:` entry is required — Traefik reaches the container over the `xcind-proxy` network on the given target port. `yq` is required whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
+
+Multiple exports may target the same compose service with different ports, which is useful for attaching additional hostnames to ad-hoc processes running inside a service. For example, to expose a `vitest --ui` dev server on port 51204 that lives inside an existing `app` container:
+
+```bash
+# .xcind.sh (committed)
+XCIND_PROXY_EXPORTS=("web=app:3000")
+
+# .xcind.override.sh (local/gitignored) — auto-sourced next to .xcind.sh
+XCIND_PROXY_EXPORTS+=("vitest=app:51204")
+```
+
+After editing, run `xcind-config` to regenerate the compose override files, then `docker compose up -d` to apply the new Traefik labels. The container process must bind `0.0.0.0` (not `127.0.0.1`) on the target port so Traefik can reach it; this is a common gotcha for dev servers like Vite/vitest, which default to loopback.
 
 `xcind-proxy-hook` owns entries with `type=proxied` and emits `compose.proxy.yaml` with Traefik routing labels. `xcind-assigned-hook` owns entries with `type=assigned`, emits `compose.assigned.yaml` with host-port mappings, and persists assignments under `${XDG_STATE_HOME:-~/.local/state}/xcind/proxy/assigned-ports.tsv` via flock-serialized state.
 

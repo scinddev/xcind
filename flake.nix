@@ -74,6 +74,8 @@
             # the assigned-ports state as a JSON array.
             proxyPath = pkgs.lib.makeBinPath (core ++ json ++ docker);
           in ''
+            wrapProgram "$out/bin/xcind-application" \
+              --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-compose" \
               --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-config" \
