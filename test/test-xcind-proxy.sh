@@ -794,7 +794,9 @@ assert_contains "apex: primary has xcind.apex.https.url" "xcind.apex.https.url=h
 assert_contains "apex: primary still has export hostname" "myapp-web.localhost" "$apex_yaml"
 
 # Extract api service block (from "  api:" to next service or end)
-api_block=$(echo "$apex_yaml" | sed -n '/^  api:/,/^  [a-z]/p' | head -n -1)
+# sed '$d' drops the last matched line (opening of next service) and is
+# portable across BSD (macOS) and GNU coreutils, unlike `head -n -1`.
+api_block=$(echo "$apex_yaml" | sed -n '/^  api:/,/^  [a-z]/p' | sed '$d')
 assert_not_contains "apex: non-primary has no apex.host" "xcind.apex.host" "$api_block"
 assert_not_contains "apex: non-primary has no apex.url" "xcind.apex.url" "$api_block"
 
