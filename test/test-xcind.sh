@@ -236,6 +236,51 @@ rm -rf "$OVERRIDE_PROJECT"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-load-config auto-sources .xcind.override.sh ==="
+
+AUTO_OVR=$(mktemp_d)
+cat >"$AUTO_OVR/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("web=app:3000")
+EOF
+cat >"$AUTO_OVR/.xcind.override.sh" <<'EOF'
+XCIND_PROXY_EXPORTS+=("vitest=app:51204")
+EOF
+touch "$AUTO_OVR/compose.yaml"
+
+reset_xcind_state
+unset XCIND_PROXY_EXPORTS
+__xcind-load-config "$AUTO_OVR"
+
+assert_eq "auto-override — exports count" "2" "${#XCIND_PROXY_EXPORTS[@]}"
+assert_eq "auto-override — base export preserved" "web=app:3000" "${XCIND_PROXY_EXPORTS[0]}"
+assert_eq "auto-override — override appended" "vitest=app:51204" "${XCIND_PROXY_EXPORTS[1]}"
+assert_eq "auto-override — sourced files count" "2" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+assert_eq "auto-override — sourced[0] is .xcind.sh" "$AUTO_OVR/.xcind.sh" "${__XCIND_SOURCED_CONFIG_FILES[0]}"
+assert_eq "auto-override — sourced[1] is .xcind.override.sh" "$AUTO_OVR/.xcind.override.sh" "${__XCIND_SOURCED_CONFIG_FILES[1]}"
+
+rm -rf "$AUTO_OVR"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-load-config skips missing .xcind.override.sh ==="
+
+NO_OVR=$(mktemp_d)
+cat >"$NO_OVR/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+touch "$NO_OVR/compose.yaml"
+
+reset_xcind_state
+__xcind-load-config "$NO_OVR"
+
+assert_eq "no override — only base sourced" "1" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+assert_eq "no override — sourced[0] is .xcind.sh" "$NO_OVR/.xcind.sh" "${__XCIND_SOURCED_CONFIG_FILES[0]}"
+
+rm -rf "$NO_OVR"
+
+# ======================================================================
+echo ""
 echo "=== Test: BC shim migrates XCIND_ENV_FILES ==="
 
 BC_APP=$(mktemp_d)
@@ -432,6 +477,34 @@ assert_eq "app-root from workspace root fails" "1" "$status"
 assert_contains "app-root error mentions missing .xcind.sh" ".xcind.sh" "$ws_err"
 
 rm -rf "$WS_ROOT" "$STANDALONE_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-discover-workspace auto-sources .xcind.override.sh ==="
+
+WS_OVR_ROOT=$(mktemp_d)
+mkdir -p "$WS_OVR_ROOT/myworkspace/myapp"
+cat >"$WS_OVR_ROOT/myworkspace/.xcind.sh" <<'EOF'
+XCIND_IS_WORKSPACE=1
+XCIND_PROXY_DOMAIN="base.localhost"
+EOF
+cat >"$WS_OVR_ROOT/myworkspace/.xcind.override.sh" <<'EOF'
+XCIND_PROXY_DOMAIN="override.localhost"
+EOF
+echo '# app config' >"$WS_OVR_ROOT/myworkspace/myapp/.xcind.sh"
+
+reset_xcind_state
+unset XCIND_APP_ROOT XCIND_PROXY_DOMAIN
+__xcind-discover-workspace "$WS_OVR_ROOT/myworkspace/myapp"
+
+assert_eq "workspace override — XCIND_PROXY_DOMAIN overridden" "override.localhost" "${XCIND_PROXY_DOMAIN:-}"
+assert_eq "workspace override — sourced files count" "2" "${#__XCIND_SOURCED_CONFIG_FILES[@]}"
+assert_eq "workspace override — sourced[0] is workspace .xcind.sh" \
+  "$WS_OVR_ROOT/myworkspace/.xcind.sh" "${__XCIND_SOURCED_CONFIG_FILES[0]}"
+assert_eq "workspace override — sourced[1] is workspace .xcind.override.sh" \
+  "$WS_OVR_ROOT/myworkspace/.xcind.override.sh" "${__XCIND_SOURCED_CONFIG_FILES[1]}"
+
+rm -rf "$WS_OVR_ROOT"
 
 # ======================================================================
 echo ""
@@ -2312,10 +2385,10 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
   detect_err=$(<"$detect_err_file")
   rm -f "$detect_err_file"
   # Docker Desktop detection may vary, but on native Linux CI we expect host-gateway
-  if [[ "$detected" == "host-gateway" ]]; then
+  if [[ $detected == "host-gateway" ]]; then
     echo "  ✓ detect-host-gateway returns host-gateway on native Linux"
     PASS=$((PASS + 1))
-  elif [[ -z "$detected" ]]; then
+  elif [[ -z $detected ]]; then
     # Docker Desktop detected (or docker not available) — also acceptable in CI
     echo "  ✓ detect-host-gateway returns empty (Docker Desktop or docker unavailable)"
     PASS=$((PASS + 1))

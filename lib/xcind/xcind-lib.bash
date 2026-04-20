@@ -182,6 +182,17 @@ __xcind-load-config() {
   source "$app_root/.xcind.sh"
   __XCIND_SOURCED_CONFIG_FILES+=("$app_root/.xcind.sh")
 
+  # Auto-source the .override sibling (.xcind.override.sh) if it exists,
+  # matching the convention used for compose files and entries in
+  # XCIND_ADDITIONAL_CONFIG_FILES.
+  local _app_override
+  _app_override="$app_root/$(__xcind-derive-override ".xcind.sh")"
+  if [ -f "$_app_override" ]; then
+    # shellcheck disable=SC1090
+    source "$_app_override"
+    __XCIND_SOURCED_CONFIG_FILES+=("$_app_override")
+  fi
+
   # BC shim: migrate XCIND_ENV_FILES → XCIND_COMPOSE_ENV_FILES
   if [[ -n ${XCIND_ENV_FILES+set} ]]; then
     if [[ -n ${XCIND_COMPOSE_ENV_FILES+set} ]]; then
@@ -854,6 +865,16 @@ __xcind-discover-workspace() {
     # shellcheck disable=SC1091
     source "$parent/.xcind.sh"
     __XCIND_SOURCED_CONFIG_FILES+=("$parent/.xcind.sh")
+
+    # Auto-source the workspace's .xcind.override.sh sibling if it exists.
+    local _ws_override
+    _ws_override="$parent/$(__xcind-derive-override ".xcind.sh")"
+    if [ -f "$_ws_override" ]; then
+      # shellcheck disable=SC1090
+      source "$_ws_override"
+      __XCIND_SOURCED_CONFIG_FILES+=("$_ws_override")
+    fi
+
     # Auto-register discovered workspaces. Silent on failure — never
     # break a compose/config run because the registry is unwritable.
     { __xcind-with-registry-lock __xcind-registry-add "$parent" >/dev/null 2>&1 || true; }

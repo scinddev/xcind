@@ -65,3 +65,24 @@ Feature: Override File Resolution
     And a file "compose.dev.override.yaml" exists on disk
     When xcind resolves the compose file list
     Then "compose.dev.override.yaml" is included after "compose.dev.yaml"
+
+  # --- .xcind.sh Override Auto-Sibling ---
+
+  Scenario: Auto-source .xcind.override.sh when it exists
+    Given an application with .xcind.sh at the app root
+    And a file ".xcind.override.sh" exists next to .xcind.sh
+    When xcind loads the application config
+    Then ".xcind.override.sh" is sourced after ".xcind.sh"
+    And ".xcind.override.sh" is tracked in the cache SHA
+
+  Scenario: Skip .xcind.override.sh when it does not exist
+    Given an application with .xcind.sh at the app root
+    And no ".xcind.override.sh" exists next to .xcind.sh
+    When xcind loads the application config
+    Then only ".xcind.sh" is sourced
+
+  Scenario: Auto-source workspace .xcind.override.sh when it exists
+    Given a workspace with .xcind.sh declaring XCIND_IS_WORKSPACE=1
+    And a file ".xcind.override.sh" exists next to the workspace .xcind.sh
+    When xcind discovers the workspace for an application under it
+    Then the workspace ".xcind.override.sh" is sourced after the workspace ".xcind.sh"
