@@ -1326,6 +1326,49 @@ __xcind-doctor-parse-exports() {
   rm -f "$__dbg_err"
 }
 
+# Read the `raw=…\tparsed=…` TSV stream emitted by
+# __xcind-doctor-parse-exports and emit one compact JSON object per line
+# (which the caller slurps into an array via `jq -s .`). Extracted to its
+# own function because the nested case/esac inside a command-substitution
+# subshell trips the parser on some bash builds — see PR #59 CI failures.
+__xcind-doctor-exports-to-json() {
+  local line raw parsed name svc port type tls err
+  local -a fields
+  local f
+  while IFS= read -r line; do
+    [[ -z $line ]] && continue
+    raw=""
+    parsed=""
+    name=""
+    svc=""
+    port=""
+    type=""
+    tls=""
+    err=""
+    IFS=$'\t' read -r -a fields <<<"$line"
+    for f in "${fields[@]}"; do
+      case "$f" in
+      raw=*) raw="${f#raw=}" ;;
+      parsed=*) parsed="${f#parsed=}" ;;
+      name=*) name="${f#name=}" ;;
+      service=*) svc="${f#service=}" ;;
+      port=*) port="${f#port=}" ;;
+      type=*) type="${f#type=}" ;;
+      tls=*) tls="${f#tls=}" ;;
+      error=*) err="${f#error=}" ;;
+      esac
+    done
+    if [[ $parsed == "ok" ]]; then
+      jq -cn --arg raw "$raw" --arg name "$name" --arg svc "$svc" \
+        --arg port "$port" --arg type "$type" --arg tls "$tls" \
+        '{raw:$raw,parsed:"ok",name:$name,service:$svc,port:$port,type:$type,tls:$tls}'
+    else
+      jq -cn --arg raw "$raw" --arg err "$err" \
+        '{raw:$raw,parsed:"fail",error:$err}'
+    fi
+  done
+}
+
 # Return 0 if xcind-assigned-hook is in XCIND_HOOKS_GENERATE.
 __xcind-doctor-has-assigned-hook() {
   local h
@@ -1514,34 +1557,7 @@ __xcind-doctor() {
     # then slurp into an array with `jq -s .`.
     local exports_json="[]"
     if [[ -n ${XCIND_PROXY_EXPORTS+set} ]] && [[ ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]]; then
-      exports_json=$(
-        while IFS= read -r line; do
-          [[ -z $line ]] && continue
-          local raw="" parsed="" name="" svc="" port="" type="" tls="" err=""
-          local fields f
-          IFS=$'\t' read -r -a fields <<<"$line"
-          for f in "${fields[@]}"; do
-            case "$f" in
-            raw=*) raw="${f#raw=}" ;;
-            parsed=*) parsed="${f#parsed=}" ;;
-            name=*) name="${f#name=}" ;;
-            service=*) svc="${f#service=}" ;;
-            port=*) port="${f#port=}" ;;
-            type=*) type="${f#type=}" ;;
-            tls=*) tls="${f#tls=}" ;;
-            error=*) err="${f#error=}" ;;
-            esac
-          done
-          if [[ $parsed == "ok" ]]; then
-            jq -cn --arg raw "$raw" --arg name "$name" --arg svc "$svc" \
-              --arg port "$port" --arg type "$type" --arg tls "$tls" \
-              '{raw:$raw,parsed:"ok",name:$name,service:$svc,port:$port,type:$type,tls:$tls}'
-          else
-            jq -cn --arg raw "$raw" --arg err "$err" \
-              '{raw:$raw,parsed:"fail",error:$err}'
-          fi
-        done < <(__xcind-doctor-parse-exports) | jq -s '.'
-      )
+      exports_json=$(__xcind-doctor-parse-exports | __xcind-doctor-exports-to-json | jq -s '.')
     fi
 
     local hooks_json="[]"
