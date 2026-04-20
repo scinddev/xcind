@@ -33,7 +33,6 @@ while IFS= read -r line; do
 done <install.sh
 sort -u "$tmpdir/bin_aliases" -o "$tmpdir/bin_aliases"
 
-sort -u "$tmpdir/bin_files" "$tmpdir/bin_aliases" >"$tmpdir/bin_with_aliases"
 sort -u "$tmpdir/bin_files" "$tmpdir/lib_files" >"$tmpdir/all_installed"
 sort -u "$tmpdir/bin_files" "$tmpdir/lib_files" "$tmpdir/bin_aliases" >"$tmpdir/all_with_aliases"
 
