@@ -2203,6 +2203,193 @@ unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DI
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-assigned-hook debug tracing ==="
+
+DBG_APP=$(mktemp_d)
+_orig_dbg_home="$HOME"
+_orig_dbg_xdg="${XDG_STATE_HOME:-}"
+HOME=$(mktemp_d)
+export HOME
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+export XCIND_APP="dbgapp"
+export XCIND_WORKSPACE=""
+export XCIND_SHA="dbgsha"
+export XCIND_CACHE_DIR="$DBG_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$DBG_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+YAML
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() { return 0; }
+
+# Silent by default — no trace output on stderr
+unset XCIND_DEBUG
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+silent_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$silent_err"
+silent_stderr=$(<"$silent_err")
+rm -f "$silent_err"
+assert_not_contains "no debug noise when XCIND_DEBUG unset" "xcind: debug:" "$silent_stderr"
+
+# XCIND_DEBUG=1 — trace lines at every decision point
+export XCIND_DEBUG=1
+
+# Skip path #1: XCIND_PROXY_EXPORTS unset
+unset XCIND_PROXY_EXPORTS
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: skip reason for unset exports" \
+  "skip — XCIND_PROXY_EXPORTS unset or empty" "$trace_stderr"
+
+# Skip path #2: parse swallows errors, no type=assigned in array
+XCIND_PROXY_EXPORTS=("web" "api:3000")
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: count-pass logs entry parse result" \
+  "count-pass entry='web'" "$trace_stderr"
+assert_contains "trace: count-pass shows type=proxied for bare export" \
+  "type=proxied" "$trace_stderr"
+assert_contains "trace: skip reason when no assigned entries" \
+  "no type=assigned entries" "$trace_stderr"
+
+# Allocation trace: fresh (no sticky TSV row yet)
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: fresh allocation line" \
+  "source=fresh" "$trace_stderr"
+assert_contains "trace: overlay written line" \
+  "overlay written path=" "$trace_stderr"
+
+# Allocation trace: sticky (second run, same identity → TSV hit)
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: sticky allocation line" \
+  "source=sticky" "$trace_stderr"
+
+unset -f __xcind-assigned-port-available
+unset XCIND_DEBUG
+rm -rf "$DBG_APP" "$HOME"
+HOME="$_orig_dbg_home"
+export HOME
+[[ -n $_orig_dbg_xdg ]] && export XDG_STATE_HOME="$_orig_dbg_xdg"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-config doctor ==="
+
+if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+
+  # Redirect the assigned-ports state dir via XDG_STATE_HOME rather than
+  # swapping HOME — docker's CLI plugin lookup (used by `docker compose`)
+  # depends on HOME, and substituting a fresh HOME breaks `docker compose`
+  # in some installations.
+  DOC_STATE=$(mktemp_d)
+  _orig_doc_xdg="${XDG_STATE_HOME:-}"
+  export XDG_STATE_HOME="$DOC_STATE"
+
+  DOC_APP=$(mktemp_d)
+  cat >"$DOC_APP/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("mailpit:8025" "database:3306;type=assigned" "web=app:3000;tls=require")
+EOF
+  cat >"$DOC_APP/compose.yaml" <<'YAML'
+services:
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - target: 8025
+  database:
+    image: mysql
+    ports:
+      - target: 3306
+  app:
+    image: nginx
+    ports:
+      - target: 3000
+YAML
+
+  # Run text-mode doctor via the real CLI. Capture stdout + stderr separately.
+  doc_out=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor 2>/dev/null) && doc_rc=0 || doc_rc=$?
+  assert_eq "doctor (text) exits 0" "0" "$doc_rc"
+  assert_contains "doctor text: version header" "xcind v" "$doc_out"
+  assert_contains "doctor text: lists registered hooks" "xcind-assigned-hook" "$doc_out"
+  assert_contains "doctor text: parsed mailpit type=proxied" "type=proxied" "$doc_out"
+  assert_contains "doctor text: parsed database type=assigned" "type=assigned" "$doc_out"
+  assert_contains "doctor text: scratch re-run section" "Scratch re-run" "$doc_out"
+  assert_contains "doctor text: scratch trace includes overlay write" "overlay written path=" "$doc_out"
+
+  # JSON mode — structured output
+  doc_json=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor --json 2>/dev/null) && doc_json_rc=0 || doc_json_rc=$?
+  assert_eq "doctor (json) exits 0" "0" "$doc_json_rc"
+  assert_eq "doctor json: parseable" "0" \
+    "$(printf '%s' "$doc_json" | jq empty >/dev/null 2>&1 && echo 0 || echo 1)"
+  assert_eq "doctor json: has_assigned_hook=true" "true" \
+    "$(printf '%s' "$doc_json" | jq -r '.hooks.has_assigned_hook')"
+  assert_eq "doctor json: exports length" "3" \
+    "$(printf '%s' "$doc_json" | jq -r '.exports | length')"
+  db_type=$(printf '%s' "$doc_json" | jq -r '.exports[] | select(.name == "database") | .type')
+  assert_eq "doctor json: database entry type=assigned" "assigned" "$db_type"
+  scratch_rc=$(printf '%s' "$doc_json" | jq -r '.scratch_run.exit_code')
+  assert_eq "doctor json: scratch exit code 0" "0" "$scratch_rc"
+  overlay_has_yaml=$(printf '%s' "$doc_json" | jq -r '.scratch_run.overlay | contains("3306:3306")')
+  assert_eq "doctor json: scratch overlay contains 3306:3306" "true" "$overlay_has_yaml"
+
+  # Regression: if xcind-assigned-hook is dropped from XCIND_HOOKS_GENERATE,
+  # doctor flags has_assigned_hook=false.
+  cat >"$DOC_APP/.xcind.override.sh" <<'EOF'
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+EOF
+  doc_json_drop=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor --json 2>/dev/null)
+  drop_flag=$(printf '%s' "$doc_json_drop" | jq -r '.hooks.has_assigned_hook')
+  assert_eq "doctor json: has_assigned_hook=false when hook dropped" "false" "$drop_flag"
+  doc_text_drop=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor 2>/dev/null)
+  assert_contains "doctor text: warns when assigned hook missing" \
+    "xcind-assigned-hook is NOT registered" "$doc_text_drop"
+  rm -f "$DOC_APP/.xcind.override.sh"
+
+  rm -rf "$DOC_APP" "$DOC_STATE"
+  if [[ -n $_orig_doc_xdg ]]; then
+    export XDG_STATE_HOME="$_orig_doc_xdg"
+  else
+    unset XDG_STATE_HOME
+  fi
+
+else
+  echo "  (skipped: docker compose not available)"
+fi
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-proxy release + prune CLI ==="
 
 CLI_HOME=$(mktemp_d)

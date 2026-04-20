@@ -127,6 +127,7 @@ _xcind-config() {
     '--version:Show version'
     '-V:Show version'
     '--check:Check required/optional dependencies'
+    'doctor:Diagnose XCIND_PROXY_EXPORTS / assigned-hook state'
     '--json:Output resolved config as JSON'
     '--preview:Show docker compose command'
     '--generate-docker-wrapper:Generate docker wrapper script'
@@ -140,6 +141,11 @@ _xcind-config() {
   completion)
     local -a shells=('bash:Bash shell completions' 'zsh:Zsh shell completions')
     _describe 'shell' shells
+    return
+    ;;
+  doctor)
+    local -a doctor_opts=('--json:Emit structured JSON report')
+    _describe 'doctor option' doctor_opts
     return
     ;;
   --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration)

@@ -2927,6 +2927,44 @@ unset _app_status_orig_HOME _app_status_orig_PATH
 rm -rf "$APP_STATUS_WS" "$APP_STATUS_HOME" "$APP_STATUS_OUTSIDE"
 
 # ======================================================================
+echo ""
+echo "=== Test: __xcind-debug helper ==="
+
+# Default (XCIND_DEBUG unset) — must emit nothing
+unset XCIND_DEBUG
+dbg_err=$(mktemp)
+__xcind-debug "should not appear" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug silent when XCIND_DEBUG unset" "" "$dbg_output"
+
+# XCIND_DEBUG=0 — must still emit nothing (explicit-off)
+XCIND_DEBUG=0
+dbg_err=$(mktemp)
+__xcind-debug "should not appear" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug silent when XCIND_DEBUG=0" "" "$dbg_output"
+
+# XCIND_DEBUG=1 — emits prefixed message to stderr
+XCIND_DEBUG=1
+dbg_err=$(mktemp)
+__xcind-debug "hello world" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug emits when XCIND_DEBUG=1" "xcind: debug: hello world" "$dbg_output"
+
+# XCIND_DEBUG=anything-not-1 — silent (not a truthy-match implementation)
+XCIND_DEBUG=true
+dbg_err=$(mktemp)
+__xcind-debug "should not appear" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug silent when XCIND_DEBUG=true (not 1)" "" "$dbg_output"
+
+unset XCIND_DEBUG
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

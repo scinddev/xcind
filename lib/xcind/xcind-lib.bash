@@ -69,6 +69,19 @@ __xcind-list-services() {
 }
 
 # --------------------------------------------------------------------------
+# Debug logging
+# --------------------------------------------------------------------------
+
+# Emit a breadcrumb to stderr when XCIND_DEBUG=1 is set, no-op otherwise.
+# Prefix matches the existing `xcind: warning:` / `xcind: error:` convention
+# used elsewhere in the library. The exact `== 1` match (rather than `-n`)
+# prevents XCIND_DEBUG=0 from accidentally enabling tracing.
+__xcind-debug() {
+  [[ ${XCIND_DEBUG:-0} == 1 ]] || return 0
+  printf 'xcind: debug: %s\n' "$*" >&2
+}
+
+# --------------------------------------------------------------------------
 # Workspace Detection
 # --------------------------------------------------------------------------
 
@@ -491,6 +504,22 @@ __xcind-prepare-app() {
   __xcind-resolve-url-templates
   __xcind-build-compose-opts "$app_root"
 
+  if [[ ${XCIND_DEBUG:-0} == 1 ]]; then
+    local __dbg_exports_count=0
+    local __dbg_hooks_str="<none>"
+    [[ -n ${XCIND_PROXY_EXPORTS+set} ]] && __dbg_exports_count=${#XCIND_PROXY_EXPORTS[@]}
+    if [[ -n ${XCIND_HOOKS_GENERATE+set} ]] && [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
+      __dbg_hooks_str="${XCIND_HOOKS_GENERATE[*]}"
+    fi
+    __xcind-debug "prepare-app: app_root=$app_root exports_count=$__dbg_exports_count hooks=$__dbg_hooks_str"
+    if [[ $__dbg_exports_count -gt 0 ]]; then
+      local __dbg_entry
+      for __dbg_entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+        __xcind-debug "prepare-app: export entry='$__dbg_entry'"
+      done
+    fi
+  fi
+
   # Cache + GENERATE hooks only when hooks are registered
   if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
     XCIND_SHA=$(__xcind-compute-sha "$app_root")
@@ -505,6 +534,8 @@ __xcind-prepare-app() {
     # function called in a conditional context (`__xcind-prepare-app || exit 1`).
     __xcind-populate-cache "$app_root" || return 1
     __xcind-run-hooks "$app_root" || return 1
+  else
+    __xcind-debug "prepare-app: skipping hooks — XCIND_HOOKS_GENERATE is empty"
   fi
 }
 
@@ -1253,6 +1284,332 @@ __xcind-maybe-warn-deps() {
 }
 
 # --------------------------------------------------------------------------
+# Doctor — diagnostic dump for assigned-hook / proxy-exports silent skips
+# --------------------------------------------------------------------------
+#
+# Reads the already-resolved state of the current app (caller must have run
+# __xcind-prepare-app first) and writes a human- or machine-readable report
+# describing every decision point the assigned hook cares about:
+# XCIND_VERSION, registered hooks, parsed XCIND_PROXY_EXPORTS, sourced
+# config files, assigned-ports TSV rows for this app, and generated-dir
+# overlay state. Finishes with a scratch re-run of xcind-assigned-hook
+# under XCIND_DEBUG=1 in a throwaway XCIND_GENERATED_DIR so the cache-hit
+# replay path (see docs/implementation/handoffs/assigned-hook-cache-hit-skip.md)
+# does NOT mask the live state.
+#
+# Usage:
+#   __xcind-doctor            # text report to stdout
+#   __xcind-doctor --json     # jq-structured JSON report to stdout
+
+# Print per-entry parse diagnostics. Captures parse-entry stderr and
+# emits either the parsed fields or the error message. Writes newline-
+# terminated "key=value;key=value" lines to stdout — callers either print
+# them verbatim (text mode) or fold them into JSON (json mode).
+__xcind-doctor-parse-exports() {
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    return 0
+  fi
+  local entry
+  local __dbg_err
+  __dbg_err=$(mktemp)
+  local _export_name _compose_service _port _type _tls
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    if __xcind-proxy-parse-entry "$entry" 2>"$__dbg_err"; then
+      printf 'raw=%s\tparsed=ok\tname=%s\tservice=%s\tport=%s\ttype=%s\ttls=%s\n' \
+        "$entry" "$_export_name" "$_compose_service" "$_port" "$_type" "$_tls"
+    else
+      local err
+      err=$(<"$__dbg_err")
+      printf 'raw=%s\tparsed=fail\terror=%s\n' "$entry" "${err//$'\n'/ }"
+    fi
+  done
+  rm -f "$__dbg_err"
+}
+
+# Return 0 if xcind-assigned-hook is in XCIND_HOOKS_GENERATE.
+__xcind-doctor-has-assigned-hook() {
+  local h
+  for h in "${XCIND_HOOKS_GENERATE[@]+"${XCIND_HOOKS_GENERATE[@]}"}"; do
+    [[ $h == "xcind-assigned-hook" ]] && return 0
+  done
+  return 1
+}
+
+# Print assigned-ports TSV rows whose app_path matches the given path.
+# Output: one tab-separated row per line (no header, comments stripped).
+__xcind-doctor-tsv-rows-for-app() {
+  local app_root="$1"
+  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  local line
+  while IFS= read -r line; do
+    [[ -z $line ]] && continue
+    [[ ${line:0:1} == "#" ]] && continue
+    local L_port L_workspace L_application L_service L_cport L_path L_ts
+    __xcind-assigned-split-row "$line"
+    [[ $L_path == "$app_root" ]] || continue
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$L_port" "$L_workspace" "$L_application" "$L_service" \
+      "$L_cport" "$L_path" "$L_ts"
+  done <"$XCIND_ASSIGNED_PORTS_FILE"
+}
+
+# Run xcind-assigned-hook in a throwaway XCIND_GENERATED_DIR with
+# XCIND_DEBUG=1 so the trace output is captured regardless of the real
+# cache state. Prints two sections separated by a literal "--TRACE--" line:
+# stdout of the hook (compose.assigned.yaml path, if written), then the
+# stderr trace. The real XCIND_GENERATED_DIR is not touched.
+__xcind-doctor-scratch-run() {
+  local app_root="$1"
+  local scratch
+  scratch=$(mktemp -d -t xcind-doctor.XXXXXX)
+  local saved_dir="${XCIND_GENERATED_DIR:-}"
+  local saved_debug="${XCIND_DEBUG:-}"
+
+  export XCIND_GENERATED_DIR="$scratch"
+  export XCIND_DEBUG=1
+
+  local stdout_file="$scratch/.stdout"
+  local stderr_file="$scratch/.stderr"
+
+  local rc=0
+  xcind-assigned-hook "$app_root" >"$stdout_file" 2>"$stderr_file" || rc=$?
+
+  echo "exit_code=$rc"
+  echo "--STDOUT--"
+  [[ -s $stdout_file ]] && cat "$stdout_file"
+  echo "--STDERR--"
+  [[ -s $stderr_file ]] && cat "$stderr_file"
+  echo "--OVERLAY--"
+  if [[ -f $scratch/compose.assigned.yaml ]]; then
+    cat "$scratch/compose.assigned.yaml"
+  fi
+
+  # Restore
+  if [[ -n $saved_dir ]]; then
+    export XCIND_GENERATED_DIR="$saved_dir"
+  else
+    unset XCIND_GENERATED_DIR
+  fi
+  if [[ -n $saved_debug ]]; then
+    export XCIND_DEBUG="$saved_debug"
+  else
+    unset XCIND_DEBUG
+  fi
+
+  rm -rf "$scratch"
+}
+
+__xcind-doctor() {
+  local mode="text"
+  case "${1:-}" in
+  --json | json) mode="json" ;;
+  "" | --text | text) mode="text" ;;
+  *)
+    echo "Error: unknown doctor mode '$1' (expected --json)" >&2
+    return 2
+    ;;
+  esac
+
+  if [[ $mode == "json" ]] && ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for 'xcind-config doctor --json' but was not found." >&2
+    return 1
+  fi
+
+  local app_root="${XCIND_APP_ROOT:-}"
+  if [[ -z $app_root ]]; then
+    echo "Error: XCIND_APP_ROOT not set — doctor must run after __xcind-prepare-app" >&2
+    return 1
+  fi
+
+  local has_assigned_hook=false
+  __xcind-doctor-has-assigned-hook && has_assigned_hook=true
+
+  # Scratch run stays the same format for both modes; we parse it into
+  # sections with awk for the JSON shape.
+  local scratch_output
+  scratch_output=$(__xcind-doctor-scratch-run "$app_root")
+
+  if [[ $mode == "text" ]]; then
+    echo "xcind v${XCIND_VERSION} — doctor"
+    echo ""
+    echo "App root:        $app_root"
+    echo "Generated dir:   ${XCIND_GENERATED_DIR:-<unset>}"
+    echo "Assigned TSV:    $XCIND_ASSIGNED_PORTS_FILE"
+    echo ""
+
+    echo "Hooks (XCIND_HOOKS_GENERATE):"
+    if [[ ${#XCIND_HOOKS_GENERATE[@]} -eq 0 ]]; then
+      echo "  (empty — GENERATE pipeline disabled)"
+    else
+      local h
+      for h in "${XCIND_HOOKS_GENERATE[@]}"; do
+        echo "  - $h"
+      done
+    fi
+    if [[ $has_assigned_hook == false ]]; then
+      echo "  ! xcind-assigned-hook is NOT registered — compose.assigned.yaml will never be generated."
+    fi
+    echo ""
+
+    echo "Sourced config files:"
+    if [[ ${#__XCIND_SOURCED_CONFIG_FILES[@]} -eq 0 ]]; then
+      echo "  (none)"
+    else
+      local f
+      for f in "${__XCIND_SOURCED_CONFIG_FILES[@]}"; do
+        echo "  - $f"
+      done
+    fi
+    echo ""
+
+    echo "XCIND_PROXY_EXPORTS (${#XCIND_PROXY_EXPORTS[@]} entries):"
+    if [[ ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+      echo "  (unset or empty)"
+    else
+      local line
+      while IFS= read -r line; do
+        [[ -z $line ]] && continue
+        echo "  $line"
+      done < <(__xcind-doctor-parse-exports)
+    fi
+    echo ""
+
+    echo "Assigned-ports TSV rows for this app:"
+    if [[ ! -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
+      echo "  (state file does not exist yet — no allocations ever)"
+    else
+      local rows
+      rows=$(__xcind-doctor-tsv-rows-for-app "$app_root")
+      if [[ -z $rows ]]; then
+        echo "  (no rows for $app_root)"
+      else
+        printf '%s\n' "$rows" | while IFS=$'\t' read -r port ws app svc cport path ts; do
+          echo "  port=$port service=$svc cport=$cport ts=$ts"
+        done
+      fi
+    fi
+    echo ""
+
+    echo "Generated dir contents:"
+    if [[ -z ${XCIND_GENERATED_DIR:-} || ! -d $XCIND_GENERATED_DIR ]]; then
+      echo "  (directory does not exist — no cache hit possible)"
+    else
+      local file
+      for file in "$XCIND_GENERATED_DIR"/*; do
+        [[ -e $file ]] || continue
+        if [[ -f $file ]]; then
+          local sz
+          sz=$(wc -c <"$file" | tr -d ' ')
+          echo "  $(basename "$file") (${sz} bytes)"
+        fi
+      done
+    fi
+    echo ""
+
+    echo "Scratch re-run of xcind-assigned-hook (XCIND_DEBUG=1):"
+    printf '%s\n' "$scratch_output" | sed 's/^/  /'
+  else
+    # --- JSON mode ---
+    # Emit one compact JSON object per line from the parse-exports stream,
+    # then slurp into an array with `jq -s .`.
+    local exports_json="[]"
+    if [[ -n ${XCIND_PROXY_EXPORTS+set} ]] && [[ ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]]; then
+      exports_json=$(
+        while IFS= read -r line; do
+          [[ -z $line ]] && continue
+          local raw="" parsed="" name="" svc="" port="" type="" tls="" err=""
+          local fields f
+          IFS=$'\t' read -r -a fields <<<"$line"
+          for f in "${fields[@]}"; do
+            case "$f" in
+            raw=*) raw="${f#raw=}" ;;
+            parsed=*) parsed="${f#parsed=}" ;;
+            name=*) name="${f#name=}" ;;
+            service=*) svc="${f#service=}" ;;
+            port=*) port="${f#port=}" ;;
+            type=*) type="${f#type=}" ;;
+            tls=*) tls="${f#tls=}" ;;
+            error=*) err="${f#error=}" ;;
+            esac
+          done
+          if [[ $parsed == "ok" ]]; then
+            jq -cn --arg raw "$raw" --arg name "$name" --arg svc "$svc" \
+              --arg port "$port" --arg type "$type" --arg tls "$tls" \
+              '{raw:$raw,parsed:"ok",name:$name,service:$svc,port:$port,type:$type,tls:$tls}'
+          else
+            jq -cn --arg raw "$raw" --arg err "$err" \
+              '{raw:$raw,parsed:"fail",error:$err}'
+          fi
+        done < <(__xcind-doctor-parse-exports) | jq -s '.'
+      )
+    fi
+
+    local hooks_json="[]"
+    if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
+      hooks_json=$(__xcind-to-json-array "${XCIND_HOOKS_GENERATE[@]}")
+    fi
+
+    local cfg_json="[]"
+    if [[ ${#__XCIND_SOURCED_CONFIG_FILES[@]} -gt 0 ]]; then
+      cfg_json=$(__xcind-to-json-array "${__XCIND_SOURCED_CONFIG_FILES[@]}")
+    fi
+
+    local tsv_rows_json="[]"
+    if [[ -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
+      tsv_rows_json=$(
+        __xcind-doctor-tsv-rows-for-app "$app_root" |
+          while IFS=$'\t' read -r port ws app svc cport path ts; do
+            [[ -z $port ]] && continue
+            jq -cn --arg port "$port" --arg workspace "$ws" \
+              --arg application "$app" --arg service "$svc" \
+              --arg container_port "$cport" --arg app_path "$path" \
+              --arg assigned_at "$ts" \
+              '{port:$port,workspace:$workspace,application:$application,service:$service,container_port:$container_port,app_path:$app_path,assigned_at:$assigned_at}'
+          done | jq -s '.'
+      )
+    fi
+
+    local scratch_rc scratch_stdout scratch_stderr scratch_overlay
+    scratch_rc=$(printf '%s\n' "$scratch_output" | awk '/^exit_code=/ {sub(/^exit_code=/, ""); print; exit}')
+    scratch_stdout=$(printf '%s\n' "$scratch_output" | awk '/^--STDOUT--/ {flag=1; next} /^--STDERR--/ {flag=0} flag')
+    scratch_stderr=$(printf '%s\n' "$scratch_output" | awk '/^--STDERR--/ {flag=1; next} /^--OVERLAY--/ {flag=0} flag')
+    scratch_overlay=$(printf '%s\n' "$scratch_output" | awk '/^--OVERLAY--/ {flag=1; next} flag')
+
+    jq -n \
+      --arg version "$XCIND_VERSION" \
+      --arg app_root "$app_root" \
+      --arg generated_dir "${XCIND_GENERATED_DIR:-}" \
+      --arg assigned_tsv_path "$XCIND_ASSIGNED_PORTS_FILE" \
+      --argjson assigned_tsv_exists "$([[ -f $XCIND_ASSIGNED_PORTS_FILE ]] && echo true || echo false)" \
+      --argjson generated_dir_exists "$([[ -d ${XCIND_GENERATED_DIR:-} ]] && echo true || echo false)" \
+      --argjson hooks "$hooks_json" \
+      --argjson has_assigned_hook "$has_assigned_hook" \
+      --argjson sourced_config_files "$cfg_json" \
+      --argjson exports "$exports_json" \
+      --argjson tsv_rows "$tsv_rows_json" \
+      --arg scratch_rc "$scratch_rc" \
+      --arg scratch_stdout "$scratch_stdout" \
+      --arg scratch_stderr "$scratch_stderr" \
+      --arg scratch_overlay "$scratch_overlay" \
+      '{
+        version: $version,
+        app_root: $app_root,
+        generated_dir: {path: $generated_dir, exists: $generated_dir_exists},
+        assigned_tsv: {path: $assigned_tsv_path, exists: $assigned_tsv_exists, rows: $tsv_rows},
+        hooks: {generate: $hooks, has_assigned_hook: $has_assigned_hook},
+        sourced_config_files: $sourced_config_files,
+        exports: $exports,
+        scratch_run: {
+          exit_code: ($scratch_rc | tonumber? // null),
+          stdout: $scratch_stdout,
+          stderr: $scratch_stderr,
+          overlay: $scratch_overlay
+        }
+      }'
+  fi
+}
+
+# --------------------------------------------------------------------------
 # Hook Execution
 # --------------------------------------------------------------------------
 
@@ -1308,11 +1665,14 @@ __xcind-run-hooks() {
   # reflects only this invocation.
   __XCIND_HOOKS_SKIPPED_NO_YQ=()
 
+  __xcind-debug "run-hooks: generated_dir=$XCIND_GENERATED_DIR exists=$([[ -d $XCIND_GENERATED_DIR ]] && echo yes || echo no)"
+
   if [ -d "$XCIND_GENERATED_DIR" ]; then
     # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order
     local hook_name
     for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
       local hook_output_file="$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+      __xcind-debug "run-hooks: cache HIT hook=$hook_name output_file_exists=$([[ -f $hook_output_file ]] && echo yes || echo no)"
       [ -f "$hook_output_file" ] || continue
 
       # Read persisted output
@@ -1322,6 +1682,7 @@ __xcind-run-hooks() {
 
       # Verify referenced files still exist; on miss, rebuild from scratch.
       if ! __xcind-validate-hook-output "$output"; then
+        __xcind-debug "run-hooks: stale cache, rebuilding"
         rm -rf "$XCIND_GENERATED_DIR"
         __xcind-run-hooks "$app_root"
         return $?
@@ -1336,6 +1697,7 @@ __xcind-run-hooks() {
 
     local hook_name
     for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
+      __xcind-debug "run-hooks: cache MISS running hook=$hook_name"
       local output
       output=$("$hook_name" "$app_root") || {
         local rc=$?

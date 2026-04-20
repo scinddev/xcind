@@ -161,9 +161,9 @@ api:
   local websecure_entry=""
   local file_provider=""
   if [[ $tls_enabled == true ]]; then
-    websecure_entry="
+    websecure_entry='
   websecure:
-    address: \":443\""
+    address: ":443"'
     file_provider="
   file:
     directory: /etc/traefik/dynamic
@@ -558,6 +558,7 @@ __xcind-proxy-parse-entry() {
         case "$val" in
         proxied | assigned) _type="$val" ;;
         *)
+          __xcind-debug "parse-entry: invalid type='$val' in '$orig'"
           echo "Error: invalid XCIND_PROXY_EXPORTS type '$val' in '$orig' (expected 'proxied' or 'assigned')" >&2
           return 1
           ;;
@@ -573,6 +574,7 @@ __xcind-proxy-parse-entry() {
         esac
         ;;
       *)
+        __xcind-debug "parse-entry: unknown attribute='$key' in '$orig'"
         echo "Error: unknown XCIND_PROXY_EXPORTS attribute '$key' in '$orig'" >&2
         return 1
         ;;

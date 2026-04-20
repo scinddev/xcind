@@ -397,7 +397,12 @@ __xcind-assigned-warn-compose-conflict() {
 xcind-assigned-hook() {
   local app_root="$1"
 
+  local __dbg_count=0
+  [[ -n ${XCIND_PROXY_EXPORTS+set} ]] && __dbg_count=${#XCIND_PROXY_EXPORTS[@]}
+  __xcind-debug "assigned-hook: entry app_root=$app_root exports_count=$__dbg_count"
+
   if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    __xcind-debug "assigned-hook: skip — XCIND_PROXY_EXPORTS unset or empty"
     return 0
   fi
 
@@ -409,13 +414,19 @@ xcind-assigned-hook() {
   local has_assigned=0
   for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
     if __xcind-proxy-parse-entry "$entry" 2>/dev/null; then
+      __xcind-debug "assigned-hook: count-pass entry='$entry' parse=ok name=$_export_name service=$_compose_service port=$_port type=$_type"
       [[ $_type == "assigned" ]] && {
         has_assigned=1
         break
       }
+    else
+      __xcind-debug "assigned-hook: count-pass entry='$entry' parse=fail"
     fi
   done
-  [[ $has_assigned -eq 1 ]] || return 0
+  if [[ $has_assigned -ne 1 ]]; then
+    __xcind-debug "assigned-hook: skip — no type=assigned entries after count-pass"
+    return 0
+  fi
 
   __xcind-with-assigned-lock __xcind-assigned-hook-locked "$app_root"
 }
@@ -442,7 +453,10 @@ __xcind-assigned-hook-locked() {
     local _export_name _compose_service _port _type
     __xcind-proxy-parse-entry "$entry" || return 1
 
-    [[ $_type == "assigned" ]] || continue
+    if [[ $_type != "assigned" ]]; then
+      __xcind-debug "assigned-hook: pass-1 entry='$entry' type=$_type skipped"
+      continue
+    fi
 
     __xcind-proxy-validate-service "$_compose_service" "$resolved_config" || return 1
 
@@ -455,13 +469,17 @@ __xcind-assigned-hook-locked() {
       return 1
     fi
 
+    __xcind-debug "assigned-hook: pass-1 entry='$entry' name=$_export_name service=$_compose_service cport=$_port — queued"
     exp_names+=("$_export_name")
     exp_services+=("$_compose_service")
     exp_cports+=("$_port")
   done
 
   # Nothing assigned after filtering: no compose overlay, no -f flag.
-  [[ ${#exp_names[@]} -gt 0 ]] || return 0
+  if [[ ${#exp_names[@]} -eq 0 ]]; then
+    __xcind-debug "assigned-hook: skip — exp_names empty after pass-1 filter"
+    return 0
+  fi
 
   # Pass 2: allocate host ports. A sticky TSV hit is trusted without probing;
   # only fresh allocations probe for availability.
@@ -482,10 +500,12 @@ __xcind-assigned-hook-locked() {
     local sticky
     if sticky=$(__xcind-assigned-lookup "$app_root" "$xport"); then
       host_port="$sticky"
+      __xcind-debug "assigned-hook: allocate xport=$xport cport=$cport host_port=$host_port source=sticky"
     fi
 
     if [[ -z $host_port ]]; then
       host_port=$(__xcind-assigned-allocate-new "$cport") || return 1
+      __xcind-debug "assigned-hook: allocate xport=$xport cport=$cport host_port=$host_port source=fresh"
     fi
 
     __xcind-assigned-upsert "$host_port" "$workspace" "$app" "$xport" "$cport" "$app_root"
@@ -536,6 +556,7 @@ __xcind-assigned-hook-locked() {
   output+=$'\n'
 
   printf '%s' "$output" >"$XCIND_GENERATED_DIR/compose.assigned.yaml"
+  __xcind-debug "assigned-hook: overlay written path=$XCIND_GENERATED_DIR/compose.assigned.yaml exports=${#exp_names[@]}"
   printf -- '-f %s\n' "$XCIND_GENERATED_DIR/compose.assigned.yaml"
 }
 
