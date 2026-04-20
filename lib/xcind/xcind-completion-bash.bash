@@ -223,9 +223,52 @@ _xcind_workspace_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-application: native completion
+# -----------------------------------------------------------------------------
+
+_xcind_application_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+  # After "init", offer init-specific flags plus directory completion. When
+  # $cur starts with "-" we're completing a flag and should skip directories;
+  # otherwise include both so `xcind-application init <TAB>` can tab into a
+  # target directory. Mirrors the zsh version (which uses `_files -/`).
+  if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--name" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--name" -- "$cur") $(compgen -d -- "$cur"))
+    fi
+    return
+  fi
+
+  # After --name, let default completion handle values
+  if [[ $prev == "--name" ]]; then
+    return
+  fi
+
+  # After "status" or "list", offer --json plus directory completion
+  if [[ $prev == "status" || $prev == "list" ]]; then
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--json" -- "$cur") $(compgen -d -- "$cur"))
+    fi
+    return
+  fi
+
+  local opts="init status list --help -h --version -V"
+  COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
+complete -F _xcind_application_completions xcind-application
+complete -F _xcind_application_completions xcind-app
 complete -F _xcind_compose_completions xcind-compose
 complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy

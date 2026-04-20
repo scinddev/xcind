@@ -2642,6 +2642,218 @@ assert_file_exists "discovery created registry file" "$disc_tsv"
 assert_contains "discovery registered workspace root" "$disc_ws" "$(cat "$disc_tsv")"
 
 # ======================================================================
+echo ""
+echo "=== Test: xcind-application init CLI ==="
+
+# Plain init scaffolds .xcind.sh with default compose files
+APP_PLAIN=$(mktemp_d)
+app_init_out=$("$XCIND_ROOT/bin/xcind-application" init "$APP_PLAIN/demo")
+assert_file_exists "plain init: .xcind.sh created" "$APP_PLAIN/demo/.xcind.sh"
+app_content=$(<"$APP_PLAIN/demo/.xcind.sh")
+assert_contains "plain init: XCIND_COMPOSE_FILES set" 'XCIND_COMPOSE_FILES=' "$app_content"
+assert_not_contains "plain init: no XCIND_IS_WORKSPACE" "XCIND_IS_WORKSPACE" "$app_content"
+assert_contains "plain init: reports target path" "$APP_PLAIN/demo" "$app_init_out"
+
+# --name flag persists XCIND_APP
+APP_NAMED=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-application" init "$APP_NAMED/svc" --name "custom" >/dev/null
+app_content=$(<"$APP_NAMED/svc/.xcind.sh")
+assert_contains "--name: XCIND_APP persisted" 'XCIND_APP="custom"' "$app_content"
+
+# Idempotent init: second run without flags preserves existing config
+content_before=$(<"$APP_NAMED/svc/.xcind.sh")
+idem_out=$("$XCIND_ROOT/bin/xcind-application" init "$APP_NAMED/svc")
+content_after=$(<"$APP_NAMED/svc/.xcind.sh")
+assert_eq "idempotent: file unchanged on re-init" "$content_before" "$content_after"
+assert_contains "idempotent: reports already-initialized" "already initialized" "$idem_out"
+
+# Re-init with --name rewrites XCIND_APP
+"$XCIND_ROOT/bin/xcind-application" init "$APP_NAMED/svc" --name "renamed" >/dev/null
+app_content=$(<"$APP_NAMED/svc/.xcind.sh")
+assert_contains "--name update: XCIND_APP rewritten" 'XCIND_APP="renamed"' "$app_content"
+
+# Init refuses to overwrite a workspace config
+APP_WS=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-workspace" init "$APP_WS" >/dev/null 2>&1
+ws_conflict_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" init "$APP_WS")
+assert_eq "init over workspace: exits 1" "1" "$ws_conflict_status"
+
+# Init inside a workspace mentions the workspace name in the confirmation
+APP_NESTED=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-workspace" init "$APP_NESTED" --name "nestedws" >/dev/null 2>&1
+nested_out=$("$XCIND_ROOT/bin/xcind-application" init "$APP_NESTED/myapp" 2>/dev/null)
+assert_contains "nested init: mentions workspace name" "workspace: nestedws" "$nested_out"
+
+# Unknown flag fails
+app_unk_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" init "$APP_PLAIN/demo2" --bogus)
+assert_eq "unknown init flag: exits 1" "1" "$app_unk_status"
+
+# --version short-circuits
+app_ver_out=$("$XCIND_ROOT/bin/xcind-application" --version)
+assert_contains "--version: prints xcind-application" "xcind-application" "$app_ver_out"
+
+# --help prints usage
+app_help_out=$("$XCIND_ROOT/bin/xcind-application" --help)
+assert_contains "--help: lists init" "init [DIR]" "$app_help_out"
+assert_contains "--help: lists status" "status [DIR]" "$app_help_out"
+assert_contains "--help: lists list" "list [DIR]" "$app_help_out"
+
+# No arguments prints help
+app_noargs_out=$("$XCIND_ROOT/bin/xcind-application")
+assert_contains "no args: prints help" "Usage: xcind-application" "$app_noargs_out"
+
+# Unknown subcommand fails
+app_badcmd_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" bogus)
+assert_eq "unknown subcommand: exits 1" "1" "$app_badcmd_status"
+
+rm -rf "$APP_PLAIN" "$APP_NAMED" "$APP_WS" "$APP_NESTED"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-application list CLI ==="
+
+APP_LIST_WS=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-workspace" init "$APP_LIST_WS" --name "listws" >/dev/null 2>&1
+"$XCIND_ROOT/bin/xcind-application" init "$APP_LIST_WS/alpha" >/dev/null
+"$XCIND_ROOT/bin/xcind-application" init "$APP_LIST_WS/beta" >/dev/null
+
+list_text=$("$XCIND_ROOT/bin/xcind-application" list "$APP_LIST_WS")
+assert_contains "list text: shows header" "NAME" "$list_text"
+assert_contains "list text: shows alpha" "alpha" "$list_text"
+assert_contains "list text: shows beta" "beta" "$list_text"
+assert_contains "list text: shows workspace" "listws" "$list_text"
+
+# --json output
+list_json=$("$XCIND_ROOT/bin/xcind-application" list "$APP_LIST_WS" --json)
+# Parseable JSON
+printf '%s' "$list_json" | jq . >/dev/null && list_json_rc=0 || list_json_rc=$?
+assert_eq "list --json: parseable JSON" "0" "$list_json_rc"
+list_json_ws=$(printf '%s' "$list_json" | jq -r '.workspace')
+assert_eq "list --json: workspace name" "listws" "$list_json_ws"
+list_json_count=$(printf '%s' "$list_json" | jq -r '.applications | length')
+assert_eq "list --json: two applications" "2" "$list_json_count"
+
+# List from inside a subdirectory of the workspace still returns the
+# workspace's apps (walks up to find the enclosing workspace).
+list_nested=$("$XCIND_ROOT/bin/xcind-application" list "$APP_LIST_WS/alpha")
+assert_contains "list from app dir: shows siblings" "beta" "$list_nested"
+
+# Hidden directories and nested workspaces must NOT appear as apps.
+mkdir -p "$APP_LIST_WS/.git"
+echo '# not an xcind config' >"$APP_LIST_WS/.git/ignored"
+mkdir -p "$APP_LIST_WS/inner"
+echo 'XCIND_IS_WORKSPACE=1' >"$APP_LIST_WS/inner/.xcind.sh"
+
+list_filtered=$("$XCIND_ROOT/bin/xcind-application" list "$APP_LIST_WS")
+assert_not_contains "list: hidden dirs hidden" ".git" "$list_filtered"
+assert_not_contains "list: nested workspaces hidden" "inner" "$list_filtered"
+
+# Standalone fallback: list against a directory whose .xcind.sh is an app
+# config not inside any workspace returns a single-row list.
+APP_SOLO=$(mktemp_d)
+"$XCIND_ROOT/bin/xcind-application" init "$APP_SOLO/lone" >/dev/null
+solo_json=$("$XCIND_ROOT/bin/xcind-application" list "$APP_SOLO/lone" --json)
+solo_count=$(printf '%s' "$solo_json" | jq -r '.applications | length')
+assert_eq "list solo: single row" "1" "$solo_count"
+solo_ws=$(printf '%s' "$solo_json" | jq -r '.workspace')
+assert_eq "list solo: null workspace" "null" "$solo_ws"
+
+# List against a directory with nothing underneath produces an empty/"no
+# applications" message in text mode.
+APP_EMPTY=$(mktemp_d)
+empty_out=$("$XCIND_ROOT/bin/xcind-application" list "$APP_EMPTY")
+assert_contains "list empty: reports no applications" "No applications" "$empty_out"
+
+rm -rf "$APP_LIST_WS" "$APP_SOLO" "$APP_EMPTY"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-application status CLI ==="
+
+APP_STATUS_WS=$(mktemp_d)
+APP_STATUS_HOME=$(mktemp_d)
+_app_status_orig_HOME="$HOME"
+_app_status_orig_PATH="$PATH"
+export HOME="$APP_STATUS_HOME"
+mkdir -p "$APP_STATUS_HOME/bin"
+cat >"$APP_STATUS_HOME/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker for application status tests: report nothing running, and
+# synthesize `docker compose config` output so the xcind pipeline can
+# populate its cache without a real docker engine.
+case "$1" in
+ps) echo "" ;;
+inspect) exit 1 ;;
+compose)
+  shift
+  # Scan remaining args for the `config` subcommand.
+  for _arg in "$@"; do
+    if [ "$_arg" = "config" ]; then
+      echo 'services:'
+      echo '  web:'
+      echo '    image: nginx'
+      echo '  db:'
+      echo '    image: postgres'
+      exit 0
+    fi
+  done
+  exit 0
+  ;;
+*) exit 0 ;;
+esac
+MOCKEOF
+chmod +x "$APP_STATUS_HOME/bin/docker"
+export PATH="$APP_STATUS_HOME/bin:$_app_status_orig_PATH"
+
+"$XCIND_ROOT/bin/xcind-workspace" init "$APP_STATUS_WS" --name "stws" >/dev/null 2>&1
+"$XCIND_ROOT/bin/xcind-application" init "$APP_STATUS_WS/webapp" >/dev/null
+cat >"$APP_STATUS_WS/webapp/compose.yaml" <<'COMPOSEEOF'
+services:
+  web:
+    image: nginx
+  db:
+    image: postgres
+COMPOSEEOF
+
+status_out=$("$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_WS/webapp" 2>&1)
+assert_contains "status text: Application header" "Application: webapp" "$status_out"
+assert_contains "status text: Workspace line" "Workspace:" "$status_out"
+assert_contains "status text: Services header" "Services:" "$status_out"
+assert_contains "status text: lists web service" "web" "$status_out"
+assert_contains "status text: lists db service" "db" "$status_out"
+assert_contains "status text: summary line" "0/2 services running" "$status_out"
+
+# --json output
+status_json=$("$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_WS/webapp" --json 2>&1)
+printf '%s' "$status_json" | jq . >/dev/null && status_json_rc=0 || status_json_rc=$?
+assert_eq "status --json: parseable" "0" "$status_json_rc"
+status_app=$(printf '%s' "$status_json" | jq -r '.app')
+assert_eq "status --json: app name" "webapp" "$status_app"
+status_total=$(printf '%s' "$status_json" | jq -r '.total')
+assert_eq "status --json: two defined services" "2" "$status_total"
+status_running=$(printf '%s' "$status_json" | jq -r '.running')
+assert_eq "status --json: zero running" "0" "$status_running"
+
+# Status from inside the app's own directory (no DIR arg) must work, since
+# __xcind-application-find-root walks up from $PWD.
+status_cwd_out=$(cd "$APP_STATUS_WS/webapp" && "$XCIND_ROOT/bin/xcind-application" status 2>&1)
+assert_contains "status cwd: Application header" "Application: webapp" "$status_cwd_out"
+
+# Status outside any app fails
+APP_STATUS_OUTSIDE=$(mktemp_d)
+status_outside_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_OUTSIDE")
+assert_eq "status outside app: exits 1" "1" "$status_outside_status"
+
+# Status on a missing directory fails
+status_missing_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" status "/nonexistent/does-not-exist-xcind-app")
+assert_eq "status missing dir: exits 1" "1" "$status_missing_status"
+
+export HOME="$_app_status_orig_HOME"
+export PATH="$_app_status_orig_PATH"
+unset _app_status_orig_HOME _app_status_orig_PATH
+rm -rf "$APP_STATUS_WS" "$APP_STATUS_HOME" "$APP_STATUS_OUTSIDE"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

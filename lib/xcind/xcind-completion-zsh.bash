@@ -280,9 +280,47 @@ _xcind-workspace() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-application: native completion
+# -----------------------------------------------------------------------------
+
+_xcind-application() {
+  local -a main_commands=(
+    'init:Initialize an application directory'
+    'status:Show status for a single application'
+    'list:List applications in the enclosing workspace'
+    '--help:Show help'
+    '-h:Show help'
+    '--version:Show version'
+    '-V:Show version'
+  )
+
+  # Context-sensitive completion
+  case "${words[CURRENT - 1]}" in
+  init)
+    local -a init_opts=(
+      '--name:Set XCIND_APP explicitly'
+    )
+    _describe 'init option' init_opts
+    _files -/
+    return
+    ;;
+  status | list)
+    local -a status_opts=('--json:Output structured JSON')
+    _describe 'option' status_opts
+    _files -/
+    return
+    ;;
+  esac
+
+  _describe 'xcind-application command' main_commands
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
+compdef _xcind-application xcind-application
+compdef _xcind-application xcind-app
 compdef _xcind-compose xcind-compose
 compdef _xcind-config xcind-config
 compdef _xcind-proxy xcind-proxy

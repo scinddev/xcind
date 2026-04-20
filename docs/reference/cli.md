@@ -1,6 +1,6 @@
 # CLI Reference
 
-Xcind provides three commands. All are standalone Bash scripts.
+Xcind provides five commands. All are standalone Bash scripts.
 
 ---
 
@@ -288,6 +288,82 @@ xcind-workspace forget ~/code/old-project    # Drop a registry entry
 
 ---
 
+## `xcind-application`
+
+Manages individual xcind applications. Also available as `xcind-app`.
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `init [DIR] [OPTIONS]` | Initialize an application directory (scaffold `.xcind.sh`) |
+| `status [DIR] [OPTIONS]` | Show resolved configuration and container status for a single application |
+| `list [DIR] [OPTIONS]` | List applications inside the enclosing workspace |
+
+### Init Options
+
+| Option | Description |
+|--------|-------------|
+| `--name NAME` | Set `XCIND_APP` explicitly (default: directory name) |
+
+### Status Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output structured JSON |
+
+### List Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output structured JSON |
+
+### Usage
+
+```bash
+xcind-application init                         # Initialize current directory
+xcind-application init ./webapp                # Initialize a subdirectory
+xcind-application init ./webapp --name api     # With explicit app name
+xcind-application status                       # Show status for the current app
+xcind-application status ./webapp              # Show status for a specific app
+xcind-application status --json                # JSON output
+xcind-application list                         # List apps in the enclosing workspace
+xcind-application list ~/code/dev --json       # JSON list for a given workspace
+xcind-app list                                 # Short alias
+```
+
+### Behavior
+
+**Init:**
+
+- `DIR` defaults to `.` (current directory).
+- Scaffolds a minimal `.xcind.sh` with `XCIND_COMPOSE_FILES=("compose.yaml")` and, when `--name` is given, an explicit `XCIND_APP` line.
+- Refuses to run against a workspace directory (a `.xcind.sh` that sets `XCIND_IS_WORKSPACE=1`); use `xcind-workspace init` to update workspace settings, or scaffold the application in a subdirectory.
+- If an app `.xcind.sh` already exists, reports "already initialized" unless `--name` is passed, in which case the file is rewritten with the new `XCIND_APP` value. Other fields you may have hand-edited are not preserved — edit the file directly to avoid losing customizations.
+- When the parent directory is a workspace, the success message names the workspace.
+
+**Status:**
+
+- Walks upward from `DIR` (or current directory) to find the nearest app `.xcind.sh` that is not a workspace marker.
+- Invokes `xcind-config --json` against the resolved app to discover compose files, env files, workspace membership, and defined services (requires `jq` and `yq`).
+- Queries Docker for containers labeled with `xcind.app.name` (and, in workspace mode, `xcind.workspace.name`) to report per-service status.
+- With `--json`, outputs a structured object with `app`, `path`, `workspace`, `composeFiles`, `composeEnvFiles`, `definedServices`, `services`, `urls`, `total`, and `running`.
+
+**List:**
+
+- When `DIR` resolves inside a workspace (either directly or by walking up), enumerates its immediate non-hidden subdirectories whose `.xcind.sh` is an app config. Hidden directories (`.git`, `.cache`, ...) and nested workspaces are skipped.
+- When `DIR` is not inside any workspace, falls back to a single-row list if `DIR` itself is a standalone application; otherwise reports "No applications found." This mirrors Scind's single-app workspace pattern and avoids special-casing.
+
+> **Trust boundary:** `xcind-application status` and `list` source
+> `.xcind.sh` files from the application and its enclosing workspace, and
+> `status` additionally invokes `xcind-config` which resolves variable
+> substitutions (including `$(cmd)` patterns) in those files. Do not run
+> against applications or workspaces you do not control. See
+> [`xcind-workspace`](#xcind-workspace) for a more detailed discussion of
+> the same trust model.
+
+---
+
 ## Shell Completions
 
 Xcind provides tab completions for all commands. Add one line to your shell
@@ -302,7 +378,8 @@ config:
 ```
 
 This registers completions for `xcind-compose`, `xcind-config`,
-`xcind-proxy`, and `xcind-workspace`. For `xcind-compose`, completions invoke Docker's
+`xcind-proxy`, `xcind-workspace`, and `xcind-application` (plus the
+`xcind-app` alias). For `xcind-compose`, completions invoke Docker's
 `docker compose __complete` mechanism directly so you get the same experience
 as `docker compose` without requiring Docker's shell completion to be loaded.
 If that subprocess is unavailable or returns no suggestions, a hardcoded fallback list of common subcommands is used.

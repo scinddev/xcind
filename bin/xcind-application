@@ -1,0 +1,712 @@
+#!/usr/bin/env bash
+# xcind-application — Manage xcind applications
+#
+# Usage:
+#   xcind-application init [DIR] [OPTIONS]    Initialize an application directory
+#   xcind-application status [DIR]            Show status for a single application
+#   xcind-application list [OPTIONS]          List applications in the enclosing workspace
+
+set -euo pipefail
+
+# Resolve XCIND_ROOT by following symlinks to the real install directory
+# (npm, nix profile, and manual symlinks all route through here). macOS
+# lacks `readlink -f`, so the resolver is a manual loop.
+# Keep in sync with the equivalent stub in the other bin/ scripts.
+__xcind_src="${BASH_SOURCE[0]}"
+while [ -L "$__xcind_src" ]; do
+  __xcind_src_dir=$(cd "$(dirname "$__xcind_src")" && pwd)
+  __xcind_src=$(readlink "$__xcind_src")
+  [[ $__xcind_src != /* ]] && __xcind_src="$__xcind_src_dir/$__xcind_src"
+done
+XCIND_ROOT="$(cd "$(dirname "$__xcind_src")/.." && pwd)"
+unset __xcind_src __xcind_src_dir
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
+
+if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
+  echo "xcind-application ${XCIND_VERSION}"
+  exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Init
+# --------------------------------------------------------------------------
+
+# Write a minimal .xcind.sh for an application directory. Mirrors
+# __xcind-workspace-write-config but emits app-scoped defaults.
+__xcind-application-write-config() {
+  local dir="$1"
+  local app_name="${2:-}"
+
+  local content='# shellcheck shell=bash
+# shellcheck disable=SC2034'
+
+  if [[ -n "$app_name" ]]; then
+    content+=$'\n'"XCIND_APP=\"$app_name\""
+  fi
+
+  content+=$'\n''XCIND_COMPOSE_FILES=("compose.yaml")'
+
+  echo "$content" >"$dir/.xcind.sh"
+}
+
+__xcind-application-init() {
+  local dir="."
+  local _flag_name=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --name)
+      _flag_name="$2"
+      shift 2
+      ;;
+    --help | -h)
+      echo "Usage: xcind-application init [DIR] [--name NAME]"
+      echo ""
+      echo "Scaffold .xcind.sh in DIR (default: current directory)."
+      echo ""
+      echo "Options:"
+      echo "  --name NAME    Set XCIND_APP explicitly (default: directory name)"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for init: $1" >&2
+      exit 1
+      ;;
+    *)
+      dir="$1"
+      shift
+      ;;
+    esac
+  done
+
+  mkdir -p "$dir"
+  dir=$(cd "$dir" && pwd)
+
+  # Refuse to overwrite a workspace config — workspace and app markers are
+  # mutually exclusive at the same path, and xcind-workspace init is the
+  # right tool for that case.
+  if __xcind-is-workspace-dir "$dir"; then
+    echo "Error: $dir is a workspace directory (.xcind.sh sets XCIND_IS_WORKSPACE=1)." >&2
+    echo "  Use 'xcind-workspace init' to update workspace settings, or scaffold" >&2
+    echo "  the application in a subdirectory (e.g. '$dir/myapp')." >&2
+    exit 1
+  fi
+
+  if [[ -f "$dir/.xcind.sh" ]]; then
+    if [[ -n "$_flag_name" ]]; then
+      # Merge: source the existing file in a subshell to read current XCIND_APP,
+      # then rewrite. Other variables in the file are NOT preserved — users who
+      # have hand-edited should update the file directly rather than re-running
+      # init.
+      __xcind-application-write-config "$dir" "$_flag_name"
+      echo "Application updated at $dir"
+    else
+      echo "Application already initialized at $dir"
+    fi
+    return 0
+  fi
+
+  __xcind-application-write-config "$dir" "$_flag_name"
+
+  # Informative tail: mention the enclosing workspace so users know which
+  # workspace the new app will join.
+  local parent
+  parent=$(dirname "$dir")
+  if __xcind-is-workspace-dir "$parent"; then
+    local ws_name
+    ws_name=$(
+      XCIND_WORKSPACE=""
+      # shellcheck disable=SC1091
+      source "$parent/.xcind.sh" 2>/dev/null || true
+      echo "${XCIND_WORKSPACE:-$(basename "$parent")}"
+    )
+    echo "Application initialized at $dir (workspace: $ws_name)"
+  else
+    echo "Application initialized at $dir"
+  fi
+}
+
+# --------------------------------------------------------------------------
+# Status helpers
+# --------------------------------------------------------------------------
+
+# Walk upward from the given directory to find an app root — a directory
+# whose .xcind.sh does NOT declare XCIND_IS_WORKSPACE=1. Mirrors
+# __xcind-app-root but takes an explicit starting directory argument and
+# never consults $XCIND_APP_ROOT.
+__xcind-application-find-root() {
+  local dir="${1:-$PWD}"
+
+  if [[ ! -d "$dir" ]]; then
+    echo "Error: Directory not found: $dir" >&2
+    return 1
+  fi
+
+  dir=$(cd "$dir" && pwd)
+
+  local current="$dir"
+  while true; do
+    if [[ -f "$current/.xcind.sh" ]] && ! __xcind-is-workspace-dir "$current"; then
+      echo "$current"
+      return 0
+    fi
+
+    local parent
+    parent=$(dirname "$current")
+
+    if [[ "$parent" == "/" || "$parent" == "$current" ]]; then
+      echo "Error: Not inside an application. No .xcind.sh found walking up from $dir." >&2
+      return 1
+    fi
+
+    current="$parent"
+  done
+}
+
+# Run xcind-config --json for a given app_root and echo the JSON on stdout.
+# Unsets workspace-related env vars so the subprocess discovers the workspace
+# freshly rather than inheriting stale values. Mirrors the pattern used by
+# xcind-workspace status.
+__xcind-application-query-config() {
+  local app_root="$1"
+  local tmp_compose="${2:-}"
+  local extra_args=()
+  if [[ -n "$tmp_compose" ]]; then
+    extra_args+=("--generate-docker-compose-configuration=$tmp_compose")
+  fi
+
+  (
+    unset XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+    PATH="$XCIND_ROOT/bin:$PATH" XCIND_APP_ROOT="$app_root" \
+      "$XCIND_ROOT/bin/xcind-config" --json "${extra_args[@]}"
+  )
+}
+
+__xcind-application-status() {
+  local dir=""
+  local json_mode=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --json)
+      json_mode=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-application status [DIR] [--json]"
+      echo ""
+      echo "Show resolved configuration and container status for a single"
+      echo "application. Walks upward from DIR (default: current directory)"
+      echo "to find the nearest app .xcind.sh."
+      echo ""
+      echo "Options:"
+      echo "  --json   Output structured JSON"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for status: $1" >&2
+      exit 1
+      ;;
+    *)
+      dir="$1"
+      shift
+      ;;
+    esac
+  done
+
+  local app_root
+  if [[ -n "$dir" ]]; then
+    app_root=$(__xcind-application-find-root "$dir") || exit 1
+  else
+    app_root=$(__xcind-application-find-root "$PWD") || exit 1
+  fi
+
+  # jq is required for status output — both text and JSON paths rely on it
+  # to parse xcind-config's JSON contract. yq is required by the config
+  # pipeline to enumerate services. Fail loudly rather than silently so
+  # users don't see mysterious empty output.
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for 'xcind-application status'." >&2
+    exit 1
+  fi
+  if ! command -v yq >/dev/null 2>&1; then
+    echo "Error: yq is required for 'xcind-application status'." >&2
+    exit 1
+  fi
+
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmpdir'" EXIT
+
+  local resolved_compose="$tmpdir/resolved.yaml"
+  local xcind_json=""
+  if ! xcind_json=$(__xcind-application-query-config "$app_root" "$resolved_compose" 2>"$tmpdir/err"); then
+    local err_msg
+    err_msg=$(cat "$tmpdir/err" 2>/dev/null || true)
+    echo "Error: xcind-config failed for $app_root" >&2
+    [[ -n "$err_msg" ]] && echo "$err_msg" >&2
+    exit 1
+  fi
+
+  local app_name ws_name workspaceless
+  app_name=$(printf '%s' "$xcind_json" | jq -r '.metadata.app // ""')
+  ws_name=$(printf '%s' "$xcind_json" | jq -r '.metadata.workspace // ""')
+  workspaceless=$(printf '%s' "$xcind_json" | jq -r '.metadata.workspaceless')
+
+  local -a compose_files=() env_files=()
+  local _line
+  while IFS= read -r _line; do
+    [[ -n "$_line" ]] && compose_files+=("$_line")
+  done < <(printf '%s' "$xcind_json" | jq -r '.composeFiles[]?')
+  while IFS= read -r _line; do
+    [[ -n "$_line" ]] && env_files+=("$_line")
+  done < <(printf '%s' "$xcind_json" | jq -r '.composeEnvFiles[]?')
+
+  local -a defined_services=()
+  if [[ -f "$resolved_compose" ]]; then
+    while IFS= read -r _line; do
+      [[ -n "$_line" ]] && defined_services+=("$_line")
+    done < <(__xcind-list-services "$resolved_compose")
+  fi
+
+  # Query containers for this app+workspace. Label filters mirror those
+  # set by xcind-app-hook and xcind-naming-hook.
+  local -a container_names=() container_states=()
+  local running_count=0
+  if command -v docker >/dev/null 2>&1; then
+    local -a filters=(--filter "label=xcind.app.name=$app_name")
+    if [[ -n "$ws_name" ]]; then
+      filters+=(--filter "label=xcind.workspace.name=$ws_name")
+    fi
+    local ps_lines
+    ps_lines=$(docker ps -a "${filters[@]}" --format '{{.Names}}	{{.Status}}' 2>/dev/null) || true
+    if [[ -n "$ps_lines" ]]; then
+      local cname cstatus state
+      while IFS=$'\t' read -r cname cstatus; do
+        [[ -z "$cname" ]] && continue
+        state="unknown"
+        if [[ "$cstatus" == Up* ]]; then
+          state="running"
+          running_count=$((running_count + 1))
+        elif [[ "$cstatus" == Exited* ]]; then
+          state="exited"
+        elif [[ "$cstatus" == Paused* ]]; then
+          state="paused"
+        elif [[ "$cstatus" == Restarting* ]]; then
+          state="restarting"
+        fi
+        container_names+=("$cname")
+        container_states+=("$state")
+      done <<<"$ps_lines"
+    fi
+  fi
+
+  # Proxy URLs from xcind.export.*.host labels on running containers
+  local -a urls=()
+  if command -v docker >/dev/null 2>&1; then
+    local cids
+    local -a id_filters=(--filter "label=xcind.app.name=$app_name")
+    if [[ -n "$ws_name" ]]; then
+      id_filters+=(--filter "label=xcind.workspace.name=$ws_name")
+    fi
+    cids=$(docker ps -q "${id_filters[@]}" 2>/dev/null) || true
+    if [[ -n "$cids" ]]; then
+      local cid host_labels host_label
+      while IFS= read -r cid; do
+        [[ -z "$cid" ]] && continue
+        # shellcheck disable=SC2016
+        host_labels=$(docker inspect --format \
+          '{{range $k, $v := .Config.Labels}}{{if hasPrefix "xcind.export." $k}}{{if hasSuffix ".host" $k}}{{$v}}{{"\n"}}{{end}}{{end}}{{end}}' \
+          "$cid" 2>/dev/null) || true
+        while IFS= read -r host_label; do
+          [[ -z "$host_label" ]] && continue
+          urls+=("$host_label")
+        done <<<"$host_labels"
+      done <<<"$cids"
+    fi
+  fi
+
+  local total=${#defined_services[@]}
+
+  if [[ "$json_mode" == true ]]; then
+    local services_json="{}"
+    if [[ ${#container_names[@]} -gt 0 ]]; then
+      local n_arr s_arr
+      n_arr=$(printf '%s\n' "${container_names[@]}" | jq -R . | jq -s .)
+      s_arr=$(printf '%s\n' "${container_states[@]}" | jq -R . | jq -s .)
+      services_json=$(jq -n --argjson n "$n_arr" --argjson s "$s_arr" \
+        '[range(0; $n | length)] | map({key: $n[.], value: {status: $s[.]}}) | from_entries')
+    fi
+
+    local defined_json="[]"
+    if [[ ${#defined_services[@]} -gt 0 ]]; then
+      defined_json=$(printf '%s\n' "${defined_services[@]}" | jq -R . | jq -s .)
+    fi
+
+    local urls_json="[]"
+    if [[ ${#urls[@]} -gt 0 ]]; then
+      urls_json=$(printf '%s\n' "${urls[@]}" | jq -R . | jq -s .)
+    fi
+
+    local compose_files_json env_files_json
+    compose_files_json=$(printf '%s' "$xcind_json" | jq '.composeFiles')
+    env_files_json=$(printf '%s' "$xcind_json" | jq '.composeEnvFiles')
+
+    jq -n \
+      --arg app "$app_name" \
+      --arg path "$app_root" \
+      --arg workspace "$ws_name" \
+      --argjson workspaceless "$workspaceless" \
+      --argjson compose_files "$compose_files_json" \
+      --argjson env_files "$env_files_json" \
+      --argjson defined_services "$defined_json" \
+      --argjson services "$services_json" \
+      --argjson urls "$urls_json" \
+      --argjson total "$total" \
+      --argjson running "$running_count" \
+      '{
+        app: $app,
+        path: $path,
+        workspace: (if $workspace == "" then null else $workspace end),
+        workspaceless: $workspaceless,
+        composeFiles: $compose_files,
+        composeEnvFiles: $env_files,
+        definedServices: $defined_services,
+        services: $services,
+        urls: $urls,
+        total: $total,
+        running: $running
+      }'
+    return 0
+  fi
+
+  # Text output
+  echo "Application: $app_name"
+  echo "Path:        $app_root"
+  if [[ -n "$ws_name" ]]; then
+    echo "Workspace:   $ws_name"
+  else
+    echo "Workspace:   (none)"
+  fi
+  echo ""
+
+  echo "Compose files:"
+  if [[ ${#compose_files[@]} -eq 0 ]]; then
+    echo "  (none)"
+  else
+    local _f
+    for _f in "${compose_files[@]}"; do
+      echo "  $_f"
+    done
+  fi
+  echo ""
+
+  echo "Env files:"
+  if [[ ${#env_files[@]} -eq 0 ]]; then
+    echo "  (none)"
+  else
+    local _e
+    for _e in "${env_files[@]}"; do
+      echo "  $_e"
+    done
+  fi
+  echo ""
+
+  echo "Services:"
+  if [[ ${#defined_services[@]} -eq 0 ]]; then
+    echo "  (none)"
+  else
+    # Build a map from container name suffix (service) → state by looking
+    # for a container named "*-SERVICE-*" or matching the docker compose
+    # convention. When there's no running container we show ○ stopped.
+    local svc
+    for svc in "${defined_services[@]}"; do
+      local indicator="○"
+      local state_text="stopped"
+      local i=0
+      while [[ $i -lt ${#container_names[@]} ]]; do
+        local cn="${container_names[$i]}"
+        local cs="${container_states[$i]}"
+        # Docker compose names containers `{project}-{service}-{index}` or
+        # `{project}_{service}_{index}`. Match on the service segment.
+        if [[ "$cn" == *"-${svc}-"* || "$cn" == *"_${svc}_"* || "$cn" == *"-${svc}" || "$cn" == *"_${svc}" ]]; then
+          if [[ "$cs" == "running" ]]; then
+            indicator="●"
+          fi
+          state_text="$cs"
+          break
+        fi
+        i=$((i + 1))
+      done
+      printf "  %-14s %s %s\n" "$svc" "$indicator" "$state_text"
+    done
+  fi
+
+  if [[ ${#urls[@]} -gt 0 ]]; then
+    echo ""
+    echo "URLs:"
+    local _u
+    for _u in "${urls[@]}"; do
+      echo "  $_u"
+    done
+  fi
+
+  echo ""
+  if [[ $total -gt 0 ]]; then
+    echo "Status: $running_count/$total services running"
+  else
+    echo "Status: (no services defined)"
+  fi
+}
+
+# --------------------------------------------------------------------------
+# List
+# --------------------------------------------------------------------------
+
+# Locate the enclosing workspace root for `list`. Returns 0 and prints the
+# path on success; returns 1 (silent) when no workspace is found.
+__xcind-application-find-workspace() {
+  local dir="${1:-$PWD}"
+
+  if [[ ! -d "$dir" ]]; then
+    return 1
+  fi
+  dir=$(cd "$dir" && pwd)
+
+  if __xcind-is-workspace-dir "$dir"; then
+    echo "$dir"
+    return 0
+  fi
+
+  local current="$dir"
+  while true; do
+    local parent
+    parent=$(dirname "$current")
+    if [[ "$parent" == "/" || "$parent" == "$current" ]]; then
+      return 1
+    fi
+    if __xcind-is-workspace-dir "$parent"; then
+      echo "$parent"
+      return 0
+    fi
+    current="$parent"
+  done
+}
+
+__xcind-application-list() {
+  local _flag_json=false
+  local dir=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --json)
+      _flag_json=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-application list [DIR] [--json]"
+      echo ""
+      echo "List applications inside the enclosing workspace. When DIR is"
+      echo "not inside any workspace, lists the single standalone app at"
+      echo "DIR (if any)."
+      echo ""
+      echo "Options:"
+      echo "  --json   Output structured JSON"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for list: $1" >&2
+      exit 1
+      ;;
+    *)
+      dir="$1"
+      shift
+      ;;
+    esac
+  done
+
+  [[ -z "$dir" ]] && dir="$PWD"
+
+  if [[ ! -d "$dir" ]]; then
+    echo "Error: Directory not found: $dir" >&2
+    exit 1
+  fi
+  dir=$(cd "$dir" && pwd)
+
+  # Collect candidate app directories.
+  #
+  # When DIR resolves to a workspace (either directly or via walking up),
+  # enumerate its immediate non-hidden subdirectories whose .xcind.sh is
+  # NOT a workspace marker. Hidden dirs (.git, .cache, etc.) are skipped
+  # intentionally — matches xcind-workspace status.
+  #
+  # When there's no enclosing workspace, fall back to the single
+  # standalone app at DIR (if any). This matches Scind's "single-app
+  # workspace" pattern: lists of one are still lists.
+  local ws_root=""
+  local ws_name=""
+  local -a app_dirs=()
+  local -a app_names=()
+
+  if ws_root=$(__xcind-application-find-workspace "$dir"); then
+    ws_name=$(
+      XCIND_WORKSPACE=""
+      # shellcheck disable=SC1091
+      source "$ws_root/.xcind.sh" 2>/dev/null || true
+      echo "${XCIND_WORKSPACE:-$(basename "$ws_root")}"
+    )
+
+    shopt -s nullglob
+    local subdir
+    for subdir in "$ws_root"/*/; do
+      [[ ! -d "$subdir" ]] && continue
+      local candidate="${subdir%/}"
+      [[ ! -f "$candidate/.xcind.sh" ]] && continue
+      if ! __xcind-is-workspace-dir "$candidate"; then
+        app_dirs+=("$candidate")
+        app_names+=("$(basename "$candidate")")
+      fi
+    done
+    shopt -u nullglob
+  else
+    # Standalone fallback: walk up from DIR looking for an app .xcind.sh.
+    local app_root
+    if app_root=$(__xcind-application-find-root "$dir" 2>/dev/null); then
+      app_dirs+=("$app_root")
+      app_names+=("$(basename "$app_root")")
+    fi
+  fi
+
+  # Sort parallel arrays by name for stable output.
+  local -a sorted_indices=()
+  if [[ ${#app_names[@]} -gt 0 ]]; then
+    local _i _sort_input _sorted_line
+    _sort_input=""
+    _i=0
+    while [[ $_i -lt ${#app_names[@]} ]]; do
+      _sort_input+="${app_names[$_i]}"$'\t'"$_i"$'\n'
+      _i=$((_i + 1))
+    done
+    while IFS= read -r _sorted_line; do
+      [[ -z "$_sorted_line" ]] && continue
+      sorted_indices+=("${_sorted_line##*$'\t'}")
+    done < <(printf '%s' "$_sort_input" | sort -t $'\t' -k1,1)
+  fi
+
+  if [[ "$_flag_json" == true ]]; then
+    if ! command -v jq >/dev/null 2>&1; then
+      echo "Error: jq is required for --json output." >&2
+      exit 1
+    fi
+    local parts=() idx
+    for idx in "${sorted_indices[@]+"${sorted_indices[@]}"}"; do
+      parts+=("$(jq -n \
+        --arg name "${app_names[$idx]}" \
+        --arg path "${app_dirs[$idx]}" \
+        --arg workspace "$ws_name" \
+        '{name: $name, path: $path, workspace: (if $workspace == "" then null else $workspace end)}')")
+    done
+    local apps_json="[]"
+    if [[ ${#parts[@]} -gt 0 ]]; then
+      apps_json=$(printf '%s\n' "${parts[@]}" | jq -s .)
+    fi
+    jq -n \
+      --arg workspace "$ws_name" \
+      --arg root "$ws_root" \
+      --argjson apps "$apps_json" \
+      '{
+        workspace: (if $workspace == "" then null else $workspace end),
+        root: (if $root == "" then null else $root end),
+        applications: $apps
+      }'
+    return 0
+  fi
+
+  if [[ ${#sorted_indices[@]} -eq 0 ]]; then
+    if [[ -n "$ws_root" ]]; then
+      echo "No applications in workspace: $ws_name ($ws_root)"
+    else
+      echo "No applications found at $dir."
+    fi
+    return 0
+  fi
+
+  local ws_display="${ws_name:--}"
+  printf '%-20s %-20s %s\n' "NAME" "WORKSPACE" "PATH"
+  local idx
+  for idx in "${sorted_indices[@]}"; do
+    printf '%-20s %-20s %s\n' \
+      "${app_names[$idx]}" "$ws_display" "${app_dirs[$idx]}"
+  done
+}
+
+# --------------------------------------------------------------------------
+# Help
+# --------------------------------------------------------------------------
+
+__xcind-application-help() {
+  echo "Usage: xcind-application <subcommand>"
+  echo ""
+  echo "Subcommands:"
+  echo "  init [DIR] [OPTIONS]     Initialize an application directory"
+  echo "  status [DIR] [OPTIONS]   Show status for a single application"
+  echo "  list [DIR] [OPTIONS]     List applications in the enclosing workspace"
+  echo ""
+  echo "Init options:"
+  echo "  --name NAME              Set XCIND_APP explicitly (default: directory name)"
+  echo ""
+  echo "Status options:"
+  echo "  --json                   Output structured JSON"
+  echo ""
+  echo "List options:"
+  echo "  --json                   Output structured JSON"
+  echo ""
+  echo "Note: 'status' and 'list' source the .xcind.sh of each application"
+  echo "they inspect. Those files may execute arbitrary shell code. Only run"
+  echo "against applications and workspaces you control."
+  echo ""
+  echo "Options:"
+  echo "  --version, -V  Show version"
+  echo "  --help, -h     Show this help"
+}
+
+# --------------------------------------------------------------------------
+# Dispatch
+# --------------------------------------------------------------------------
+
+# Gentle nudge if jq/yq aren't on PATH (silent in scripts and CI). Placed
+# after the --version short-circuit and before dispatch so --help still
+# prints cleanly.
+if [[ ${1:-} != "--help" && ${1:-} != "-h" && ${1:-} != "" ]]; then
+  __xcind-maybe-warn-deps
+fi
+
+case "${1:-}" in
+init)
+  shift
+  __xcind-application-init "$@"
+  ;;
+status)
+  shift
+  __xcind-application-status "$@"
+  ;;
+list)
+  shift
+  __xcind-application-list "$@"
+  ;;
+--help | -h)
+  __xcind-application-help
+  exit 0
+  ;;
+"")
+  __xcind-application-help
+  exit 0
+  ;;
+*)
+  echo "Error: Unknown command: $1" >&2
+  echo "Run 'xcind-application --help' for usage." >&2
+  exit 1
+  ;;
+esac
