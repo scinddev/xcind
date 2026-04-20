@@ -19,7 +19,23 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 find bin -maxdepth 1 -type f -print | sort >"$tmpdir/bin_files"
 find lib/xcind -maxdepth 1 -type f -name '*.bash' -print | sort >"$tmpdir/lib_files"
-sort "$tmpdir/bin_files" "$tmpdir/lib_files" >"$tmpdir/all_installed"
+
+# Symlink aliases declared in install.sh (e.g., `ln -sf "xcind-application"
+# "$PREFIX/bin/xcind-app"`) are not real files in bin/, but uninstall.sh and
+# package.json legitimately reference them to clean up / publish the alias.
+# Capture them so the alias-aware manifests (uninstall.sh, package.json)
+# don't trigger a mismatch.
+: >"$tmpdir/bin_aliases"
+while IFS= read -r line; do
+  if [[ $line =~ ln\ -sf\ \"[^\"]+\"\ \"\$PREFIX/(bin/[^\"]+)\" ]]; then
+    echo "${BASH_REMATCH[1]}" >>"$tmpdir/bin_aliases"
+  fi
+done <install.sh
+sort -u "$tmpdir/bin_aliases" -o "$tmpdir/bin_aliases"
+
+sort -u "$tmpdir/bin_files" "$tmpdir/bin_aliases" >"$tmpdir/bin_with_aliases"
+sort -u "$tmpdir/bin_files" "$tmpdir/lib_files" >"$tmpdir/all_installed"
+sort -u "$tmpdir/bin_files" "$tmpdir/lib_files" "$tmpdir/bin_aliases" >"$tmpdir/all_with_aliases"
 
 # ---------------------------------------------------------------------------
 # 2. Helper: diff two sorted lists via comm, report missing/extra items
@@ -35,7 +51,7 @@ check_set() {
   local expected_file="$2"
   shift 2
 
-  printf '%s\n' "$@" | sort >"$tmpdir/actual"
+  printf '%s\n' "$@" | sort -u >"$tmpdir/actual"
 
   local missing extra
   missing=$(comm -23 "$expected_file" "$tmpdir/actual")
@@ -86,7 +102,7 @@ while IFS= read -r line; do
     uninstall_files+=("${BASH_REMATCH[1]}")
   fi
 done <uninstall.sh
-check_set "uninstall.sh" "$tmpdir/all_installed" "${uninstall_files[@]}"
+check_set "uninstall.sh" "$tmpdir/all_with_aliases" "${uninstall_files[@]}"
 
 # --- package.json "bin" field (bin/ executables only) ---
 pkg_bin_files=()
