@@ -1303,8 +1303,9 @@ __xcind-maybe-warn-deps() {
 
 # Print per-entry parse diagnostics. Captures parse-entry stderr and
 # emits either the parsed fields or the error message. Writes newline-
-# terminated "key=value;key=value" lines to stdout — callers either print
-# them verbatim (text mode) or fold them into JSON (json mode).
+# terminated TAB-separated `key=value\tkey=value` lines to stdout —
+# callers either print them verbatim (text mode) or fold them into
+# JSON via __xcind-doctor-exports-to-json (json mode).
 __xcind-doctor-parse-exports() {
   if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
     return 0
@@ -1398,11 +1399,28 @@ __xcind-doctor-tsv-rows-for-app() {
 
 # Run xcind-assigned-hook in a throwaway XCIND_GENERATED_DIR with
 # XCIND_DEBUG=1 so the trace output is captured regardless of the real
-# cache state. Prints two sections separated by a literal "--TRACE--" line:
-# stdout of the hook (compose.assigned.yaml path, if written), then the
-# stderr trace. The real XCIND_GENERATED_DIR is not touched.
+# cache state. Emits four labelled sections to stdout in order —
+# `exit_code=<rc>`, `--STDOUT--`, `--STDERR--`, `--OVERLAY--` — which the
+# JSON mode of __xcind-doctor splits on to populate the scratch_run
+# object. The real XCIND_GENERATED_DIR is not touched.
+#
+# Skipped when XCIND_CACHE_DIR is unset or its resolved-config.yaml is
+# missing (e.g. the caller disabled XCIND_HOOKS_GENERATE): the hook
+# would otherwise dereference those paths under `set -u` and abort the
+# whole doctor invocation. The skip emits a `skipped=<reason>` line in
+# place of the usual sections so callers can surface it verbatim.
 __xcind-doctor-scratch-run() {
   local app_root="$1"
+
+  if [[ -z ${XCIND_CACHE_DIR:-} ]]; then
+    echo "skipped=XCIND_CACHE_DIR is unset (GENERATE hooks disabled)"
+    return 0
+  fi
+  if [[ ! -f $XCIND_CACHE_DIR/resolved-config.yaml ]]; then
+    echo "skipped=resolved-config.yaml missing at $XCIND_CACHE_DIR"
+    return 0
+  fi
+
   local scratch
   scratch=$(mktemp -d -t xcind-doctor.XXXXXX)
   local saved_dir="${XCIND_GENERATED_DIR:-}"
@@ -1505,8 +1523,10 @@ __xcind-doctor() {
     fi
     echo ""
 
-    echo "XCIND_PROXY_EXPORTS (${#XCIND_PROXY_EXPORTS[@]} entries):"
-    if [[ ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    local exports_count=0
+    [[ -n ${XCIND_PROXY_EXPORTS+set} ]] && exports_count=${#XCIND_PROXY_EXPORTS[@]}
+    echo "XCIND_PROXY_EXPORTS ($exports_count entries):"
+    if [[ $exports_count -eq 0 ]]; then
       echo "  (unset or empty)"
     else
       local line
