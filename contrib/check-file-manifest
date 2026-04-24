@@ -13,6 +13,35 @@ cd "$PROJECT_ROOT"
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
+# Generated files — written at install/build time by install.sh, flake.nix, or
+# the Dockerfile; referenced by uninstall.sh so the install directory can be
+# cleaned up. Not committed to the repo, so the usual "every file in bin/ or
+# lib/xcind/ must be in every manifest" check doesn't apply.
+GENERATED_FILES=("lib/xcind/xcind-build-info.bash")
+
+# filter_generated: drop any $GENERATED_FILES entries from an array of paths.
+# Usage:
+#   filtered=()
+#   filter_generated filtered "${uninstall_files[@]}"
+filter_generated() {
+  local _out_var="$1"
+  shift
+  local _entry _gen _keep
+  eval "$_out_var=()"
+  for _entry in "$@"; do
+    _keep=1
+    for _gen in "${GENERATED_FILES[@]}"; do
+      if [ "$_entry" = "$_gen" ]; then
+        _keep=0
+        break
+      fi
+    done
+    if [ "$_keep" = 1 ]; then
+      eval "$_out_var+=(\"\$_entry\")"
+    fi
+  done
+}
+
 # ---------------------------------------------------------------------------
 # 1. Discover the source-of-truth file sets
 # ---------------------------------------------------------------------------
@@ -101,7 +130,8 @@ while IFS= read -r line; do
     uninstall_files+=("${BASH_REMATCH[1]}")
   fi
 done <uninstall.sh
-check_set "uninstall.sh" "$tmpdir/all_with_aliases" "${uninstall_files[@]}"
+filter_generated uninstall_files_filtered "${uninstall_files[@]}"
+check_set "uninstall.sh" "$tmpdir/all_with_aliases" "${uninstall_files_filtered[@]}"
 
 # --- package.json "bin" field (bin/ executables only) ---
 pkg_bin_files=()

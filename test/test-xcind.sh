@@ -2994,6 +2994,72 @@ assert_eq "debug silent when XCIND_DEBUG=true (not 1)" "" "$dbg_output"
 unset XCIND_DEBUG
 
 # ======================================================================
+echo ""
+echo "=== Test: __xcind-version-string ==="
+
+# No build-info file is committed; sourcing xcind-lib.bash from the real
+# location exercises the "absent file" branch. For populated cases we set
+# XCIND_BUILD_* directly — the formatter reads those variables and doesn't
+# care whether they came from a sourced file or an assignment.
+
+# No build-info — plain XCIND_VERSION.
+XCIND_BUILD_SOURCE="" XCIND_BUILD_DIRTY=0 result=$(__xcind-version-string)
+assert_eq "no build-info → plain version" "$XCIND_VERSION" "$result"
+
+# Clean Nix-style build info — full suffix.
+XCIND_BUILD_SOURCE="nix" \
+  XCIND_BUILD_SHORT_REV="1a2b3c4" \
+  XCIND_BUILD_DATE="2026-04-20T12:15:30Z" \
+  XCIND_BUILD_DIRTY="0" \
+  result=$(__xcind-version-string)
+assert_eq "clean nix build-info" "${XCIND_VERSION}+nix.1a2b3c4.20260420" "$result"
+
+# Dirty build info — adds .dirty between short rev and date.
+XCIND_BUILD_SOURCE="nix" \
+  XCIND_BUILD_SHORT_REV="1a2b3c4" \
+  XCIND_BUILD_DATE="2026-04-20T12:15:30Z" \
+  XCIND_BUILD_DIRTY="1" \
+  result=$(__xcind-version-string)
+assert_eq "dirty nix build-info" "${XCIND_VERSION}+nix.1a2b3c4.dirty.20260420" "$result"
+
+# Source only — missing short rev, date, and dirty flag.
+XCIND_BUILD_SOURCE="install" \
+  XCIND_BUILD_SHORT_REV="" \
+  XCIND_BUILD_DATE="" \
+  XCIND_BUILD_DIRTY="0" \
+  result=$(__xcind-version-string)
+assert_eq "install with no metadata" "${XCIND_VERSION}+install" "$result"
+
+# Source + date but no short rev.
+XCIND_BUILD_SOURCE="docker" \
+  XCIND_BUILD_SHORT_REV="" \
+  XCIND_BUILD_DATE="2026-04-20T12:15:30Z" \
+  XCIND_BUILD_DIRTY="0" \
+  result=$(__xcind-version-string)
+assert_eq "docker with date only" "${XCIND_VERSION}+docker.20260420" "$result"
+
+# Ensure the build-info vars aren't left set for downstream tests.
+unset XCIND_BUILD_SOURCE XCIND_BUILD_SHORT_REV XCIND_BUILD_LONG_REV \
+  XCIND_BUILD_REF XCIND_BUILD_DATE XCIND_BUILD_DIRTY
+: "${XCIND_BUILD_SOURCE:=}"
+: "${XCIND_BUILD_SHORT_REV:=}"
+: "${XCIND_BUILD_LONG_REV:=}"
+: "${XCIND_BUILD_REF:=}"
+: "${XCIND_BUILD_DATE:=}"
+: "${XCIND_BUILD_DIRTY:=0}"
+
+# ======================================================================
+echo ""
+echo "=== Test: bin/xcind-* --version smoke ==="
+
+# Verify each binary still exits 0 and emits a string containing XCIND_VERSION.
+for bin in xcind-compose xcind-config xcind-proxy xcind-application xcind-workspace; do
+  out=$("$XCIND_ROOT/bin/$bin" --version 2>&1)
+  assert_contains "$bin --version contains XCIND_VERSION" "$XCIND_VERSION" "$out"
+  assert_contains "$bin --version names the binary" "$bin" "$out"
+done
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

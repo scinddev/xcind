@@ -47,6 +47,22 @@ See [Shell Completions](#shell-completions) below.
 xcind-compose --xcind-version
 ```
 
+### Version Output Format
+
+All `xcind-*` binaries report their version using SemVer-compatible syntax:
+
+```
+<XCIND_VERSION>[+<SOURCE>[.<SHORT_REV>][.dirty][.<DATE>]]
+```
+
+- Tagged releases (npm, `:v<version>` Docker tags) print the bare version:
+  `xcind-compose 0.5.0`.
+- Installs from channels that know their provenance (Nix flake, install.sh on
+  a git clone, Docker image outside the release workflow) append a `+SOURCE…`
+  suffix: `xcind-compose 0.5.0+nix.1a2b3c4.20260420`.
+
+See [build-provenance.md](build-provenance.md) for the full schema.
+
 ---
 
 ## `xcind-config`

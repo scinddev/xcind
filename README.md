@@ -696,6 +696,13 @@ Check which version you're running at any time:
 xcind-config --version
 ```
 
+Installs from non-tagged channels (a Nix flake built from `main`, an
+`install.sh` run inside a git clone, a Docker image built outside the release
+workflow) append SemVer build metadata so the output identifies the exact
+source, e.g. `xcind-config 0.5.0+nix.1a2b3c4.20260420`. See
+[docs/reference/build-provenance.md](docs/reference/build-provenance.md) for
+the full format.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.

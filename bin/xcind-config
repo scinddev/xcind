@@ -243,7 +243,7 @@ if [[ $_do_help == true ]]; then
 fi
 
 if [[ $_do_version == true ]]; then
-  echo "xcind-config ${XCIND_VERSION}"
+  echo "xcind-config $(__xcind-version-string)"
   exit 0
 fi
 

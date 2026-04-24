@@ -15,3 +15,5 @@ report.log
 /.direnv/
 # nix
 /result
+# build-provenance file written at install/build time (never committed)
+/lib/xcind/xcind-build-info.bash
