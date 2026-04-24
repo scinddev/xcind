@@ -230,7 +230,7 @@ __xcind-assigned-prime-listener-cache() {
           # Local-address column (ss -H omits the header). Split on `:` or
           # `.` so both IPv4 `0.0.0.0:PORT` and IPv6 `[::]:PORT` surface the
           # trailing port field. Guard the result with a numeric regex so
-          # malformed lines (or a blank output) dont contribute junk.
+          # malformed lines (or a blank output) do not contribute junk.
           n = split($4, a, /[:.]/); p = a[n];
           if (p ~ /^[0-9]+$/) print p
         }
@@ -294,6 +294,15 @@ __xcind-assigned-clear-listener-cache() {
 __xcind-assigned-port-available() {
   local port="$1"
 
+  # Defense-in-depth: port originates in XCIND_PROXY_EXPORTS (user config)
+  # and would otherwise flow into a glob pattern, an ERE regex, and a
+  # `bash -c` string. A malformed value could produce false matches or,
+  # worst case, inject into the /dev/tcp probe script. Allocator entry
+  # validates up front; this second check hardens direct callers too.
+  if ! [[ $port =~ ^[0-9]+$ ]] || ((port < 1 || port > 65535)); then
+    return 1
+  fi
+
   # Batch fast path. Only trusted when the cache was built from a real
   # listener list — "none" means priming failed and the cache is empty,
   # which would otherwise falsely report every port as free.
@@ -328,9 +337,13 @@ __xcind-assigned-port-available() {
 
   # /dev/tcp fallback — a successful connect means something is listening.
   # Cap with timeout(1) when available so a stalled loopback handshake on
-  # a loaded WSL2/Docker Desktop host cant wedge the allocation loop.
+  # a loaded WSL2/Docker Desktop host can't wedge the allocation loop.
+  # Pass the port as a positional parameter rather than interpolating it
+  # into the `bash -c` script so a malformed value can't be parsed as
+  # shell syntax — belt-and-suspenders with the numeric check above.
   if command -v timeout >/dev/null 2>&1; then
-    if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+    # shellcheck disable=SC2016  # "$1" is meant to expand inside the bash -c script, not here
+    if timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$port" 2>/dev/null; then
       return 1
     fi
     return 0
@@ -358,12 +371,27 @@ __xcind-assigned-port-available() {
 # Tool values: "present" | "absent".
 # selected values: "ss" | "netstat" | "dev-tcp-timeout" | "dev-tcp-bare".
 #
-# Side-effect free. The selection order must stay in sync with
-# __xcind-assigned-prime-listener-cache and __xcind-assigned-port-available.
+# "present" means usable — we require the actual flag combo the hook will
+# invoke to succeed, not just that the binary is on PATH. BSD/macOS
+# netstat is a common trap: /usr/sbin/netstat exists but rejects `-lnt`,
+# so a pure command-v check would misreport selected=netstat and suppress
+# the degraded warning, while the hook at runtime silently falls through
+# to the slow /dev/tcp path. Side-effect free (each probe is a read-only
+# query that exits fast when unsupported).
+#
+# Selection order must stay in sync with __xcind-assigned-prime-listener-cache
+# and __xcind-assigned-port-available.
 __xcind-assigned-port-probe-report() {
   local has_ss=absent has_netstat=absent has_timeout=absent selected
-  command -v ss >/dev/null 2>&1 && has_ss=present
-  command -v netstat >/dev/null 2>&1 && has_netstat=present
+
+  if command -v ss >/dev/null 2>&1 && ss -H -tln >/dev/null 2>&1; then
+    has_ss=present
+  fi
+  if command -v netstat >/dev/null 2>&1 && netstat -lnt >/dev/null 2>&1; then
+    has_netstat=present
+  fi
+  # timeout is used as a wrapper, not for its own output — a command-v
+  # check is sufficient and avoids calling it with a dummy command.
   command -v timeout >/dev/null 2>&1 && has_timeout=present
 
   if [[ $has_ss == present ]]; then
@@ -554,6 +582,15 @@ __xcind-assigned-keep-existing-path() {
 # attempts × ~1 listener-snapshot each); batching drops that to one.
 __xcind-assigned-allocate-new() {
   local declared="$1"
+
+  # Validate here so a malformed port surfaces as a clean error instead of
+  # the 100-iteration scan that the defensive check in port-available
+  # would produce. The same digits-only pattern used there is reused so
+  # the two accept/reject contracts stay aligned.
+  if ! [[ $declared =~ ^[0-9]+$ ]] || ((declared < 1 || declared > 65535)); then
+    echo "Error: assigned port '$declared' is not a valid numeric port (1-65535)" >&2
+    return 1
+  fi
 
   __xcind-assigned-prime-listener-cache
   __xcind-debug "allocate-new: declared=$declared probe=$__xcind_assigned_listener_cache_source max_attempts=$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS"

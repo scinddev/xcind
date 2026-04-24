@@ -1262,15 +1262,25 @@ __xcind-check-deps() {
   fi
   printf "  → selected: %s\n" "$__xpp_selected"
 
-  # Degraded mode = no snapshot tool on PATH. Warn loudly — this is the
-  # specific configuration that can make xcind appear to hang on WSL2
-  # because each /dev/tcp connect can stall up to ~2 minutes when the
-  # loopback stack drops SYNs silently.
-  if [[ $__xpp_selected == "dev-tcp-bare" || $__xpp_selected == "dev-tcp-timeout" ]]; then
+  # Degraded mode = no usable snapshot tool. Warning text is tailored to
+  # the selected fallback: the bare /dev/tcp path inherits the kernel's
+  # TCP SYN retransmit timeout (~2 minutes on stock Linux) per probe,
+  # while the timeout-wrapped path caps each probe at 1s — still slow
+  # across 100 attempts on a loaded WSL2 host, but not "appears hung".
+  if [[ $__xpp_selected == "dev-tcp-bare" ]]; then
+    echo "  ! Neither ss nor netstat is installed, and timeout(1) is also"
+    echo "    missing — xcind-assigned-hook will probe /dev/tcp per port"
+    echo "    with no timeout, which can stall up to ~2 minutes per probe"
+    echo "    on WSL2 + Docker Desktop when the loopback stack drops SYNs."
+    echo "    Install iproute2 (ss) or net-tools (netstat) for the fast path;"
+    echo "    at minimum install coreutils (timeout) to cap per-probe stalls."
+    warnings=$((warnings + 1))
+  elif [[ $__xpp_selected == "dev-tcp-timeout" ]]; then
     echo "  ! Neither ss nor netstat is installed — xcind-assigned-hook will"
-    echo "    probe /dev/tcp per port, which can stall for up to ~2 minutes"
-    echo "    per probe on WSL2 + Docker Desktop. Install iproute2 (ss) or"
-    echo "    net-tools (netstat) to restore the fast batch path."
+    echo "    probe /dev/tcp per port. timeout(1) caps each probe at 1s, but"
+    echo "    100 attempts can still add up to ~100s of wall time on a"
+    echo "    busy port range. Install iproute2 (ss) or net-tools (netstat)"
+    echo "    to restore the fast batch path."
     warnings=$((warnings + 1))
   fi
 
@@ -1612,9 +1622,15 @@ __xcind-doctor() {
     echo "  ss:        $__xpp_ss"
     echo "  netstat:   $__xpp_netstat"
     echo "  timeout:   $__xpp_timeout"
-    if [[ $__xpp_selected == "dev-tcp-bare" || $__xpp_selected == "dev-tcp-timeout" ]]; then
-      echo "  ! no listener-scan tool — /dev/tcp per-port fallback can stall"
-      echo "    multi-minute per probe on WSL2+Docker (install iproute2 or net-tools)."
+    if [[ $__xpp_selected == "dev-tcp-bare" ]]; then
+      echo "  ! no listener-scan tool and no timeout — /dev/tcp per-port fallback"
+      echo "    can stall up to ~2 minutes per probe on WSL2+Docker when the"
+      echo "    loopback stack drops SYNs (install iproute2 or net-tools; at"
+      echo "    minimum install coreutils for timeout)."
+    elif [[ $__xpp_selected == "dev-tcp-timeout" ]]; then
+      echo "  ! no listener-scan tool — /dev/tcp per-port fallback is capped at"
+      echo "    ~1s per probe by timeout(1), but 100 attempts still adds up"
+      echo "    (install iproute2 or net-tools to restore the fast batch path)."
     fi
     echo ""
 

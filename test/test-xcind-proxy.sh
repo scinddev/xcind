@@ -2151,6 +2151,49 @@ unset PROBE_CACHE_ERR_ALL
 
 # ======================================================================
 echo ""
+echo "=== Test: port-probe-report rejects unusable netstat ==="
+
+# BSD/macOS netstat exists on PATH but rejects `-lnt`. A command-v-only
+# probe report would call this "present" and pick selected=netstat, but
+# the runtime cascade would silently fall through to /dev/tcp — exactly
+# the divergence review r3139086034 flagged. Assert we agree with the
+# runtime and select dev-tcp-timeout (or dev-tcp-bare) instead.
+BSDNC_BIN=$(mktemp_d)
+_bsdnc_orig_PATH="$PATH"
+cat >"$BSDNC_BIN/netstat" <<'MOCK_BSD_NETSTAT'
+#!/bin/sh
+# Simulate BSD netstat: refuse `-lnt` like the real thing does.
+case "$*" in
+  *-lnt*) echo "netstat: option not supported" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+MOCK_BSD_NETSTAT
+chmod +x "$BSDNC_BIN/netstat"
+export PATH="$BSDNC_BIN:$_bsdnc_orig_PATH"
+
+# Hide ss so netstat is the only listener-scan candidate left.
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+report=$(__xcind-assigned-port-probe-report)
+bsdnc_netstat=$(printf '%s\n' "$report" | awk -F= '$1 == "netstat" {print $2}')
+bsdnc_selected=$(printf '%s\n' "$report" | awk -F= '$1 == "selected" {print $2}')
+assert_eq "BSD netstat -lnt rejected → netstat=absent" "absent" "$bsdnc_netstat"
+assert_not_contains "BSD netstat -lnt rejected → selected != netstat" \
+  "netstat" "$bsdnc_selected"
+
+unset -f command
+rm -rf "$BSDNC_BIN"
+export PATH="$_bsdnc_orig_PATH"
+unset _bsdnc_orig_PATH
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-assigned-allocate-new ==="
 
 # Stub port availability so the allocator sees a deterministic view
@@ -2178,6 +2221,37 @@ assert_eq "allocate fails after max attempts" "1" "$alloc_rc"
 assert_contains "allocate error mentions ceiling" "no free host port" "$alloc_result"
 XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS="$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS_orig"
 unset -f __xcind-assigned-port-available
+
+# Numeric validation — malformed ports must fail fast with a clear error
+# rather than being scanned 100x or hitting the hardened defense in
+# __xcind-assigned-port-available (security review r3139086016).
+bad_alpha=$(__xcind-assigned-allocate-new "abc" 2>&1) && bad_alpha_rc=0 || bad_alpha_rc=$?
+assert_eq "allocate rejects non-numeric port (rc)" "1" "$bad_alpha_rc"
+assert_contains "allocate rejects non-numeric port (msg)" \
+  "not a valid numeric port" "$bad_alpha"
+
+bad_inject=$(__xcind-assigned-allocate-new '3306;whoami' 2>&1) && bad_inj_rc=0 || bad_inj_rc=$?
+assert_eq "allocate rejects injection-looking port" "1" "$bad_inj_rc"
+assert_contains "allocate rejects injection (msg)" \
+  "not a valid numeric port" "$bad_inject"
+
+bad_zero=$(__xcind-assigned-allocate-new "0" 2>&1) && bad_zero_rc=0 || bad_zero_rc=$?
+assert_eq "allocate rejects port 0" "1" "$bad_zero_rc"
+
+bad_big=$(__xcind-assigned-allocate-new "99999" 2>&1) && bad_big_rc=0 || bad_big_rc=$?
+assert_eq "allocate rejects port > 65535" "1" "$bad_big_rc"
+
+# port-available must also treat invalid inputs as "busy" (not pass them
+# through to grep/bash -c) so direct callers get the same defense even
+# if a future refactor bypasses allocate-new's entry check. Re-source
+# the assigned-lib to restore the real function (earlier blocks stubbed
+# it and then `unset -f`ed the stub, leaving the name undefined).
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-assigned-lib.bash"
+__xcind-assigned-port-available "abc" && pa_alpha_rc=0 || pa_alpha_rc=$?
+assert_eq "port-available: non-numeric → busy (defense)" "1" "$pa_alpha_rc"
+__xcind-assigned-port-available '99 rm' && pa_inj_rc=0 || pa_inj_rc=$?
+assert_eq "port-available: injection-looking → busy (defense)" "1" "$pa_inj_rc"
 
 # ======================================================================
 echo ""
