@@ -67,3 +67,14 @@ docker pull ghcr.io/scinddev/xcind:<version>
 ```
 
 You can also check the GitHub Actions tab for workflow run status.
+
+## Build provenance
+
+The release flow does not need any additional steps for build provenance to
+work. `install.sh`, the Nix flake, and the Docker image all write their own
+`lib/xcind/xcind-build-info.bash` at install/build time, which
+`xcind-<command> --version` appends to the output as SemVer build metadata
+(`0.5.0+nix.1a2b3c4.20260420`, etc.). Tagged npm tarballs deliberately omit
+the file — `XCIND_VERSION` alone is authoritative there. See
+[reference/build-provenance.md](reference/build-provenance.md) for the full
+schema.

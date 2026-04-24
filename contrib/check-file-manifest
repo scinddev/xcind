@@ -13,6 +13,23 @@ cd "$PROJECT_ROOT"
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
+# Generated files — written at install/build time by install.sh, flake.nix, or
+# the Dockerfile; referenced by uninstall.sh so the install directory can be
+# cleaned up. Not committed to the repo, so the usual "every file in bin/ or
+# lib/xcind/ must be in every manifest" check doesn't apply. Match these
+# inline as each manifest is parsed and skip them before adding to the
+# comparison list.
+GENERATED_FILES=("lib/xcind/xcind-build-info.bash")
+
+# is_generated <path> — return 0 if path is in $GENERATED_FILES, else 1.
+is_generated() {
+  local _entry="$1" _gen
+  for _gen in "${GENERATED_FILES[@]}"; do
+    [ "$_entry" = "$_gen" ] && return 0
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------------------
 # 1. Discover the source-of-truth file sets
 # ---------------------------------------------------------------------------
@@ -96,10 +113,14 @@ check_set "install.sh" "$tmpdir/all_installed" "${install_files[@]}"
 uninstall_files=()
 while IFS= read -r line; do
   if [[ $line =~ \$PREFIX/(bin/[^\"]+)\" ]]; then
-    uninstall_files+=("${BASH_REMATCH[1]}")
+    path="${BASH_REMATCH[1]}"
   elif [[ $line =~ \$PREFIX/(lib/xcind/[^\"]+)\" ]]; then
-    uninstall_files+=("${BASH_REMATCH[1]}")
+    path="${BASH_REMATCH[1]}"
+  else
+    continue
   fi
+  is_generated "$path" && continue
+  uninstall_files+=("$path")
 done <uninstall.sh
 check_set "uninstall.sh" "$tmpdir/all_with_aliases" "${uninstall_files[@]}"
 

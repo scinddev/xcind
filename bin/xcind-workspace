@@ -23,7 +23,7 @@ unset __xcind_src __xcind_src_dir
 source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
 
 if [[ ${1:-} == "--version" ]] || [[ ${1:-} == "-V" ]]; then
-  echo "xcind-workspace ${XCIND_VERSION}"
+  echo "xcind-workspace $(__xcind-version-string)"
   exit 0
 fi
 
