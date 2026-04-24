@@ -2547,6 +2547,8 @@ YAML
   assert_contains "doctor text: parsed database type=assigned" "type=assigned" "$doc_out"
   assert_contains "doctor text: scratch re-run section" "Scratch re-run" "$doc_out"
   assert_contains "doctor text: scratch trace includes overlay write" "overlay written path=" "$doc_out"
+  assert_contains "doctor text: port-probe section header" "Port probe tools:" "$doc_out"
+  assert_contains "doctor text: port-probe reports selected tool" "selected:" "$doc_out"
 
   # JSON mode — structured output
   doc_json=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
@@ -2564,6 +2566,17 @@ YAML
   assert_eq "doctor json: scratch exit code 0" "0" "$scratch_rc"
   overlay_has_yaml=$(printf '%s' "$doc_json" | jq -r '.scratch_run.overlay | contains("3306:3306")')
   assert_eq "doctor json: scratch overlay contains 3306:3306" "true" "$overlay_has_yaml"
+
+  # Port-probe block: selected must be one of the four canonical values;
+  # ss/netstat/timeout are typed as booleans; degraded tracks whether the
+  # selected path is the slow /dev/tcp fallback.
+  pp_selected=$(printf '%s' "$doc_json" | jq -r '.port_probe.selected')
+  assert_contains "doctor json: port_probe.selected is canonical" \
+    "$pp_selected" "ss netstat dev-tcp-timeout dev-tcp-bare"
+  pp_degraded_type=$(printf '%s' "$doc_json" | jq -r '.port_probe.degraded | type')
+  assert_eq "doctor json: port_probe.degraded is a boolean" "boolean" "$pp_degraded_type"
+  pp_ss_type=$(printf '%s' "$doc_json" | jq -r '.port_probe.ss | type')
+  assert_eq "doctor json: port_probe.ss is a boolean" "boolean" "$pp_ss_type"
 
   # Regression: if xcind-assigned-hook is dropped from XCIND_HOOKS_GENERATE,
   # doctor flags has_assigned_hook=false.

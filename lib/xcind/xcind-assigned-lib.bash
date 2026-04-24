@@ -344,6 +344,80 @@ __xcind-assigned-port-available() {
 }
 
 # --------------------------------------------------------------------------
+# Probe tool reporting (for xcind-config --check and xcind-config doctor)
+# --------------------------------------------------------------------------
+#
+# The hook silently picks whichever probe tool happens to be on PATH; the
+# reporter on WSL2 who kicked off this whole investigation had neither ss
+# nor netstat installed and was paying a multi-minute penalty per run with
+# no visible signal. These helpers expose the same selection logic so that
+# both --check (pre-flight) and doctor (mid-flight) can flag the problem.
+
+# Emit the current port-probe tool landscape as key=value lines on stdout.
+# Keys: ss, netstat, timeout, selected.
+# Tool values: "present" | "absent".
+# selected values: "ss" | "netstat" | "dev-tcp-timeout" | "dev-tcp-bare".
+#
+# Side-effect free. The selection order must stay in sync with
+# __xcind-assigned-prime-listener-cache and __xcind-assigned-port-available.
+__xcind-assigned-port-probe-report() {
+  local has_ss=absent has_netstat=absent has_timeout=absent selected
+  command -v ss >/dev/null 2>&1 && has_ss=present
+  command -v netstat >/dev/null 2>&1 && has_netstat=present
+  command -v timeout >/dev/null 2>&1 && has_timeout=present
+
+  if [[ $has_ss == present ]]; then
+    selected=ss
+  elif [[ $has_netstat == present ]]; then
+    selected=netstat
+  elif [[ $has_timeout == present ]]; then
+    selected=dev-tcp-timeout
+  else
+    selected=dev-tcp-bare
+  fi
+
+  printf 'ss=%s\nnetstat=%s\ntimeout=%s\nselected=%s\n' \
+    "$has_ss" "$has_netstat" "$has_timeout" "$selected"
+}
+
+# Populate caller-scope variables from the probe report. Callers must
+# declare these `local` so they don't leak:
+#   __xpp_ss        present|absent
+#   __xpp_netstat   present|absent
+#   __xpp_timeout   present|absent
+#   __xpp_selected  ss|netstat|dev-tcp-timeout|dev-tcp-bare
+#
+# Parsing via a here-string feeding a loop keeps the contract decoupled
+# from the emit format — if the report ever grows a new field, we only
+# touch the producer and the consumers that care about the new key.
+__xcind-assigned-parse-probe-report() {
+  local _line _key _val _report
+  _report=$(__xcind-assigned-port-probe-report)
+  while IFS= read -r _line; do
+    [[ -z $_line ]] && continue
+    _key="${_line%%=*}"
+    _val="${_line#*=}"
+    case "$_key" in
+    ss) __xpp_ss="$_val" ;;
+    netstat) __xpp_netstat="$_val" ;;
+    timeout) __xpp_timeout="$_val" ;;
+    selected) __xpp_selected="$_val" ;;
+    esac
+  done <<<"$_report"
+}
+
+# True when the selected probe is a /dev/tcp fallback (neither ss nor
+# netstat on PATH). Used by --check and doctor to emit a targeted warning
+# — /dev/tcp-per-port can stall for up to ~2 minutes per probe on WSL2 +
+# Docker Desktop when vpnkit silently drops SYNs, which is the specific
+# failure mode that motivated this telemetry.
+__xcind-assigned-probe-is-degraded() {
+  local __xpp_ss __xpp_netstat __xpp_timeout __xpp_selected
+  __xcind-assigned-parse-probe-report
+  [[ $__xpp_selected == "dev-tcp-timeout" || $__xpp_selected == "dev-tcp-bare" ]]
+}
+
+# --------------------------------------------------------------------------
 # State file I/O (callers must hold the assigned-ports lock)
 # --------------------------------------------------------------------------
 
