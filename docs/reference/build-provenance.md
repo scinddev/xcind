@@ -30,7 +30,7 @@ comparison.
 
 | Context | Output |
 |---|---|
-| Tagged release (npm, docker `:v0.5.0`) | `0.5.0` |
+| Tagged release (npm, docker `:0.5.0`) | `0.5.0` |
 | Nix flake from `main`, clean | `0.5.0+nix.1a2b3c4.20260420` |
 | Nix flake from `main`, dirty tree | `0.5.0+nix.1a2b3c4.dirty.20260420` |
 | `install.sh` from a git clone, clean | `0.5.0+install.1a2b3c4.20260420` |

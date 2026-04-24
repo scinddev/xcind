@@ -55,7 +55,7 @@ All `xcind-*` binaries report their version using SemVer-compatible syntax:
 <XCIND_VERSION>[+<SOURCE>[.<SHORT_REV>][.dirty][.<DATE>]]
 ```
 
-- Tagged releases (npm, `:v<version>` Docker tags) print the bare version:
+- Tagged releases (npm, `:<version>` Docker tags) print the bare version:
   `xcind-compose 0.5.0`.
 - Installs from channels that know their provenance (Nix flake, install.sh on
   a git clone, Docker image outside the release workflow) append a `+SOURCE…`
