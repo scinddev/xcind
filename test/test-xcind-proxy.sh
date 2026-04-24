@@ -1952,6 +1952,205 @@ unset _probe_orig_PATH
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-assigned-prime-listener-cache / port-available batch ==="
+
+# Scratch stderr file reused by the debug-breadcrumb assertions further
+# down; declared up front so all priming tests share one file.
+PROBE_CACHE_ERR_ALL=$(mktemp)
+
+# Mock ss to emit two listeners; priming must populate the cache and
+# subsequent port-available calls must answer from the cache without
+# re-invoking ss (we assert that by pointing ss at a script that would
+# fail the second call and showing we only ever call it once).
+CACHE_BIN=$(mktemp_d)
+_cache_orig_PATH="$PATH"
+CACHE_SS_CALLS="$CACHE_BIN/ss-calls"
+echo 0 >"$CACHE_SS_CALLS"
+cat >"$CACHE_BIN/ss" <<MOCK_SS
+#!/bin/sh
+count=\$(cat "$CACHE_SS_CALLS")
+count=\$((count + 1))
+echo \$count >"$CACHE_SS_CALLS"
+echo "LISTEN 0 128 0.0.0.0:3306 0.0.0.0:*"
+echo "LISTEN 0 128 [::]:3307 [::]:*"
+MOCK_SS
+chmod +x "$CACHE_BIN/ss"
+export PATH="$CACHE_BIN:$_cache_orig_PATH"
+
+# Baseline: cache unprimed.
+__xcind-assigned-clear-listener-cache
+assert_eq "cache starts unprimed" "" "$__xcind_assigned_listener_cache_source"
+
+__xcind-assigned-prime-listener-cache
+assert_eq "prime sets source=ss" "ss" "$__xcind_assigned_listener_cache_source"
+assert_contains "cache has 3306" " 3306 " "$__xcind_assigned_listener_cache"
+assert_contains "cache has 3307 (IPv6)" " 3307 " "$__xcind_assigned_listener_cache"
+assert_eq "prime invoked ss once" "1" "$(cat "$CACHE_SS_CALLS")"
+
+__xcind-assigned-port-available 3306 && cached_busy_rc=0 || cached_busy_rc=$?
+assert_eq "cache hit: 3306 busy" "1" "$cached_busy_rc"
+__xcind-assigned-port-available 3307 && cached_ipv6_rc=0 || cached_ipv6_rc=$?
+assert_eq "cache hit: 3307 (IPv6) busy" "1" "$cached_ipv6_rc"
+__xcind-assigned-port-available 3308 && cached_free_rc=0 || cached_free_rc=$?
+assert_eq "cache hit: 3308 free" "0" "$cached_free_rc"
+assert_eq "cache reused, ss not re-invoked" "1" "$(cat "$CACHE_SS_CALLS")"
+
+# Substring-safety: port 306 must not match the cached 3306 entry.
+__xcind-assigned-port-available 306 && cached_partial_rc=0 || cached_partial_rc=$?
+assert_eq "cache: 306 must not false-match 3306" "0" "$cached_partial_rc"
+
+__xcind-assigned-clear-listener-cache
+assert_eq "clear resets source" "" "$__xcind_assigned_listener_cache_source"
+assert_eq "clear empties cache" "" "$__xcind_assigned_listener_cache"
+
+# After clear, port-available must go live — it will call ss once more.
+__xcind-assigned-port-available 3306 >/dev/null || true
+assert_eq "post-clear: ss invoked again" "2" "$(cat "$CACHE_SS_CALLS")"
+
+rm -rf "$CACHE_BIN"
+export PATH="$_cache_orig_PATH"
+unset _cache_orig_PATH CACHE_SS_CALLS
+
+# ======================================================================
+echo ""
+echo "=== Test: prime-listener-cache netstat fallback ==="
+
+# Hide ss and provide a Linux-net-tools style netstat so priming selects
+# the netstat branch and still populates the cache correctly.
+NCACHE_BIN=$(mktemp_d)
+_ncache_orig_PATH="$PATH"
+cat >"$NCACHE_BIN/netstat" <<'MOCK_NETSTAT'
+#!/bin/sh
+echo "Active Internet connections (only servers)"
+echo "Proto Recv-Q Send-Q Local Address           Foreign Address         State"
+echo "tcp        0      0 0.0.0.0:22347           0.0.0.0:*               LISTEN"
+echo "tcp6       0      0 :::22348                :::*                    LISTEN"
+MOCK_NETSTAT
+chmod +x "$NCACHE_BIN/netstat"
+export PATH="$NCACHE_BIN:$_ncache_orig_PATH"
+
+# shellcheck disable=SC2317  # invoked indirectly via command -v ss
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+__xcind-assigned-prime-listener-cache
+assert_eq "prime (netstat) sets source=netstat" "netstat" "$__xcind_assigned_listener_cache_source"
+assert_contains "netstat cache has 22347" " 22347 " "$__xcind_assigned_listener_cache"
+assert_contains "netstat cache has 22348 (IPv6)" " 22348 " "$__xcind_assigned_listener_cache"
+
+__xcind-assigned-port-available 22347 && nc_busy_rc=0 || nc_busy_rc=$?
+assert_eq "netstat cache hit: 22347 busy" "1" "$nc_busy_rc"
+__xcind-assigned-port-available 22349 && nc_free_rc=0 || nc_free_rc=$?
+assert_eq "netstat cache hit: 22349 free" "0" "$nc_free_rc"
+
+__xcind-assigned-clear-listener-cache
+unset -f command
+rm -rf "$NCACHE_BIN"
+export PATH="$_ncache_orig_PATH"
+unset _ncache_orig_PATH
+
+# ======================================================================
+echo ""
+echo "=== Test: prime-listener-cache falls through when no tool available ==="
+
+# Hide both ss and netstat; priming should record source=none and
+# port-available must NOT consult the empty cache (would false-free).
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && { [ "$2" = "ss" ] || [ "$2" = "netstat" ]; }; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+__xcind-assigned-prime-listener-cache
+assert_eq "prime with no tool: source=none" "none" "$__xcind_assigned_listener_cache_source"
+
+# With source=none, port-available must fall through to live probing
+# (here: the /dev/tcp branch). A stray port almost certainly free should
+# still report free — proving we did not trust the empty cache as
+# "nothing is listening".
+__xcind-assigned-port-available 65431 && none_free_rc=0 || none_free_rc=$?
+assert_eq "source=none: falls through, probes live" "0" "$none_free_rc"
+
+__xcind-assigned-clear-listener-cache
+unset -f command
+
+# ======================================================================
+echo ""
+echo "=== Test: prime-listener-cache debug breadcrumbs ==="
+
+# Capture the breadcrumb emitted when ss / netstat are BOTH missing —
+# this is the diagnostic that lights up for reporters on minimal
+# WSL2 images who never installed iproute2 or net-tools and are now
+# paying the /dev/tcp-per-port cost on every allocation.
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && { [ "$2" = "ss" ] || [ "$2" = "netstat" ]; }; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+XCIND_DEBUG=1 __xcind-assigned-prime-listener-cache 2>"$PROBE_CACHE_ERR_ALL" || true
+probe_stderr=$(<"$PROBE_CACHE_ERR_ALL")
+assert_contains "debug: ss not found breadcrumb" \
+  "ss not found on PATH" "$probe_stderr"
+assert_contains "debug: netstat not found breadcrumb" \
+  "netstat not found on PATH" "$probe_stderr"
+assert_contains "debug: source=none summary" \
+  "source=none" "$probe_stderr"
+assert_contains "debug: names /dev/tcp fallback" \
+  "/dev/tcp per port" "$probe_stderr"
+
+unset -f command
+
+# With ss hidden but netstat present (Linux net-tools), we should see the
+# "ss not found — trying netstat" breadcrumb but NOT the "no tool" line.
+NCACHE_DEBUG_BIN=$(mktemp_d)
+_ncdbg_orig_PATH="$PATH"
+cat >"$NCACHE_DEBUG_BIN/netstat" <<'MOCK_NETSTAT'
+#!/bin/sh
+echo "Active Internet connections (only servers)"
+echo "Proto Recv-Q Send-Q Local Address           Foreign Address         State"
+echo "tcp        0      0 0.0.0.0:22347           0.0.0.0:*               LISTEN"
+MOCK_NETSTAT
+chmod +x "$NCACHE_DEBUG_BIN/netstat"
+export PATH="$NCACHE_DEBUG_BIN:$_ncdbg_orig_PATH"
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+XCIND_DEBUG=1 __xcind-assigned-prime-listener-cache 2>"$PROBE_CACHE_ERR_ALL" || true
+probe_stderr=$(<"$PROBE_CACHE_ERR_ALL")
+assert_contains "debug: ss not found, trying netstat" \
+  "ss not found on PATH — trying netstat" "$probe_stderr"
+assert_contains "debug: netstat source line" \
+  "source=netstat" "$probe_stderr"
+
+unset -f command
+rm -rf "$NCACHE_DEBUG_BIN"
+export PATH="$_ncdbg_orig_PATH"
+unset _ncdbg_orig_PATH
+
+__xcind-assigned-clear-listener-cache
+rm -f "$PROBE_CACHE_ERR_ALL"
+unset PROBE_CACHE_ERR_ALL
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-assigned-allocate-new ==="
 
 # Stub port availability so the allocator sees a deterministic view
@@ -2276,6 +2475,10 @@ trace_stderr=$(<"$trace_err")
 rm -f "$trace_err"
 assert_contains "trace: fresh allocation line" \
   "source=fresh" "$trace_stderr"
+assert_contains "trace: allocate-new probe method" \
+  "allocate-new: declared=3306 probe=" "$trace_stderr"
+assert_contains "trace: allocate-new chose port" \
+  "allocate-new: chose port=" "$trace_stderr"
 assert_contains "trace: overlay written line" \
   "overlay written path=" "$trace_stderr"
 

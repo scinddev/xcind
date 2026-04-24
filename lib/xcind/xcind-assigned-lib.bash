@@ -176,11 +176,134 @@ __xcind-with-assigned-lock() {
 # --------------------------------------------------------------------------
 # Port availability probe
 # --------------------------------------------------------------------------
+#
+# Two-layer design:
+#
+#   1. A batch "listener snapshot" cache populated via a single ss(8) or
+#      netstat(8) invocation. While the cache is primed, single-port queries
+#      are resolved with a pure-bash substring check — no per-port subshell,
+#      no per-port pipeline. Intended for callers that probe many ports
+#      back-to-back (e.g. __xcind-assigned-allocate-new), where the N×3
+#      subprocess fanout dominated wall time on slow environments
+#      (WSL2 + Docker Desktop can spend ~100–500 ms per ss call).
+#
+#   2. When the cache is not primed — or when neither ss nor netstat is
+#      available — __xcind-assigned-port-available falls back to the
+#      original per-port ss/netstat/dev-tcp cascade. This keeps the
+#      function's single-port contract (used by tests and external callers)
+#      unchanged.
+#
+# The cache is module-scope bash state, not a file — priming it does not
+# persist across processes. Callers should prime, probe, and clear within a
+# single hook invocation; see __xcind-assigned-allocate-new.
+
+# Space-wrapped set of listening TCP ports ("" when unprimed, " PORT PORT "
+# when primed). Wrapping with leading/trailing spaces lets us test membership
+# with `[[ $cache == *" $port "* ]]` without worrying about substring matches
+# (e.g. "3306" matching "13306").
+__xcind_assigned_listener_cache=""
+# Source string used to populate the cache: "ss", "netstat", "none" (neither
+# available), or "" (unprimed). The empty-vs-"none" distinction matters:
+# "none" means we tried and can't build a snapshot, so per-port
+# __xcind-assigned-port-available should do its own fallback without
+# consulting the empty cache.
+__xcind_assigned_listener_cache_source=""
+
+# Populate the module-level listener cache in a single shot. Idempotent —
+# calling it again overwrites whatever was there. Never fails: if neither
+# ss nor netstat can be used, the source is set to "none" and callers will
+# fall back to per-port probing.
+#
+# Emits a breadcrumb on every branch outcome so XCIND_DEBUG=1 traces
+# surface exactly which tool was tried and why it didn't stick. Critical
+# for diagnosing WSL2 reports where `ss` and `netstat` are both absent
+# and the hook silently falls back to (slow) /dev/tcp probes.
+__xcind-assigned-prime-listener-cache() {
+  __xcind_assigned_listener_cache=""
+  __xcind_assigned_listener_cache_source=""
+
+  local out
+  if command -v ss >/dev/null 2>&1; then
+    if out=$(ss -H -tln 2>/dev/null); then
+      __xcind_assigned_listener_cache=" $(printf '%s\n' "$out" | awk '
+        {
+          # Local-address column (ss -H omits the header). Split on `:` or
+          # `.` so both IPv4 `0.0.0.0:PORT` and IPv6 `[::]:PORT` surface the
+          # trailing port field. Guard the result with a numeric regex so
+          # malformed lines (or a blank output) dont contribute junk.
+          n = split($4, a, /[:.]/); p = a[n];
+          if (p ~ /^[0-9]+$/) print p
+        }
+      ' | tr "\n" " ")"
+      __xcind_assigned_listener_cache_source="ss"
+      __xcind-debug "prime-listener-cache: source=ss"
+      return 0
+    fi
+    __xcind-debug "prime-listener-cache: ss present but invocation failed — trying netstat"
+  else
+    __xcind-debug "prime-listener-cache: ss not found on PATH — trying netstat"
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    if out=$(netstat -lnt 2>/dev/null); then
+      __xcind_assigned_listener_cache=" $(printf '%s\n' "$out" | awk '
+        # Skip the two header lines that Linux net-tools emits. BSD/macOS
+        # netstat does not take `-lnt` and exits non-zero above, so this
+        # branch only ever sees net-tools output.
+        NR > 2 {
+          n = split($4, a, /[:.]/); p = a[n];
+          if (p ~ /^[0-9]+$/) print p
+        }
+      ' | tr "\n" " ")"
+      __xcind_assigned_listener_cache_source="netstat"
+      __xcind-debug "prime-listener-cache: source=netstat"
+      return 0
+    fi
+    __xcind-debug "prime-listener-cache: netstat present but invocation failed (likely BSD-style, '-lnt' unsupported)"
+  else
+    __xcind-debug "prime-listener-cache: netstat not found on PATH"
+  fi
+
+  # Both unavailable — callers will probe /dev/tcp per port. Note this for
+  # the operator; on WSL2 + Docker Desktop, per-port loopback connects can
+  # stall for seconds each, which is exactly the slowdown this breadcrumb
+  # helps diagnose.
+  local has_timeout=yes
+  command -v timeout >/dev/null 2>&1 || has_timeout=no
+  __xcind-debug "prime-listener-cache: source=none (no ss/netstat) — port-available will use /dev/tcp per port, timeout_wrap=$has_timeout"
+  __xcind_assigned_listener_cache_source="none"
+  return 0
+}
+
+# Reset the listener cache. Callers should invoke this after finishing a
+# batch of probes so later unrelated lookups (e.g. a direct single-port
+# caller) re-probe the live kernel state.
+__xcind-assigned-clear-listener-cache() {
+  __xcind_assigned_listener_cache=""
+  __xcind_assigned_listener_cache_source=""
+}
 
 # Return 0 if the TCP port is free on 127.0.0.1, 1 if something is listening.
-# Prefers ss(8), then netstat(8), then a bash /dev/tcp connect probe.
+#
+# When the batch listener cache has been primed (ss or netstat source), the
+# answer comes from a substring test — no subprocess. Otherwise falls back
+# to the original per-port cascade: ss(8), then netstat(8), then a bash
+# /dev/tcp connect probe. The /dev/tcp probe is wrapped with timeout(1) when
+# available, because loopback connects through the WSL2 + Docker Desktop
+# network stack can otherwise stall for several seconds apiece.
 __xcind-assigned-port-available() {
   local port="$1"
+
+  # Batch fast path. Only trusted when the cache was built from a real
+  # listener list — "none" means priming failed and the cache is empty,
+  # which would otherwise falsely report every port as free.
+  if [[ $__xcind_assigned_listener_cache_source == "ss" ||
+    $__xcind_assigned_listener_cache_source == "netstat" ]]; then
+    if [[ $__xcind_assigned_listener_cache == *" $port "* ]]; then
+      return 1
+    fi
+    return 0
+  fi
 
   if command -v ss >/dev/null 2>&1; then
     if ss -H -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
@@ -204,6 +327,15 @@ __xcind-assigned-port-available() {
   fi
 
   # /dev/tcp fallback — a successful connect means something is listening.
+  # Cap with timeout(1) when available so a stalled loopback handshake on
+  # a loaded WSL2/Docker Desktop host cant wedge the allocation loop.
+  if command -v timeout >/dev/null 2>&1; then
+    if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+      return 1
+    fi
+    return 0
+  fi
+
   if (exec 3<>/dev/tcp/127.0.0.1/"$port") 2>/dev/null; then
     exec 3<&- 3>&- 2>/dev/null || true
     return 1
@@ -340,18 +472,31 @@ __xcind-assigned-keep-existing-path() {
 
 # Scan upward from the declared port for an available host port.
 # Prints the first free port; errors after XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS.
+#
+# Primes the listener cache with a single ss/netstat call so the scan loop
+# answers each port via an in-bash substring check instead of spawning
+# ss|awk|grep per attempt. On a loaded WSL2 + Docker Desktop host the
+# per-iteration fanout was previously the dominant cost of the hook (100
+# attempts × ~1 listener-snapshot each); batching drops that to one.
 __xcind-assigned-allocate-new() {
   local declared="$1"
+
+  __xcind-assigned-prime-listener-cache
+  __xcind-debug "allocate-new: declared=$declared probe=$__xcind_assigned_listener_cache_source max_attempts=$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS"
+
   local port="$declared"
   local attempts=0
   while [[ $attempts -lt $XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS ]]; do
     if __xcind-assigned-port-available "$port"; then
+      __xcind-debug "allocate-new: chose port=$port attempts=$attempts"
+      __xcind-assigned-clear-listener-cache
       printf '%s\n' "$port"
       return 0
     fi
     port=$((port + 1))
     attempts=$((attempts + 1))
   done
+  __xcind-assigned-clear-listener-cache
   echo "Error: no free host port found in ${XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS} attempts from $declared" >&2
   return 1
 }
