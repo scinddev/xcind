@@ -1239,6 +1239,52 @@ __xcind-check-deps() {
   }
 
   echo ""
+  echo "Port probes (used by type=assigned host-port allocation):"
+  local __xpp_ss __xpp_netstat __xpp_timeout __xpp_selected
+  __xcind-assigned-parse-probe-report
+
+  # ss / netstat: individually optional; together required for the fast
+  # batch path. Either one lets us snapshot listeners in a single call.
+  if [[ $__xpp_ss == "present" ]]; then
+    printf "  ✓ %-20s %s\n" "ss" "(iproute2, preferred — one snapshot per allocation)"
+  else
+    printf "  ✗ %-20s %-12s  %s\n" "ss" "(not found)" "iproute2"
+  fi
+  if [[ $__xpp_netstat == "present" ]]; then
+    printf "  ✓ %-20s %s\n" "netstat" "(net-tools, fallback — also snapshots)"
+  else
+    printf "  ✗ %-20s %-12s  %s\n" "netstat" "(not found)" "net-tools"
+  fi
+  if [[ $__xpp_timeout == "present" ]]; then
+    printf "  ✓ %-20s %s\n" "timeout" "(coreutils — caps /dev/tcp stalls at 1s)"
+  else
+    printf "  ✗ %-20s %-12s  %s\n" "timeout" "(not found)" "coreutils (only matters without ss/netstat)"
+  fi
+  printf "  → selected: %s\n" "$__xpp_selected"
+
+  # Degraded mode = no usable snapshot tool. Warning text is tailored to
+  # the selected fallback: the bare /dev/tcp path inherits the kernel's
+  # TCP SYN retransmit timeout (~2 minutes on stock Linux) per probe,
+  # while the timeout-wrapped path caps each probe at 1s — still slow
+  # across 100 attempts on a loaded WSL2 host, but not "appears hung".
+  if [[ $__xpp_selected == "dev-tcp-bare" ]]; then
+    echo "  ! Neither ss nor netstat is installed, and timeout(1) is also"
+    echo "    missing — xcind-assigned-hook will probe /dev/tcp per port"
+    echo "    with no timeout, which can stall up to ~2 minutes per probe"
+    echo "    on WSL2 + Docker Desktop when the loopback stack drops SYNs."
+    echo "    Install iproute2 (ss) or net-tools (netstat) for the fast path;"
+    echo "    at minimum install coreutils (timeout) to cap per-probe stalls."
+    warnings=$((warnings + 1))
+  elif [[ $__xpp_selected == "dev-tcp-timeout" ]]; then
+    echo "  ! Neither ss nor netstat is installed — xcind-assigned-hook will"
+    echo "    probe /dev/tcp per port. timeout(1) caps each probe at 1s, but"
+    echo "    100 attempts can still add up to ~100s of wall time on a"
+    echo "    busy port range. Install iproute2 (ss) or net-tools (netstat)"
+    echo "    to restore the fast batch path."
+    warnings=$((warnings + 1))
+  fi
+
+  echo ""
 
   # --- summary -----------------------------------------------------------
   local issues=$((required_missing + warnings))
@@ -1569,6 +1615,25 @@ __xcind-doctor() {
     fi
     echo ""
 
+    local __xpp_ss __xpp_netstat __xpp_timeout __xpp_selected
+    __xcind-assigned-parse-probe-report
+    echo "Port probe tools:"
+    echo "  selected:  $__xpp_selected"
+    echo "  ss:        $__xpp_ss"
+    echo "  netstat:   $__xpp_netstat"
+    echo "  timeout:   $__xpp_timeout"
+    if [[ $__xpp_selected == "dev-tcp-bare" ]]; then
+      echo "  ! no listener-scan tool and no timeout — /dev/tcp per-port fallback"
+      echo "    can stall up to ~2 minutes per probe on WSL2+Docker when the"
+      echo "    loopback stack drops SYNs (install iproute2 or net-tools; at"
+      echo "    minimum install coreutils for timeout)."
+    elif [[ $__xpp_selected == "dev-tcp-timeout" ]]; then
+      echo "  ! no listener-scan tool — /dev/tcp per-port fallback is capped at"
+      echo "    ~1s per probe by timeout(1), but 100 attempts still adds up"
+      echo "    (install iproute2 or net-tools to restore the fast batch path)."
+    fi
+    echo ""
+
     echo "Scratch re-run of xcind-assigned-hook (XCIND_DEBUG=1):"
     printf '%s\n' "$scratch_output" | sed 's/^/  /'
   else
@@ -1611,6 +1676,15 @@ __xcind-doctor() {
     scratch_stderr=$(printf '%s\n' "$scratch_output" | awk '/^--STDERR--/ {flag=1; next} /^--OVERLAY--/ {flag=0} flag')
     scratch_overlay=$(printf '%s\n' "$scratch_output" | awk '/^--OVERLAY--/ {flag=1; next} flag')
 
+    local __xpp_ss __xpp_netstat __xpp_timeout __xpp_selected
+    __xcind-assigned-parse-probe-report
+    local pp_ss_b pp_nt_b pp_to_b
+    pp_ss_b=$([[ $__xpp_ss == "present" ]] && echo true || echo false)
+    pp_nt_b=$([[ $__xpp_netstat == "present" ]] && echo true || echo false)
+    pp_to_b=$([[ $__xpp_timeout == "present" ]] && echo true || echo false)
+    local pp_degraded
+    pp_degraded=$([[ $__xpp_selected == "dev-tcp-bare" || $__xpp_selected == "dev-tcp-timeout" ]] && echo true || echo false)
+
     jq -n \
       --arg version "$XCIND_VERSION" \
       --arg app_root "$app_root" \
@@ -1627,6 +1701,11 @@ __xcind-doctor() {
       --arg scratch_stdout "$scratch_stdout" \
       --arg scratch_stderr "$scratch_stderr" \
       --arg scratch_overlay "$scratch_overlay" \
+      --arg pp_selected "$__xpp_selected" \
+      --argjson pp_ss "$pp_ss_b" \
+      --argjson pp_netstat "$pp_nt_b" \
+      --argjson pp_timeout "$pp_to_b" \
+      --argjson pp_degraded "$pp_degraded" \
       '{
         version: $version,
         app_root: $app_root,
@@ -1635,6 +1714,13 @@ __xcind-doctor() {
         hooks: {generate: $hooks, has_assigned_hook: $has_assigned_hook},
         sourced_config_files: $sourced_config_files,
         exports: $exports,
+        port_probe: {
+          selected: $pp_selected,
+          ss: $pp_ss,
+          netstat: $pp_netstat,
+          timeout: $pp_timeout,
+          degraded: $pp_degraded
+        },
         scratch_run: {
           exit_code: ($scratch_rc | tonumber? // null),
           stdout: $scratch_stdout,
