@@ -1725,11 +1725,40 @@ printf '#!/bin/sh\necho "jq-1.7"\n' >"$CDEPS_STUBS/jq"
 printf '#!/bin/sh\necho "yq version 4.35.0"\n' >"$CDEPS_STUBS/yq"
 chmod +x "$CDEPS_STUBS/sha256sum" "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq"
 
+# Port-probe stubs. __xcind-check-deps calls command -v on ss / netstat /
+# timeout to describe which host-port probe path xcind-assigned-hook will
+# take; with no stubs on PATH, the "all deps present" case would otherwise
+# degrade to dev-tcp-bare and increment the warning counter.
+printf '#!/bin/sh\nexit 0\n' >"$CDEPS_STUBS/ss"
+printf '#!/bin/sh\nexit 0\n' >"$CDEPS_STUBS/netstat"
+printf '#!/bin/sh\nexit 0\n' >"$CDEPS_STUBS/timeout"
+chmod +x "$CDEPS_STUBS/ss" "$CDEPS_STUBS/netstat" "$CDEPS_STUBS/timeout"
+
 # 1. All required + optional deps present → returns 0, "All dependencies found."
 cdeps_all_out=$(PATH="$CDEPS_STUBS" __xcind-check-deps 2>&1)
 cdeps_all_rc=$?
 assert_eq "all deps present: returns 0" "0" "$cdeps_all_rc"
 assert_contains "all deps present: reports no issues" "All dependencies found." "$cdeps_all_out"
+assert_contains "all deps present: port-probes section present" "Port probes" "$cdeps_all_out"
+assert_contains "all deps present: port-probes selects ss" "selected: ss" "$cdeps_all_out"
+
+# 1b. Port-probe degraded case: hide ss and netstat, leave timeout — the
+# hook would fall back to /dev/tcp-per-port (capped at 1s each), which on
+# WSL2+Docker Desktop can cost multi-minute allocations. --check should
+# surface this as a warning with an actionable install hint.
+PROBE_DEGRADED_STUBS=$(mktemp_d)
+# Copy required stubs but omit ss and netstat so the degraded path fires.
+cp "$CDEPS_STUBS/docker" "$CDEPS_STUBS/bash" "$CDEPS_STUBS/sha256sum" \
+  "$CDEPS_STUBS/jq" "$CDEPS_STUBS/yq" "$CDEPS_STUBS/timeout" \
+  "$PROBE_DEGRADED_STUBS/"
+cdeps_degraded_out=$(PATH="$PROBE_DEGRADED_STUBS" __xcind-check-deps 2>&1)
+assert_contains "port-probe degraded: selects dev-tcp-timeout" \
+  "selected: dev-tcp-timeout" "$cdeps_degraded_out"
+assert_contains "port-probe degraded: warns about /dev/tcp fallback" \
+  "/dev/tcp per port" "$cdeps_degraded_out"
+assert_contains "port-probe degraded: suggests install" \
+  "iproute2" "$cdeps_degraded_out"
+rm -rf "$PROBE_DEGRADED_STUBS"
 
 # 2. Optional deps missing but required present → still returns 0, warns about optional
 # Remove jq from stubs (yq is required as of 0.5.x — see __xcind-check-deps)
@@ -2925,6 +2954,44 @@ export HOME="$_app_status_orig_HOME"
 export PATH="$_app_status_orig_PATH"
 unset _app_status_orig_HOME _app_status_orig_PATH
 rm -rf "$APP_STATUS_WS" "$APP_STATUS_HOME" "$APP_STATUS_OUTSIDE"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-debug helper ==="
+
+# Default (XCIND_DEBUG unset) — must emit nothing
+unset XCIND_DEBUG
+dbg_err=$(mktemp)
+__xcind-debug "should not appear" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug silent when XCIND_DEBUG unset" "" "$dbg_output"
+
+# XCIND_DEBUG=0 — must still emit nothing (explicit-off)
+XCIND_DEBUG=0
+dbg_err=$(mktemp)
+__xcind-debug "should not appear" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug silent when XCIND_DEBUG=0" "" "$dbg_output"
+
+# XCIND_DEBUG=1 — emits prefixed message to stderr
+XCIND_DEBUG=1
+dbg_err=$(mktemp)
+__xcind-debug "hello world" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug emits when XCIND_DEBUG=1" "xcind: debug: hello world" "$dbg_output"
+
+# XCIND_DEBUG=anything-not-1 — silent (not a truthy-match implementation)
+XCIND_DEBUG=true
+dbg_err=$(mktemp)
+__xcind-debug "should not appear" 2>"$dbg_err"
+dbg_output=$(<"$dbg_err")
+rm -f "$dbg_err"
+assert_eq "debug silent when XCIND_DEBUG=true (not 1)" "" "$dbg_output"
+
+unset XCIND_DEBUG
 
 # ======================================================================
 # Cleanup

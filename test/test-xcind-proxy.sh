@@ -1952,6 +1952,248 @@ unset _probe_orig_PATH
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-assigned-prime-listener-cache / port-available batch ==="
+
+# Scratch stderr file reused by the debug-breadcrumb assertions further
+# down; declared up front so all priming tests share one file.
+PROBE_CACHE_ERR_ALL=$(mktemp)
+
+# Mock ss to emit two listeners; priming must populate the cache and
+# subsequent port-available calls must answer from the cache without
+# re-invoking ss (we assert that by pointing ss at a script that would
+# fail the second call and showing we only ever call it once).
+CACHE_BIN=$(mktemp_d)
+_cache_orig_PATH="$PATH"
+CACHE_SS_CALLS="$CACHE_BIN/ss-calls"
+echo 0 >"$CACHE_SS_CALLS"
+cat >"$CACHE_BIN/ss" <<MOCK_SS
+#!/bin/sh
+count=\$(cat "$CACHE_SS_CALLS")
+count=\$((count + 1))
+echo \$count >"$CACHE_SS_CALLS"
+echo "LISTEN 0 128 0.0.0.0:3306 0.0.0.0:*"
+echo "LISTEN 0 128 [::]:3307 [::]:*"
+MOCK_SS
+chmod +x "$CACHE_BIN/ss"
+export PATH="$CACHE_BIN:$_cache_orig_PATH"
+
+# Baseline: cache unprimed.
+__xcind-assigned-clear-listener-cache
+assert_eq "cache starts unprimed" "" "$__xcind_assigned_listener_cache_source"
+
+__xcind-assigned-prime-listener-cache
+assert_eq "prime sets source=ss" "ss" "$__xcind_assigned_listener_cache_source"
+assert_contains "cache has 3306" " 3306 " "$__xcind_assigned_listener_cache"
+assert_contains "cache has 3307 (IPv6)" " 3307 " "$__xcind_assigned_listener_cache"
+assert_eq "prime invoked ss once" "1" "$(cat "$CACHE_SS_CALLS")"
+
+__xcind-assigned-port-available 3306 && cached_busy_rc=0 || cached_busy_rc=$?
+assert_eq "cache hit: 3306 busy" "1" "$cached_busy_rc"
+__xcind-assigned-port-available 3307 && cached_ipv6_rc=0 || cached_ipv6_rc=$?
+assert_eq "cache hit: 3307 (IPv6) busy" "1" "$cached_ipv6_rc"
+__xcind-assigned-port-available 3308 && cached_free_rc=0 || cached_free_rc=$?
+assert_eq "cache hit: 3308 free" "0" "$cached_free_rc"
+assert_eq "cache reused, ss not re-invoked" "1" "$(cat "$CACHE_SS_CALLS")"
+
+# Substring-safety: port 306 must not match the cached 3306 entry.
+__xcind-assigned-port-available 306 && cached_partial_rc=0 || cached_partial_rc=$?
+assert_eq "cache: 306 must not false-match 3306" "0" "$cached_partial_rc"
+
+__xcind-assigned-clear-listener-cache
+assert_eq "clear resets source" "" "$__xcind_assigned_listener_cache_source"
+assert_eq "clear empties cache" "" "$__xcind_assigned_listener_cache"
+
+# After clear, port-available must go live — it will call ss once more.
+__xcind-assigned-port-available 3306 >/dev/null || true
+assert_eq "post-clear: ss invoked again" "2" "$(cat "$CACHE_SS_CALLS")"
+
+rm -rf "$CACHE_BIN"
+export PATH="$_cache_orig_PATH"
+unset _cache_orig_PATH CACHE_SS_CALLS
+
+# ======================================================================
+echo ""
+echo "=== Test: prime-listener-cache netstat fallback ==="
+
+# Hide ss and provide a Linux-net-tools style netstat so priming selects
+# the netstat branch and still populates the cache correctly.
+NCACHE_BIN=$(mktemp_d)
+_ncache_orig_PATH="$PATH"
+cat >"$NCACHE_BIN/netstat" <<'MOCK_NETSTAT'
+#!/bin/sh
+echo "Active Internet connections (only servers)"
+echo "Proto Recv-Q Send-Q Local Address           Foreign Address         State"
+echo "tcp        0      0 0.0.0.0:22347           0.0.0.0:*               LISTEN"
+echo "tcp6       0      0 :::22348                :::*                    LISTEN"
+MOCK_NETSTAT
+chmod +x "$NCACHE_BIN/netstat"
+export PATH="$NCACHE_BIN:$_ncache_orig_PATH"
+
+# shellcheck disable=SC2317  # invoked indirectly via command -v ss
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+__xcind-assigned-prime-listener-cache
+assert_eq "prime (netstat) sets source=netstat" "netstat" "$__xcind_assigned_listener_cache_source"
+assert_contains "netstat cache has 22347" " 22347 " "$__xcind_assigned_listener_cache"
+assert_contains "netstat cache has 22348 (IPv6)" " 22348 " "$__xcind_assigned_listener_cache"
+
+__xcind-assigned-port-available 22347 && nc_busy_rc=0 || nc_busy_rc=$?
+assert_eq "netstat cache hit: 22347 busy" "1" "$nc_busy_rc"
+__xcind-assigned-port-available 22349 && nc_free_rc=0 || nc_free_rc=$?
+assert_eq "netstat cache hit: 22349 free" "0" "$nc_free_rc"
+
+__xcind-assigned-clear-listener-cache
+unset -f command
+rm -rf "$NCACHE_BIN"
+export PATH="$_ncache_orig_PATH"
+unset _ncache_orig_PATH
+
+# ======================================================================
+echo ""
+echo "=== Test: prime-listener-cache falls through when no tool available ==="
+
+# Hide both ss and netstat; priming should record source=none and
+# port-available must NOT consult the empty cache (would false-free).
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && { [ "$2" = "ss" ] || [ "$2" = "netstat" ]; }; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+__xcind-assigned-prime-listener-cache
+assert_eq "prime with no tool: source=none" "none" "$__xcind_assigned_listener_cache_source"
+
+# With source=none, port-available must fall through to live probing
+# (here: the /dev/tcp branch). A stray port almost certainly free should
+# still report free — proving we did not trust the empty cache as
+# "nothing is listening".
+__xcind-assigned-port-available 65431 && none_free_rc=0 || none_free_rc=$?
+assert_eq "source=none: falls through, probes live" "0" "$none_free_rc"
+
+__xcind-assigned-clear-listener-cache
+unset -f command
+
+# ======================================================================
+echo ""
+echo "=== Test: prime-listener-cache debug breadcrumbs ==="
+
+# Capture the breadcrumb emitted when ss / netstat are BOTH missing —
+# this is the diagnostic that lights up for reporters on minimal
+# WSL2 images who never installed iproute2 or net-tools and are now
+# paying the /dev/tcp-per-port cost on every allocation.
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && { [ "$2" = "ss" ] || [ "$2" = "netstat" ]; }; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+XCIND_DEBUG=1 __xcind-assigned-prime-listener-cache 2>"$PROBE_CACHE_ERR_ALL" || true
+probe_stderr=$(<"$PROBE_CACHE_ERR_ALL")
+assert_contains "debug: ss not found breadcrumb" \
+  "ss not found on PATH" "$probe_stderr"
+assert_contains "debug: netstat not found breadcrumb" \
+  "netstat not found on PATH" "$probe_stderr"
+assert_contains "debug: source=none summary" \
+  "source=none" "$probe_stderr"
+assert_contains "debug: names /dev/tcp fallback" \
+  "/dev/tcp per port" "$probe_stderr"
+
+unset -f command
+
+# With ss hidden but netstat present (Linux net-tools), we should see the
+# "ss not found — trying netstat" breadcrumb but NOT the "no tool" line.
+NCACHE_DEBUG_BIN=$(mktemp_d)
+_ncdbg_orig_PATH="$PATH"
+cat >"$NCACHE_DEBUG_BIN/netstat" <<'MOCK_NETSTAT'
+#!/bin/sh
+echo "Active Internet connections (only servers)"
+echo "Proto Recv-Q Send-Q Local Address           Foreign Address         State"
+echo "tcp        0      0 0.0.0.0:22347           0.0.0.0:*               LISTEN"
+MOCK_NETSTAT
+chmod +x "$NCACHE_DEBUG_BIN/netstat"
+export PATH="$NCACHE_DEBUG_BIN:$_ncdbg_orig_PATH"
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+__xcind-assigned-clear-listener-cache
+XCIND_DEBUG=1 __xcind-assigned-prime-listener-cache 2>"$PROBE_CACHE_ERR_ALL" || true
+probe_stderr=$(<"$PROBE_CACHE_ERR_ALL")
+assert_contains "debug: ss not found, trying netstat" \
+  "ss not found on PATH — trying netstat" "$probe_stderr"
+assert_contains "debug: netstat source line" \
+  "source=netstat" "$probe_stderr"
+
+unset -f command
+rm -rf "$NCACHE_DEBUG_BIN"
+export PATH="$_ncdbg_orig_PATH"
+unset _ncdbg_orig_PATH
+
+__xcind-assigned-clear-listener-cache
+rm -f "$PROBE_CACHE_ERR_ALL"
+unset PROBE_CACHE_ERR_ALL
+
+# ======================================================================
+echo ""
+echo "=== Test: port-probe-report rejects unusable netstat ==="
+
+# BSD/macOS netstat exists on PATH but rejects `-lnt`. A command-v-only
+# probe report would call this "present" and pick selected=netstat, but
+# the runtime cascade would silently fall through to /dev/tcp — exactly
+# the divergence review r3139086034 flagged. Assert we agree with the
+# runtime and select dev-tcp-timeout (or dev-tcp-bare) instead.
+BSDNC_BIN=$(mktemp_d)
+_bsdnc_orig_PATH="$PATH"
+cat >"$BSDNC_BIN/netstat" <<'MOCK_BSD_NETSTAT'
+#!/bin/sh
+# Simulate BSD netstat: refuse `-lnt` like the real thing does.
+case "$*" in
+  *-lnt*) echo "netstat: option not supported" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+MOCK_BSD_NETSTAT
+chmod +x "$BSDNC_BIN/netstat"
+export PATH="$BSDNC_BIN:$_bsdnc_orig_PATH"
+
+# Hide ss so netstat is the only listener-scan candidate left.
+# shellcheck disable=SC2317  # invoked indirectly
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "ss" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+report=$(__xcind-assigned-port-probe-report)
+bsdnc_netstat=$(printf '%s\n' "$report" | awk -F= '$1 == "netstat" {print $2}')
+bsdnc_selected=$(printf '%s\n' "$report" | awk -F= '$1 == "selected" {print $2}')
+assert_eq "BSD netstat -lnt rejected → netstat=absent" "absent" "$bsdnc_netstat"
+assert_not_contains "BSD netstat -lnt rejected → selected != netstat" \
+  "netstat" "$bsdnc_selected"
+
+unset -f command
+rm -rf "$BSDNC_BIN"
+export PATH="$_bsdnc_orig_PATH"
+unset _bsdnc_orig_PATH
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-assigned-allocate-new ==="
 
 # Stub port availability so the allocator sees a deterministic view
@@ -1979,6 +2221,37 @@ assert_eq "allocate fails after max attempts" "1" "$alloc_rc"
 assert_contains "allocate error mentions ceiling" "no free host port" "$alloc_result"
 XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS="$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS_orig"
 unset -f __xcind-assigned-port-available
+
+# Numeric validation — malformed ports must fail fast with a clear error
+# rather than being scanned 100x or hitting the hardened defense in
+# __xcind-assigned-port-available (security review r3139086016).
+bad_alpha=$(__xcind-assigned-allocate-new "abc" 2>&1) && bad_alpha_rc=0 || bad_alpha_rc=$?
+assert_eq "allocate rejects non-numeric port (rc)" "1" "$bad_alpha_rc"
+assert_contains "allocate rejects non-numeric port (msg)" \
+  "not a valid numeric port" "$bad_alpha"
+
+bad_inject=$(__xcind-assigned-allocate-new '3306;whoami' 2>&1) && bad_inj_rc=0 || bad_inj_rc=$?
+assert_eq "allocate rejects injection-looking port" "1" "$bad_inj_rc"
+assert_contains "allocate rejects injection (msg)" \
+  "not a valid numeric port" "$bad_inject"
+
+bad_zero=$(__xcind-assigned-allocate-new "0" 2>&1) && bad_zero_rc=0 || bad_zero_rc=$?
+assert_eq "allocate rejects port 0" "1" "$bad_zero_rc"
+
+bad_big=$(__xcind-assigned-allocate-new "99999" 2>&1) && bad_big_rc=0 || bad_big_rc=$?
+assert_eq "allocate rejects port > 65535" "1" "$bad_big_rc"
+
+# port-available must also treat invalid inputs as "busy" (not pass them
+# through to grep/bash -c) so direct callers get the same defense even
+# if a future refactor bypasses allocate-new's entry check. Re-source
+# the assigned-lib to restore the real function (earlier blocks stubbed
+# it and then `unset -f`ed the stub, leaving the name undefined).
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-assigned-lib.bash"
+__xcind-assigned-port-available "abc" && pa_alpha_rc=0 || pa_alpha_rc=$?
+assert_eq "port-available: non-numeric → busy (defense)" "1" "$pa_alpha_rc"
+__xcind-assigned-port-available '99 rm' && pa_inj_rc=0 || pa_inj_rc=$?
+assert_eq "port-available: injection-looking → busy (defense)" "1" "$pa_inj_rc"
 
 # ======================================================================
 echo ""
@@ -2200,6 +2473,210 @@ XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
 XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
 XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
 unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-assigned-hook debug tracing ==="
+
+DBG_APP=$(mktemp_d)
+_orig_dbg_home="$HOME"
+_orig_dbg_xdg="${XDG_STATE_HOME:-}"
+HOME=$(mktemp_d)
+export HOME
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+export XCIND_APP="dbgapp"
+export XCIND_WORKSPACE=""
+export XCIND_SHA="dbgsha"
+export XCIND_CACHE_DIR="$DBG_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$DBG_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+YAML
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() { return 0; }
+
+# Silent by default — no trace output on stderr
+unset XCIND_DEBUG
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+silent_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$silent_err"
+silent_stderr=$(<"$silent_err")
+rm -f "$silent_err"
+assert_not_contains "no debug noise when XCIND_DEBUG unset" "xcind: debug:" "$silent_stderr"
+
+# XCIND_DEBUG=1 — trace lines at every decision point
+export XCIND_DEBUG=1
+
+# Skip path #1: XCIND_PROXY_EXPORTS unset
+unset XCIND_PROXY_EXPORTS
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: skip reason for unset exports" \
+  "skip — XCIND_PROXY_EXPORTS unset or empty" "$trace_stderr"
+
+# Skip path #2: parse swallows errors, no type=assigned in array
+XCIND_PROXY_EXPORTS=("web" "api:3000")
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: count-pass logs entry parse result" \
+  "count-pass entry='web'" "$trace_stderr"
+assert_contains "trace: count-pass shows type=proxied for bare export" \
+  "type=proxied" "$trace_stderr"
+assert_contains "trace: skip reason when no assigned entries" \
+  "no type=assigned entries" "$trace_stderr"
+
+# Allocation trace: fresh (no sticky TSV row yet)
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: fresh allocation line" \
+  "source=fresh" "$trace_stderr"
+assert_contains "trace: allocate-new probe method" \
+  "allocate-new: declared=3306 probe=" "$trace_stderr"
+assert_contains "trace: allocate-new chose port" \
+  "allocate-new: chose port=" "$trace_stderr"
+assert_contains "trace: overlay written line" \
+  "overlay written path=" "$trace_stderr"
+
+# Allocation trace: sticky (second run, same identity → TSV hit)
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+trace_err=$(mktemp)
+xcind-assigned-hook "$DBG_APP" >/dev/null 2>"$trace_err"
+trace_stderr=$(<"$trace_err")
+rm -f "$trace_err"
+assert_contains "trace: sticky allocation line" \
+  "source=sticky" "$trace_stderr"
+
+unset -f __xcind-assigned-port-available
+unset XCIND_DEBUG
+rm -rf "$DBG_APP" "$HOME"
+HOME="$_orig_dbg_home"
+export HOME
+[[ -n $_orig_dbg_xdg ]] && export XDG_STATE_HOME="$_orig_dbg_xdg"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-config doctor ==="
+
+if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+
+  # Redirect the assigned-ports state dir via XDG_STATE_HOME rather than
+  # swapping HOME — docker's CLI plugin lookup (used by `docker compose`)
+  # depends on HOME, and substituting a fresh HOME breaks `docker compose`
+  # in some installations.
+  DOC_STATE=$(mktemp_d)
+  _orig_doc_xdg="${XDG_STATE_HOME:-}"
+  export XDG_STATE_HOME="$DOC_STATE"
+
+  DOC_APP=$(mktemp_d)
+  cat >"$DOC_APP/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("mailpit:8025" "database:3306;type=assigned" "web=app:3000;tls=require")
+EOF
+  cat >"$DOC_APP/compose.yaml" <<'YAML'
+services:
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - target: 8025
+  database:
+    image: mysql
+    ports:
+      - target: 3306
+  app:
+    image: nginx
+    ports:
+      - target: 3000
+YAML
+
+  # Run text-mode doctor via the real CLI. Capture stdout + stderr separately.
+  doc_out=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor 2>/dev/null) && doc_rc=0 || doc_rc=$?
+  assert_eq "doctor (text) exits 0" "0" "$doc_rc"
+  assert_contains "doctor text: version header" "xcind v" "$doc_out"
+  assert_contains "doctor text: lists registered hooks" "xcind-assigned-hook" "$doc_out"
+  assert_contains "doctor text: parsed mailpit type=proxied" "type=proxied" "$doc_out"
+  assert_contains "doctor text: parsed database type=assigned" "type=assigned" "$doc_out"
+  assert_contains "doctor text: scratch re-run section" "Scratch re-run" "$doc_out"
+  assert_contains "doctor text: scratch trace includes overlay write" "overlay written path=" "$doc_out"
+  assert_contains "doctor text: port-probe section header" "Port probe tools:" "$doc_out"
+  assert_contains "doctor text: port-probe reports selected tool" "selected:" "$doc_out"
+
+  # JSON mode — structured output
+  doc_json=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor --json 2>/dev/null) && doc_json_rc=0 || doc_json_rc=$?
+  assert_eq "doctor (json) exits 0" "0" "$doc_json_rc"
+  assert_eq "doctor json: parseable" "0" \
+    "$(printf '%s' "$doc_json" | jq empty >/dev/null 2>&1 && echo 0 || echo 1)"
+  assert_eq "doctor json: has_assigned_hook=true" "true" \
+    "$(printf '%s' "$doc_json" | jq -r '.hooks.has_assigned_hook')"
+  assert_eq "doctor json: exports length" "3" \
+    "$(printf '%s' "$doc_json" | jq -r '.exports | length')"
+  db_type=$(printf '%s' "$doc_json" | jq -r '.exports[] | select(.name == "database") | .type')
+  assert_eq "doctor json: database entry type=assigned" "assigned" "$db_type"
+  scratch_rc=$(printf '%s' "$doc_json" | jq -r '.scratch_run.exit_code')
+  assert_eq "doctor json: scratch exit code 0" "0" "$scratch_rc"
+  overlay_has_yaml=$(printf '%s' "$doc_json" | jq -r '.scratch_run.overlay | contains("3306:3306")')
+  assert_eq "doctor json: scratch overlay contains 3306:3306" "true" "$overlay_has_yaml"
+
+  # Port-probe block: selected must be one of the four canonical values;
+  # ss/netstat/timeout are typed as booleans; degraded tracks whether the
+  # selected path is the slow /dev/tcp fallback.
+  pp_selected=$(printf '%s' "$doc_json" | jq -r '.port_probe.selected')
+  assert_contains "doctor json: port_probe.selected is canonical" \
+    "$pp_selected" "ss netstat dev-tcp-timeout dev-tcp-bare"
+  pp_degraded_type=$(printf '%s' "$doc_json" | jq -r '.port_probe.degraded | type')
+  assert_eq "doctor json: port_probe.degraded is a boolean" "boolean" "$pp_degraded_type"
+  pp_ss_type=$(printf '%s' "$doc_json" | jq -r '.port_probe.ss | type')
+  assert_eq "doctor json: port_probe.ss is a boolean" "boolean" "$pp_ss_type"
+
+  # Regression: if xcind-assigned-hook is dropped from XCIND_HOOKS_GENERATE,
+  # doctor flags has_assigned_hook=false.
+  cat >"$DOC_APP/.xcind.override.sh" <<'EOF'
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-workspace-hook")
+EOF
+  doc_json_drop=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor --json 2>/dev/null)
+  drop_flag=$(printf '%s' "$doc_json_drop" | jq -r '.hooks.has_assigned_hook')
+  assert_eq "doctor json: has_assigned_hook=false when hook dropped" "false" "$drop_flag"
+  doc_text_drop=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
+    "$XCIND_ROOT/bin/xcind-config" doctor 2>/dev/null)
+  assert_contains "doctor text: warns when assigned hook missing" \
+    "xcind-assigned-hook is NOT registered" "$doc_text_drop"
+  rm -f "$DOC_APP/.xcind.override.sh"
+
+  rm -rf "$DOC_APP" "$DOC_STATE"
+  if [[ -n $_orig_doc_xdg ]]; then
+    export XDG_STATE_HOME="$_orig_doc_xdg"
+  else
+    unset XDG_STATE_HOME
+  fi
+
+else
+  echo "  (skipped: docker compose not available)"
+fi
 
 # ======================================================================
 echo ""

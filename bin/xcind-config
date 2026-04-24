@@ -37,6 +37,7 @@ Options:
   --help, -h                            Show this help
   --version, -V                         Show version
   --check                               Check required/optional dependencies
+  doctor [--json]                       Diagnose XCIND_PROXY_EXPORTS / assigned-hook state
 
   --json                                Output resolved config as JSON
   --preview [-- ARGS...]                Show docker compose command
@@ -49,6 +50,8 @@ Options:
 
 Multiple --generate-* flags may be combined when each specifies a file.
 Combine with --json to also output JSON to stdout.
+
+Set XCIND_DEBUG=1 to enable trace logging throughout the hook pipeline.
 HELPEOF
 }
 
@@ -71,6 +74,8 @@ __xcind_config_claim_stdout() {
 _do_help=false
 _do_version=false
 _do_check=false
+_do_doctor=false
+_doctor_mode="text"
 _do_json=false
 _do_preview=false
 _do_gen_docker_wrapper=false
@@ -175,6 +180,14 @@ while [[ $# -gt 0 ]]; do
     esac
     _action_count=$((_action_count + 1))
     ;;
+  doctor)
+    _do_doctor=true
+    _action_count=$((_action_count + 1))
+    if [[ $# -ge 2 && $2 == "--json" ]]; then
+      shift
+      _doctor_mode="json"
+    fi
+    ;;
   --)
     shift
     PREVIEW_EXTRA_ARGS=("$@")
@@ -206,6 +219,9 @@ if [[ $_do_version == true && $_action_count -gt 1 ]]; then
 fi
 if [[ $_do_check == true && $_action_count -gt 1 ]]; then
   __xcind_config_die "--check cannot be combined with other options"
+fi
+if [[ $_do_doctor == true && $_action_count -gt 1 ]]; then
+  __xcind_config_die "doctor cannot be combined with other options"
 fi
 if [[ $_do_preview == true && $_action_count -gt 1 ]]; then
   __xcind_config_die "--preview cannot be combined with other options"
@@ -314,4 +330,12 @@ fi
 
 if [[ $_do_json == true ]]; then
   __xcind-resolve-json "$app_root"
+fi
+
+if [[ $_do_doctor == true ]]; then
+  if [[ $_doctor_mode == "json" ]]; then
+    __xcind-doctor --json
+  else
+    __xcind-doctor
+  fi
 fi

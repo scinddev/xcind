@@ -113,6 +113,12 @@ _xcind_config_completions() {
     return
   fi
 
+  # After "doctor", offer --json
+  if [[ $prev == "doctor" ]]; then
+    COMPREPLY=($(compgen -W "--json" -- "$cur"))
+    return
+  fi
+
   # After --generate-docker-wrapper, --generate-docker-compose-wrapper, or
   # --generate-docker-compose-configuration, complete files (optional output path)
   if [[ $prev == "--generate-docker-wrapper" ]] ||
@@ -124,7 +130,7 @@ _xcind_config_completions() {
 
   local opts="--help -h --version -V --check --json --preview
     --generate-docker-wrapper --generate-docker-compose-wrapper
-    --generate-docker-compose-configuration completion"
+    --generate-docker-compose-configuration completion doctor"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 
