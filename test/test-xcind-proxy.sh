@@ -2412,6 +2412,34 @@ mixed_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
 assert_contains "mixed: emits mysql entry" '"3306:3306"' "$mixed_yaml"
 assert_not_contains "mixed: omits proxied web service" $'\n  web:' "$mixed_yaml"
 
+# Duplicate XCIND_PROXY_EXPORTS entries — port must not appear twice
+# This reproduces the scenario where `+=` is used and the config file is
+# sourced more than once, leaving every entry duplicated in the array.
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - target: 8025
+  database:
+    image: mysql
+    ports:
+      - target: 3306
+YAML
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+XCIND_PROXY_EXPORTS=(
+  "mailpit:8025"
+  "database:3306;type=assigned"
+  "mailpit:8025"
+  "database:3306;type=assigned"
+)
+xcind-assigned-hook "$AHOOK_APP" >/dev/null
+dedup_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+dedup_count=$(printf '%s\n' "$dedup_yaml" | grep -c '"3306:3306"' || true)
+assert_eq "duplicate exports: port appears exactly once" "1" "$dedup_count"
+
 # Port inference from compose
 cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
 services:
