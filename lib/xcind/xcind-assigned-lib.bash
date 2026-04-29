@@ -725,6 +725,21 @@ __xcind-assigned-hook-locked() {
       return 1
     fi
 
+    # Skip duplicate export names — guards against XCIND_PROXY_EXPORTS being
+    # populated with += and the config file sourced more than once.
+    local __dup __en
+    __dup=false
+    for __en in "${exp_names[@]+"${exp_names[@]}"}"; do
+      if [[ $__en == "$_export_name" ]]; then
+        __dup=true
+        break
+      fi
+    done
+    if [[ $__dup == true ]]; then
+      __xcind-debug "assigned-hook: pass-1 entry='$entry' name=$_export_name — duplicate, skipped"
+      continue
+    fi
+
     __xcind-debug "assigned-hook: pass-1 entry='$entry' name=$_export_name service=$_compose_service cport=$_port — queued"
     exp_names+=("$_export_name")
     exp_services+=("$_compose_service")
