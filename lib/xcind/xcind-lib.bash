@@ -8,7 +8,7 @@
 # Version
 # --------------------------------------------------------------------------
 
-export XCIND_VERSION="0.5.0"
+export XCIND_VERSION="0.6.0"
 
 __XCIND_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

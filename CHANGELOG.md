@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-04-30
+
+### Added
+
+- Add xcind-app-hook for app identity labels on all services (#38) by @simensen in [#38](https://github.com/scinddev/xcind/pull/38)
+- Promote yq to required dependency and improve dep warnings (#40) by @simensen in [#40](https://github.com/scinddev/xcind/pull/40)
+- Fix xcind-workspace status to show defined-services denominator (#41) by @simensen in [#41](https://github.com/scinddev/xcind/pull/41)
+- Add assigned-port hook for stable host port bindings (#43) by @simensen in [#43](https://github.com/scinddev/xcind/pull/43)
+- Audit cleanups: yq hook consistency, helper extraction, test fixes (#44) by @simensen in [#44](https://github.com/scinddev/xcind/pull/44)
+- Refactor assigned-ports TSV read loop into shared helpers (#50) by @simensen in [#50](https://github.com/scinddev/xcind/pull/50)
+- Close out April 2026 audit follow-up and sync docs (#51) by @simensen in [#51](https://github.com/scinddev/xcind/pull/51)
+- Unify port exports behind XCIND_PROXY_EXPORTS with ;type= metadata (#52) by @simensen in [#52](https://github.com/scinddev/xcind/pull/52)
+- Add TLS support to the Traefik proxy (ADR-0009) (#53) by @simensen in [#53](https://github.com/scinddev/xcind/pull/53)
+- Add xcind-workspace list backed by a workspace registry (#54) by @simensen in [#54](https://github.com/scinddev/xcind/pull/54)
+- claude/fix-port-assignment-6f4Gk (#56) by @simensen in [#56](https://github.com/scinddev/xcind/pull/56)
+- claude/research-scind-app-commands-8bZ8r (#57) by @simensen in [#57](https://github.com/scinddev/xcind/pull/57)
+- Add XCIND_DEBUG tracing and xcind-config doctor subcommand (#59) by @simensen in [#59](https://github.com/scinddev/xcind/pull/59)
+- fix: deduplicate XCIND_PROXY_EXPORTS entries in assigned hook Pass 1 (#62) by @Copilot in [#62](https://github.com/scinddev/xcind/pull/62)
+
+### Maintenance
+
+- Include detected host-gateway in SHA computation for cache invalidation (#39) by @simensen in [#39](https://github.com/scinddev/xcind/pull/39)
+- Refactor pipeline into reusable __xcind-prepare-app function (#42) by @simensen in [#42](https://github.com/scinddev/xcind/pull/42)
+- Extract test/lib/{assert,setup}.sh and harden test infrastructure (#45) by @simensen in [#45](https://github.com/scinddev/xcind/pull/45)
+- Build xcind-proxy status --json output with jq -n (#46) by @simensen in [#46](https://github.com/scinddev/xcind/pull/46)
+- lib: defensive cleanups in check-deps, resolve-tools, expand-vars (#47) by @simensen in [#47](https://github.com/scinddev/xcind/pull/47)
+- test: close coverage gaps from audit package #03 (#49) by @simensen in [#49](https://github.com/scinddev/xcind/pull/49)
+- bin: fix corner cases in config, workspace, and preview output (#48) by @simensen in [#48](https://github.com/scinddev/xcind/pull/48)
+- Auto-source .xcind.override.sh sibling; unblock ad-hoc proxy exports (#58) by @simensen in [#58](https://github.com/scinddev/xcind/pull/58)
+
+### Other
+
+- docs: Updated docs by @simensen
+- Show init help on `xcind-proxy init -h` / `--help` (#55) by @simensen in [#55](https://github.com/scinddev/xcind/pull/55)
+
+### Removed
+
+- Generalize build provenance across install channels (#61) by @simensen in [#61](https://github.com/scinddev/xcind/pull/61)
 ## [Unreleased]
 
 ### Changed
