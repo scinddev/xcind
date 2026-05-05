@@ -41,7 +41,7 @@ Reference documentation should match the current implementation exactly.
 
 #### 1a: CLI Reference Audit
 
-Compare `docs/reference/cli.md` against actual CLI:
+Compare `engineering/reference/cli.md` against actual CLI:
 
 ```bash
 # Get actual CLI help
@@ -72,7 +72,7 @@ Record discrepancies:
 
 #### 1b: Configuration Reference Audit
 
-Compare `docs/reference/configuration.md` against actual config handling in `lib/xcind/xcind-lib.bash`:
+Compare `engineering/reference/configuration.md` against actual config handling in `lib/xcind/xcind-lib.bash`:
 
 For each option:
 - [ ] Option exists in code
@@ -105,11 +105,11 @@ For each link:
 
 ### Step 3: Check Specifications Against Implementation
 
-For each specification in `docs/specs/`:
+For each specification in `engineering/specs/`:
 
 #### 3a: Read the Specification
 
-Read `docs/specs/{topic}.md` and any `appendices/{topic}/` files. Identify key behavioral claims.
+Read `engineering/specs/{topic}.md` and any `appendices/{topic}/` files. Identify key behavioral claims.
 
 #### 3b: Verify Against Code
 
@@ -130,7 +130,7 @@ For each claim, verify it matches implementation in `bin/` and `lib/xcind/`:
 
 ### Step 4: Review ADR Currency
 
-For each ADR in `docs/decisions/`:
+For each ADR in `engineering/decisions/`:
 
 - Is the decision still "Accepted"?
 - Has it been superseded without marking?

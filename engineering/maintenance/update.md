@@ -48,13 +48,13 @@ Based on the change type, identify which documents need updating:
 
 | Change Type | Documents to Check |
 |-------------|-------------------|
-| New feature | `docs/specs/`, `docs/reference/` (+ appendices) |
-| Feature modified | `docs/specs/`, `docs/reference/`, `docs/behaviors/` |
+| New feature | `engineering/specs/`, `engineering/reference/` (+ appendices) |
+| Feature modified | `engineering/specs/`, `engineering/reference/`, `engineering/behaviors/` |
 | Feature removed | All layers (remove references) |
-| Bug fix (behavior change) | `docs/specs/`, `docs/behaviors/` |
-| Config changed | `docs/reference/configuration.md`, `docs/specs/` if behavior affected |
-| CLI changed | `docs/reference/cli.md`, `docs/specs/` if behavior affected |
-| Dependencies changed | `docs/implementation/tech-stack.md`, possibly new ADR |
+| Bug fix (behavior change) | `engineering/specs/`, `engineering/behaviors/` |
+| Config changed | `engineering/reference/configuration.md`, `engineering/specs/` if behavior affected |
+| CLI changed | `engineering/reference/cli.md`, `engineering/specs/` if behavior affected |
+| Dependencies changed | `engineering/implementation/tech-stack.md`, possibly new ADR |
 
 **Note**: Remember to check both main `{topic}.md` files and `appendices/{topic}/` directories.
 
@@ -81,7 +81,7 @@ Signals that an ADR is needed:
 - "We're now using a different pattern..."
 - "This breaks backward compatibility because..."
 
-If yes, create a new ADR in `docs/decisions/` before proceeding.
+If yes, create a new ADR in `engineering/decisions/` before proceeding.
 
 ---
 
@@ -89,8 +89,8 @@ If yes, create a new ADR in `docs/decisions/` before proceeding.
 
 #### For Specification Updates
 
-1. Read the current specification (`docs/specs/{feature}.md`)
-2. Also read any appendices in `docs/specs/appendices/{feature}/`
+1. Read the current specification (`engineering/specs/{feature}.md`)
+2. Also read any appendices in `engineering/specs/appendices/{feature}/`
 3. Update behavior descriptions to match new implementation
 4. Update examples that are now incorrect
 5. Increment the patch version
@@ -98,14 +98,14 @@ If yes, create a new ADR in `docs/decisions/` before proceeding.
 
 #### For Reference Updates
 
-1. Read the current reference document (`docs/reference/{topic}.md`)
+1. Read the current reference document (`engineering/reference/{topic}.md`)
 2. Update syntax, options, defaults as needed
 3. Update examples
 4. Check thresholds: new large content may need to go to appendix
 
 #### For Behavior Updates
 
-1. Read the current feature file in `docs/behaviors/`
+1. Read the current feature file in `engineering/behaviors/`
 2. Update Given/When/Then steps to match new behavior
 3. Add new scenarios for new behavior
 4. Remove scenarios for removed behavior
@@ -147,9 +147,9 @@ Architecture (if structural change)
 > **Documents Updated**:
 > | Document | Changes Made |
 > |----------|--------------|
-> | `docs/specs/X.md` | Updated Y behavior |
-> | `docs/reference/cli.md` | Added Z option |
-> | `docs/behaviors/{domain}/X.feature` | Updated scenario |
+> | `engineering/specs/X.md` | Updated Y behavior |
+> | `engineering/reference/cli.md` | Added Z option |
+> | `engineering/behaviors/{domain}/X.feature` | Updated scenario |
 >
 > **Cross-Links Verified**: Yes
 > **New ADR Created**: {Yes: ADR-NNNN | No}

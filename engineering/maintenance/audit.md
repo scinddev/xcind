@@ -2,13 +2,13 @@
 
 **For AI Agents**: Use this audit process to verify documentation completeness and accuracy.
 
-**Terminology**: See the [Glossary](../DOCUMENTATION-GUIDE.md#glossary) for definitions of `DOCS_DIR` and other terms.
+**Terminology**: See the [Glossary](../DOCUMENTATION-GUIDE.md#glossary) for definitions of `ENG_DOCS_DIR` and other terms.
 
 ---
 
 ## Audit Configuration
 
-- **Documentation Root** (`DOCS_DIR`): `docs/`
+- **Documentation Root** (`ENG_DOCS_DIR`): `engineering/`
 - **Install Type**: Fresh (Xcind-native documentation)
 
 ---
@@ -39,7 +39,7 @@
 
 ### Step 1: Inventory Documentation
 
-Scan the documentation root (`docs/`) and categorize all content:
+Scan the documentation root (`engineering/`) and categorize all content:
 
 #### 1a: Count All Content
 

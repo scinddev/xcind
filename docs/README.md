@@ -1,33 +1,44 @@
-# Xcind Documentation
+# Xcind User Documentation
 
-Welcome to the Xcind documentation. Xcind is a slim Docker Compose wrapper that automatically resolves compose files, environment files, and override variants based on per-application configuration.
+Welcome. Xcind is a slim wrapper around `docker compose` that resolves compose files, env files, and overrides per-application from a `.xcind.sh` config — and adds a shared Traefik proxy, host-gateway normalization, and workspace-mode networking on top.
 
-Xcind implements concepts from the [Scind specification](https://github.com/scinddev/scind).
+These docs are organized by what you're trying to do.
 
-## Quick Navigation
+## Getting started
 
-| Layer | Description | Entry Point |
-|-------|-------------|-------------|
-| **Decisions** | Architectural decision records | [decisions/](./decisions/README.md) |
-| **Product** | Vision, comparison, roadmap | [product/](./product/README.md) |
-| **Architecture** | System design overview | [architecture/](./architecture/README.md) |
-| **Specifications** | Detailed feature specs | [specs/](./specs/README.md) |
-| **Reference** | CLI and configuration reference | [reference/](./reference/README.md) |
-| **Behaviors** | Executable behavior specifications | [behaviors/](./behaviors/README.md) |
-| **Implementation** | Developer guides | [implementation/](./implementation/README.md) |
-| **Maintenance** | Documentation maintenance workflows | [maintenance/](./maintenance/README.md) |
+Step-by-step walkthroughs for first-time users.
 
-## Getting Started
+- [Installation](./getting-started/installation.md) — install Xcind via npm, install script, Nix, or Docker
+- [Your first project](./getting-started/first-project.md) — initialize an app, run it, hit a URL
 
-1. Read the [Product Vision](./product/vision.md) to understand what Xcind does
-2. See the project [README](../README.md) for installation and usage
-3. Review [Decisions](./decisions/README.md) for design rationale
+## How-to guides
 
-## Other Documentation
+Recipes for specific tasks.
 
-- [Release Process](./releasing.md)
-- [Archive](./archive/) — Historical PRDs and research documents
+- [Add Xcind to an existing Compose project](./guides/add-to-existing-project.md)
+- [Set up the Traefik proxy](./guides/proxy-setup.md)
+- [Workspaces vs single apps](./guides/workspaces-vs-apps.md)
+- [Author custom hooks](./guides/custom-hooks.md)
+- [`host.docker.internal` and host-gateway](./guides/host-gateway.md)
+- [IDE and tool integration](./guides/tools-ide-integration.md)
+- [Environment files: compose-level vs app-level](./guides/env-files.md)
+- [Override files](./guides/override-files.md)
 
-## Documentation Guide
+## Reference
 
-For contributors, see the [Documentation Guide](./DOCUMENTATION-GUIDE.md) for how to maintain and extend this documentation.
+Quick lookups. For exhaustive detail (every flag, every variable), see the [engineering reference](../engineering/reference/).
+
+- [CLI](./reference/cli.md) — commands, common flags
+- [Configuration](./reference/configuration.md) — `.xcind.sh` variables you'll actually set
+
+## Explanation
+
+Conceptual background.
+
+- [Architecture](./explanation/architecture.md) — overlay model, networking, project isolation
+- [Conventions](./explanation/conventions.md) — naming, ports, structure
+- [Glossary](./explanation/glossary.md)
+
+## Contributing
+
+Building or maintaining Xcind itself? See [`engineering/`](../engineering/) — ADRs, specs, behaviors, and the full Layered Documentation System.
