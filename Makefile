@@ -23,7 +23,7 @@ SHELL_FILES = \
 	install.sh \
 	uninstall.sh
 
-.PHONY: test format shfmt shellcheck lint check
+.PHONY: test format shfmt shellcheck lint check changelog-preview
 
 test:
 	bash test/test-xcind.sh
@@ -41,3 +41,6 @@ shellcheck:
 lint: shfmt shellcheck
 
 check: lint test
+
+changelog-preview:
+	git cliff --unreleased

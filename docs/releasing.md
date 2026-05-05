@@ -11,6 +11,20 @@ The following secrets must be configured in the GitHub repository settings
 
 `GITHUB_TOKEN` is provided automatically by GitHub Actions.
 
+## Previewing pending changes
+
+`CHANGELOG.md` is intentionally not maintained between releases — there is
+no `[Unreleased]` section to keep in sync as PRs land. To see what the next
+release notes will look like, run:
+
+```bash
+make changelog-preview
+```
+
+This runs `git cliff --unreleased` and prints the generated section to
+stdout without modifying any files. The actual `CHANGELOG.md` update happens
+inside `contrib/release` at version-bump time.
+
 ## Bump the version
 
 Run `contrib/release` with the desired bump type:
