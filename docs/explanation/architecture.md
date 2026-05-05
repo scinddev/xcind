@@ -17,11 +17,13 @@ docker compose \
     --env-file .env \
     -f compose.yaml \
     -f compose.override.yaml \
-    -f .xcind/generated/compose.naming.yaml \
-    -f .xcind/generated/compose.host-gateway.yaml \
-    -f .xcind/generated/compose.proxy.yaml \
+    -f .xcind/generated/<sha>/compose.naming.yaml \
+    -f .xcind/generated/<sha>/compose.host-gateway.yaml \
+    -f .xcind/generated/<sha>/compose.proxy.yaml \
     up -d
 ```
+
+`<sha>` is a content hash over your config and compose files. Each unique config produces its own subdirectory, and stale ones are reused or invalidated automatically.
 
 You can see the full resolved command at any time:
 
@@ -35,7 +37,7 @@ xcind-config --preview
 2. **Detect workspace.** If the parent directory has `XCIND_IS_WORKSPACE=1`, source it first.
 3. **Source `.xcind.sh`.** Apply app-level config; load `XCIND_ADDITIONAL_CONFIG_FILES`.
 4. **Resolve files.** For each compose / env / config pattern, expand variables, check disk, include `.override` siblings.
-5. **Run generation hooks.** Each hook emits an overlay file under `.xcind/generated/`. Output is cached by content SHA.
+5. **Run generation hooks.** Each hook emits an overlay file under `.xcind/generated/<sha>/`. Output is cached by content SHA.
 6. **Run execute hooks.** Side-effect hooks (e.g. ensure the proxy network exists). These run every invocation, no cache.
 7. **Invoke `docker compose`.** With assembled `--env-file` and `-f` flags, plus your forwarded arguments.
 

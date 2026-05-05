@@ -57,7 +57,7 @@ Bindings persist across restarts under `~/.local/state/xcind/proxy/assigned-port
 
 ## Customize the proxy
 
-Edit `~/.config/xcind/proxy/config.sh` (created by `init`, never overwritten):
+`xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` with the current values. The file is yours to edit:
 
 ```bash
 XCIND_PROXY_DOMAIN="localhost"        # domain suffix for hostnames
@@ -68,12 +68,20 @@ XCIND_PROXY_DASHBOARD_PORT="8080"
 XCIND_PROXY_AUTO_START="1"
 ```
 
-Apply changes:
+Two ways to apply changes:
 
 ```bash
-xcind-proxy up         # regenerates and applies
-xcind-proxy up --force # also recreates the proxy container and network
+# Edit config.sh by hand, then re-run up to regenerate compose / Traefik config:
+xcind-proxy up
+
+# Or pass flags to `init` — it merges existing config.sh values with your overrides
+# and rewrites the file:
+xcind-proxy init --proxy-domain xcind.localhost --tls-mode auto
+
+xcind-proxy up --force                # recreate proxy container + network
 ```
+
+`xcind-proxy up` on its own never modifies `config.sh`; only `xcind-proxy init` rewrites it.
 
 ## Day-to-day commands
 

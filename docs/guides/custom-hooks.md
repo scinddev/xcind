@@ -4,13 +4,17 @@ Hooks let Xcind generate additional compose files dynamically (or run preconditi
 
 ## Built-in hooks (already enabled)
 
-| Hook | Generates | Purpose |
-|------|-----------|---------|
-| `xcind-naming-hook` | `compose.naming.yaml` | Per-app project name to avoid collisions across workspaces |
-| `xcind-app-env-hook` | env_file overrides | Inject `XCIND_APP_ENV_FILES` into every service |
-| `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Map `host.docker.internal` for every service |
-| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels from `XCIND_PROXY_EXPORTS` |
-| `xcind-workspace-hook` | `compose.workspace.yaml` | Cross-app aliases on the `{workspace}-internal` network |
+| Hook | Generates | Purpose | Without `yq` |
+|------|-----------|---------|--------------|
+| `xcind-naming-hook` | `compose.naming.yaml` | Per-app project name to avoid collisions across workspaces | works |
+| `xcind-app-hook` | `compose.app.yaml` | Adds `xcind.app.*` labels to every service | soft-skip |
+| `xcind-app-env-hook` | env_file overrides | Inject `XCIND_APP_ENV_FILES` into every service | **hard-fail** |
+| `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Map `host.docker.internal` for every service | soft-skip |
+| `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels from `XCIND_PROXY_EXPORTS` | **hard-fail** |
+| `xcind-assigned-hook` | host-port bindings | Stable host ports for `type=assigned` exports | **hard-fail** |
+| `xcind-workspace-hook` | `compose.workspace.yaml` | Cross-app aliases on the `{workspace}-internal` network | soft-skip |
+
+The "hard-fail" hooks abort the run with an error if `yq` is missing — their output is load-bearing. "Soft-skip" hooks emit a consolidated warning at the end of the run and let the rest of the pipeline proceed.
 
 Disable any of them by overriding in your `.xcind.sh`:
 
@@ -62,8 +66,8 @@ XCIND_HOOKS_EXECUTE+=("my-precondition-hook")
 
 ## Notes
 
-- Most generation hooks rely on `yq`. If `yq` is missing the hook is skipped with a warning.
-- Hook output lives at `$XCIND_APP_ROOT/.xcind/generated/`. Add this directory to `.gitignore`.
+- Most generation hooks rely on `yq`. Behavior when `yq` is missing varies by hook (see the table above): load-bearing hooks (proxy, app-env, assigned) abort the run; the others emit a warning and continue.
+- Hook output lives at `$XCIND_APP_ROOT/.xcind/generated/<sha>/` (one subdirectory per content hash). Add `.xcind/` to `.gitignore`.
 - Custom hooks see all `XCIND_*` variables that the rest of Xcind sees.
 
 ## Where to go next

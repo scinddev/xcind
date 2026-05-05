@@ -6,21 +6,21 @@ Override files are the standard Compose mechanism for layering local-only change
 
 For every file pattern Xcind checks (compose files, env files, additional config files), it also checks for an `.override` variant on disk. Both are included if present; missing files are silently skipped.
 
-For files with a recognized extension (`.yaml`, `.yml`, `.json`, `.hcl`, `.toml`), `.override` is inserted **before** the extension:
+For files with a recognized extension (`.yaml`, `.yml`, `.json`, `.hcl`, `.toml`, `.sh`), `.override` is inserted **before** the extension:
 
 | Base | Override |
 |------|----------|
 | `compose.yaml` | `compose.override.yaml` |
 | `compose.common.yaml` | `compose.common.override.yaml` |
 | `docker-bake.hcl` | `docker-bake.override.hcl` |
+| `.xcind-tools.sh` | `.xcind-tools.override.sh` |
 
-For all other files (env files, shell scripts), `.override` is **appended**:
+For all other files (typically env files), `.override` is **appended**:
 
 | Base | Override |
 |------|----------|
 | `.env` | `.env.override` |
 | `.env.local` | `.env.local.override` |
-| `.xcind-tools.sh` | `.xcind-tools.sh.override` |
 
 ## Common pattern
 
@@ -37,13 +37,14 @@ This is identical to the convention `docker compose` itself uses for `compose.ov
 
 ## Generated overrides — don't hand-edit
 
-Xcind hooks generate compose overlay files at `$XCIND_APP_ROOT/.xcind/generated/`. Examples: `compose.naming.yaml`, `compose.proxy.yaml`, `compose.workspace.yaml`, `compose.host-gateway.yaml`. These are output, not input — re-generated on every relevant change. Add `.xcind/generated/` to `.gitignore`.
+Xcind hooks generate compose overlay files at `$XCIND_APP_ROOT/.xcind/generated/<sha>/` (where `<sha>` is a content hash). Examples: `compose.naming.yaml`, `compose.proxy.yaml`, `compose.workspace.yaml`, `compose.host-gateway.yaml`. These are output, not input — re-generated when their inputs change, replayed from cache otherwise. Add `.xcind/` to `.gitignore`.
 
-If you need to tweak something a generated file produces, prefer:
+If you need to tweak something a generated file produces, prefer (in order):
 
 1. Configuration (`XCIND_PROXY_EXPORTS`, `XCIND_HOST_GATEWAY`, etc.).
-2. Your own `compose.override.yaml`, which loads after the generated overlays.
-3. A [custom hook](./custom-hooks.md), if you need conditional logic.
+2. A [custom hook](./custom-hooks.md), since hook-generated overlays load **after** your `compose.override.yaml` and so have the final word in `docker compose`'s `-f` ordering.
+
+Your own `compose.override.yaml` loads with the rest of your compose files (before generated overlays). It can still adjust most things — but if a generated overlay sets the same field, the generated value wins. When that's a problem, write a custom hook instead.
 
 ## Where to go next
 
