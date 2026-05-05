@@ -90,5 +90,5 @@ work. `install.sh`, the Nix flake, and the Docker image all write their own
 `xcind-<command> --version` appends to the output as SemVer build metadata
 (`0.5.0+nix.1a2b3c4.20260420`, etc.). Tagged npm tarballs deliberately omit
 the file — `XCIND_VERSION` alone is authoritative there. See
-[reference/build-provenance.md](reference/build-provenance.md) for the full
+[Build Provenance](../reference/build-provenance.md) for the full
 schema.

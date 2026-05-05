@@ -44,8 +44,11 @@ See [Shell Completions](#shell-completions) below.
 ### Version
 
 ```bash
-xcind-compose --xcind-version
+xcind-compose --version
+xcind-compose -V
 ```
+
+`--xcind-version` is retained as a hidden compatibility alias.
 
 ### Version Output Format
 
@@ -77,6 +80,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 | `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `tools`) |
 | `--preview [-- ARGS...]` | The `docker compose` command line that would run |
 | `--check` | Check whether required and optional dependencies are available |
+| `doctor [--json]` | Diagnose `XCIND_PROXY_EXPORTS` and assigned-port hook state |
 | `--generate-docker-wrapper[=FILE]` | Generate a POSIX `docker` wrapper script |
 | `--generate-docker-compose-wrapper[=FILE]` | Generate a POSIX `docker-compose` wrapper script |
 | `--generate-docker-compose-configuration[=FILE]` | Generate resolved compose config |
@@ -93,6 +97,8 @@ xcind-config                                       # Show help
 xcind-config --json                                # JSON output
 xcind-config --preview                             # Show the docker compose command line
 xcind-config --check                               # Check dependencies
+xcind-config doctor                                # Diagnose proxy export and assigned-port state
+xcind-config doctor --json                         # Diagnose with JSON output
 xcind-config --generate-docker-wrapper             # Generate docker wrapper to stdout
 xcind-config --generate-docker-wrapper=bin/docker   # Generate docker wrapper to file
 xcind-config --generate-docker-compose-wrapper     # Generate docker-compose wrapper to stdout
@@ -136,6 +142,12 @@ Runs independently of app-root detection. Reports the availability of:
 - Required dependencies (e.g., `docker`, `docker compose`, `yq`)
 - Optional dependencies (e.g., `jq` for JSON output)
 
+### `doctor` Mode
+
+Diagnoses the current application's `XCIND_PROXY_EXPORTS` declarations and
+assigned-port hook state. With `--json`, outputs structured diagnostics for
+scripts and tools.
+
 ---
 
 ## `xcind-proxy`
@@ -163,6 +175,10 @@ Manages the shared Traefik reverse proxy infrastructure.
 | `--image IMAGE` | `XCIND_PROXY_IMAGE` | `traefik:v3` |
 | `--dashboard BOOL` | `XCIND_PROXY_DASHBOARD` | `false` |
 | `--dashboard-port PORT` | `XCIND_PROXY_DASHBOARD_PORT` | `8080` |
+| `--tls-mode MODE` | `XCIND_PROXY_TLS_MODE` | `auto` |
+| `--https-port PORT` | `XCIND_PROXY_HTTPS_PORT` | `443` |
+| `--tls-cert-file PATH` | `XCIND_PROXY_TLS_CERT_FILE` | Empty |
+| `--tls-key-file PATH` | `XCIND_PROXY_TLS_KEY_FILE` | Empty |
 
 Flags set-and-persist: values are merged with any existing `config.sh` and written back.
 
@@ -179,6 +195,7 @@ Flags set-and-persist: values are merged with any existing `config.sh` and writt
 xcind-proxy init          # Create proxy config with defaults
 xcind-proxy init --proxy-domain xcind.localhost  # Set domain
 xcind-proxy init --http-port 8081 --dashboard true  # Multiple flags
+xcind-proxy init --tls-mode custom --tls-cert-file cert.pem --tls-key-file key.pem
 xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy
