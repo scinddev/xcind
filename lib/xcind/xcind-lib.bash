@@ -1394,7 +1394,7 @@ __xcind-maybe-warn-deps() {
 # config files, assigned-ports TSV rows for this app, and generated-dir
 # overlay state. Finishes with a scratch re-run of xcind-assigned-hook
 # under XCIND_DEBUG=1 in a throwaway XCIND_GENERATED_DIR so the cache-hit
-# replay path (see docs/implementation/handoffs/assigned-hook-cache-hit-skip.md)
+# replay path (see engineering/implementation/handoffs/assigned-hook-cache-hit-skip.md)
 # does NOT mask the live state.
 #
 # Usage:

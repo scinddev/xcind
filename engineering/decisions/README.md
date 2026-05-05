@@ -21,6 +21,7 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0011](./0011-layered-documentation-system.md) | Layered Documentation System | Accepted |
 | [0012](./0012-unified-generate-flag-semantics.md) | Unified Generate Flag Semantics | Accepted |
 | [0013](./0013-host-docker-internal-normalization.md) | Automatic `host.docker.internal` Normalization | Accepted |
+| [0014](./0014-two-track-documentation.md) | Two-Track Documentation: User (Diátaxis) + Engineering (LDS) | Accepted |
 
 ## ADR Format
 

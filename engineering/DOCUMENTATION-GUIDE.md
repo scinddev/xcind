@@ -1,8 +1,40 @@
 # Xcind Documentation Guide
 
-**For AI Agents and Contributors**: This guide explains how documentation is organized and how to maintain it.
+**For AI Agents and Contributors**: This guide explains how Xcind's documentation is organized and how to maintain it.
 
-Xcind implements concepts from the [Scind specification](https://github.com/scinddev/scind). This documentation system follows the Layered Documentation System (LDS) defined in [ADR-0011](./decisions/0011-layered-documentation-system.md).
+Xcind implements concepts from the [Scind specification](https://github.com/scinddev/scind). The engineering documentation in this directory follows the Layered Documentation System (LDS) defined in [ADR-0011](./decisions/0011-layered-documentation-system.md). The two-track split between user and engineering documentation is established in [ADR-0014](./decisions/0014-two-track-documentation.md).
+
+---
+
+## Two-Track Documentation
+
+Xcind has **two distinct tracks** of documentation, with different audiences, purposes, and conventions:
+
+| Track | Directory | Audience | Shape |
+|-------|-----------|----------|-------|
+| **User documentation** | [`docs/`](../docs/) | People installing, configuring, and running Xcind against their projects | [Diátaxis](https://diataxis.fr) (Tutorials / How-to guides / Reference / Explanation) |
+| **Engineering documentation** | `engineering/` (this tree) | Contributors and AI agents building or maintaining Xcind itself | Layered Documentation System (LDS) — see below |
+
+### Diátaxis primer (user track)
+
+| Quadrant | Purpose | Lives in | What belongs | What doesn't |
+|----------|---------|----------|--------------|--------------|
+| **Tutorial** | Learning by doing | `docs/getting-started/` | Step-by-step "first project" walkthroughs | Comprehensive option lists |
+| **How-to** | Solving a specific task | `docs/guides/` | "How do I set up the proxy?", "How do I add Xcind to an existing project?" | Conceptual deep-dives |
+| **Reference** | Looking up facts | `docs/reference/` | Slim narrative summaries of CLI / config; defer to engineering reference for exhaustive detail | Tutorials, design rationale |
+| **Explanation** | Understanding | `docs/explanation/` | Why naming works the way it does, what the overlay model is | Step-by-step instructions |
+
+### Cross-track linking
+
+- User reference (`docs/reference/`) **may** link out to engineering reference (`engineering/reference/`) for exhaustive detail.
+- Engineering documents **should not** link into user docs except from this guide and the top-level READMEs.
+- Both tracks are public and live in this repo. "Engineering" does not mean private.
+
+---
+
+## Engineering Track (LDS)
+
+The rest of this document covers the engineering track, which lives entirely under `engineering/`.
 
 ---
 
@@ -12,7 +44,8 @@ Xcind implements concepts from the [Scind specification](https://github.com/scin
 
 | Term | Definition |
 |------|------------|
-| `DOCS_DIR` | The documentation root directory (`docs/`) |
+| `USER_DOCS_DIR` | The user documentation root (`docs/`) — Diátaxis-shaped |
+| `ENG_DOCS_DIR` | The engineering documentation root (`engineering/`) — LDS canon |
 
 ### Core System Terms
 
@@ -166,8 +199,8 @@ When content appears in multiple places, this hierarchy determines the canonical
 ## Directory Structure
 
 ```
-docs/
-├── README.md                    # Documentation index
+engineering/
+├── README.md                    # Engineering doc index
 ├── DOCUMENTATION-GUIDE.md       # This file
 │
 ├── decisions/                   # Layer 1: ADRs (simple files)
@@ -192,10 +225,12 @@ docs/
 │   └── appendices/
 │       └── {feature}/          # Per-spec appendices
 │
-├── reference/                   # Layer 5: Reference
+├── reference/                   # Layer 5: Reference (exhaustive)
 │   ├── README.md
 │   ├── cli.md
 │   ├── configuration.md
+│   ├── build-provenance.md
+│   ├── devcontainers.md
 │   └── appendices/
 │
 ├── behaviors/                   # Layer 6: Behaviors
@@ -212,10 +247,10 @@ docs/
 │   ├── audit.md
 │   ├── refine.md
 │   ├── sync.md
-│   └── update.md
+│   ├── update.md
+│   └── releasing.md             # Release process
 │
-├── releasing.md                 # Release process
-└── archive/                     # Historical documents
+└── archive/                     # Historical documents (PRDs, research, dated audits)
 ```
 
 ---

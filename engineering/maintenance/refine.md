@@ -140,9 +140,9 @@ For each potential decision, ask:
 
 For each feature in Xcind:
 - [ ] Has a specification document
-- [ ] CLI commands documented in reference (`docs/reference/cli.md`)
-- [ ] Configuration options documented (`docs/reference/configuration.md`)
-- [ ] Has Gherkin behavior tests (for critical features, in `docs/behaviors/`)
+- [ ] CLI commands documented in reference (`engineering/reference/cli.md`)
+- [ ] Configuration options documented (`engineering/reference/configuration.md`)
+- [ ] Has Gherkin behavior tests (for critical features, in `engineering/behaviors/`)
 
 ---
 
@@ -154,7 +154,7 @@ Execute all identified improvements:
 2. **Appendix restructuring**: Move large content to appendices
 3. **Deduplication**: Consolidate, add links
 4. **Cross-links**: Add missing links
-5. **ADRs**: Create missing decision records in `docs/decisions/`
+5. **ADRs**: Create missing decision records in `engineering/decisions/`
 6. **Gaps**: Create stub documents or sections
 7. **Templates**: Add missing sections
 8. **Clarity**: Improve wording
