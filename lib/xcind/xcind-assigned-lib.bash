@@ -126,14 +126,16 @@ __xcind-assigned-iter() {
 #
 # Callers MUST already hold the assigned-ports lock
 # (__xcind-with-assigned-lock). The helper ensures the state file exists,
-# writes a fresh header + surviving rows into a sibling .tmp file, then
-# atomically mv(1)s it over the original.
+# writes a fresh header + surviving rows into a process-unique sibling temp
+# file (via mktemp so concurrent callers never share a path), then atomically
+# mv(1)s it over the original.
 __xcind-assigned-rewrite() {
   local predicate="$1"
   shift
   __xcind-assigned-ensure-state-file
 
-  local tmp="${XCIND_ASSIGNED_PORTS_FILE}.tmp"
+  local tmp
+  tmp=$(mktemp "${XCIND_ASSIGNED_PORTS_FILE}.XXXXXXXXXX") || return 1
   printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$tmp"
 
   local L_port L_workspace L_application L_service L_cport L_path L_ts
@@ -150,7 +152,10 @@ __xcind-assigned-rewrite() {
     fi
   done <"$XCIND_ASSIGNED_PORTS_FILE"
 
-  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE"
+  mv -- "$tmp" "$XCIND_ASSIGNED_PORTS_FILE" || {
+    rm -f "$tmp"
+    return 1
+  }
 }
 
 # --------------------------------------------------------------------------
