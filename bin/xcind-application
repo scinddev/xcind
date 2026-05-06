@@ -41,7 +41,7 @@ __xcind-application-write-config() {
   local content='# shellcheck shell=bash
 # shellcheck disable=SC2034'
 
-  if [[ -n "$app_name" ]]; then
+  if [[ -n $app_name ]]; then
     content+=$'\n'"XCIND_APP=\"$app_name\""
   fi
 
@@ -52,11 +52,20 @@ __xcind-application-write-config() {
 
 __xcind-application-init() {
   local dir="."
+  local dir_set=false
   local _flag_name=""
+
+  __xcind-application-init-require-value() {
+    if [[ $# -lt 2 ]]; then
+      echo "Error: Missing value for init option: $1" >&2
+      exit 1
+    fi
+  }
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --name)
+      __xcind-application-init-require-value "$@"
       _flag_name="$2"
       shift 2
       ;;
@@ -74,7 +83,12 @@ __xcind-application-init() {
       exit 1
       ;;
     *)
+      if [[ $dir_set == true ]]; then
+        echo "Error: Unexpected argument for init: $1" >&2
+        exit 1
+      fi
       dir="$1"
+      dir_set=true
       shift
       ;;
     esac
@@ -94,7 +108,7 @@ __xcind-application-init() {
   fi
 
   if [[ -f "$dir/.xcind.sh" ]]; then
-    if [[ -n "$_flag_name" ]]; then
+    if [[ -n $_flag_name ]]; then
       # Merge: source the existing file in a subshell to read current XCIND_APP,
       # then rewrite. Other variables in the file are NOT preserved — users who
       # have hand-edited should update the file directly rather than re-running
@@ -138,7 +152,7 @@ __xcind-application-init() {
 __xcind-application-find-root() {
   local dir="${1:-$PWD}"
 
-  if [[ ! -d "$dir" ]]; then
+  if [[ ! -d $dir ]]; then
     echo "Error: Directory not found: $dir" >&2
     return 1
   fi
@@ -155,7 +169,7 @@ __xcind-application-find-root() {
     local parent
     parent=$(dirname "$current")
 
-    if [[ "$parent" == "/" || "$parent" == "$current" ]]; then
+    if [[ $parent == "/" || $parent == "$current" ]]; then
       echo "Error: Not inside an application. No .xcind.sh found walking up from $dir." >&2
       return 1
     fi
@@ -172,7 +186,7 @@ __xcind-application-query-config() {
   local app_root="$1"
   local tmp_compose="${2:-}"
   local extra_args=()
-  if [[ -n "$tmp_compose" ]]; then
+  if [[ -n $tmp_compose ]]; then
     extra_args+=("--generate-docker-compose-configuration=$tmp_compose")
   fi
 
@@ -185,6 +199,7 @@ __xcind-application-query-config() {
 
 __xcind-application-status() {
   local dir=""
+  local dir_set=false
   local json_mode=false
 
   while [[ $# -gt 0 ]]; do
@@ -209,14 +224,19 @@ __xcind-application-status() {
       exit 1
       ;;
     *)
+      if [[ $dir_set == true ]]; then
+        echo "Error: Unexpected argument for status: $1" >&2
+        exit 1
+      fi
       dir="$1"
+      dir_set=true
       shift
       ;;
     esac
   done
 
   local app_root
-  if [[ -n "$dir" ]]; then
+  if [[ -n $dir ]]; then
     app_root=$(__xcind-application-find-root "$dir") || exit 1
   else
     app_root=$(__xcind-application-find-root "$PWD") || exit 1
@@ -246,7 +266,7 @@ __xcind-application-status() {
     local err_msg
     err_msg=$(cat "$tmpdir/err" 2>/dev/null || true)
     echo "Error: xcind-config failed for $app_root" >&2
-    [[ -n "$err_msg" ]] && echo "$err_msg" >&2
+    [[ -n $err_msg ]] && echo "$err_msg" >&2
     exit 1
   fi
 
@@ -258,16 +278,16 @@ __xcind-application-status() {
   local -a compose_files=() env_files=()
   local _line
   while IFS= read -r _line; do
-    [[ -n "$_line" ]] && compose_files+=("$_line")
+    [[ -n $_line ]] && compose_files+=("$_line")
   done < <(printf '%s' "$xcind_json" | jq -r '.composeFiles[]?')
   while IFS= read -r _line; do
-    [[ -n "$_line" ]] && env_files+=("$_line")
+    [[ -n $_line ]] && env_files+=("$_line")
   done < <(printf '%s' "$xcind_json" | jq -r '.composeEnvFiles[]?')
 
   local -a defined_services=()
-  if [[ -f "$resolved_compose" ]]; then
+  if [[ -f $resolved_compose ]]; then
     while IFS= read -r _line; do
-      [[ -n "$_line" ]] && defined_services+=("$_line")
+      [[ -n $_line ]] && defined_services+=("$_line")
     done < <(__xcind-list-services "$resolved_compose")
   fi
 
@@ -277,24 +297,24 @@ __xcind-application-status() {
   local running_count=0
   if command -v docker >/dev/null 2>&1; then
     local -a filters=(--filter "label=xcind.app.name=$app_name")
-    if [[ -n "$ws_name" ]]; then
+    if [[ -n $ws_name ]]; then
       filters+=(--filter "label=xcind.workspace.name=$ws_name")
     fi
     local ps_lines
     ps_lines=$(docker ps -a "${filters[@]}" --format '{{.Names}}	{{.Status}}' 2>/dev/null) || true
-    if [[ -n "$ps_lines" ]]; then
+    if [[ -n $ps_lines ]]; then
       local cname cstatus state
       while IFS=$'\t' read -r cname cstatus; do
-        [[ -z "$cname" ]] && continue
+        [[ -z $cname ]] && continue
         state="unknown"
-        if [[ "$cstatus" == Up* ]]; then
+        if [[ $cstatus == Up* ]]; then
           state="running"
           running_count=$((running_count + 1))
-        elif [[ "$cstatus" == Exited* ]]; then
+        elif [[ $cstatus == Exited* ]]; then
           state="exited"
-        elif [[ "$cstatus" == Paused* ]]; then
+        elif [[ $cstatus == Paused* ]]; then
           state="paused"
-        elif [[ "$cstatus" == Restarting* ]]; then
+        elif [[ $cstatus == Restarting* ]]; then
           state="restarting"
         fi
         container_names+=("$cname")
@@ -308,20 +328,20 @@ __xcind-application-status() {
   if command -v docker >/dev/null 2>&1; then
     local cids
     local -a id_filters=(--filter "label=xcind.app.name=$app_name")
-    if [[ -n "$ws_name" ]]; then
+    if [[ -n $ws_name ]]; then
       id_filters+=(--filter "label=xcind.workspace.name=$ws_name")
     fi
     cids=$(docker ps -q "${id_filters[@]}" 2>/dev/null) || true
-    if [[ -n "$cids" ]]; then
+    if [[ -n $cids ]]; then
       local cid host_labels host_label
       while IFS= read -r cid; do
-        [[ -z "$cid" ]] && continue
+        [[ -z $cid ]] && continue
         # shellcheck disable=SC2016
         host_labels=$(docker inspect --format \
           '{{range $k, $v := .Config.Labels}}{{if hasPrefix "xcind.export." $k}}{{if hasSuffix ".host" $k}}{{$v}}{{"\n"}}{{end}}{{end}}{{end}}' \
           "$cid" 2>/dev/null) || true
         while IFS= read -r host_label; do
-          [[ -z "$host_label" ]] && continue
+          [[ -z $host_label ]] && continue
           urls+=("$host_label")
         done <<<"$host_labels"
       done <<<"$cids"
@@ -330,7 +350,7 @@ __xcind-application-status() {
 
   local total=${#defined_services[@]}
 
-  if [[ "$json_mode" == true ]]; then
+  if [[ $json_mode == true ]]; then
     local services_json="{}"
     if [[ ${#container_names[@]} -gt 0 ]]; then
       local n_arr s_arr
@@ -385,7 +405,7 @@ __xcind-application-status() {
   # Text output
   echo "Application: $app_name"
   echo "Path:        $app_root"
-  if [[ -n "$ws_name" ]]; then
+  if [[ -n $ws_name ]]; then
     echo "Workspace:   $ws_name"
   else
     echo "Workspace:   (none)"
@@ -431,8 +451,8 @@ __xcind-application-status() {
         local cs="${container_states[$i]}"
         # Docker compose names containers `{project}-{service}-{index}` or
         # `{project}_{service}_{index}`. Match on the service segment.
-        if [[ "$cn" == *"-${svc}-"* || "$cn" == *"_${svc}_"* || "$cn" == *"-${svc}" || "$cn" == *"_${svc}" ]]; then
-          if [[ "$cs" == "running" ]]; then
+        if [[ $cn == *"-${svc}-"* || $cn == *"_${svc}_"* || $cn == *"-${svc}" || $cn == *"_${svc}" ]]; then
+          if [[ $cs == "running" ]]; then
             indicator="●"
           fi
           state_text="$cs"
@@ -470,7 +490,7 @@ __xcind-application-status() {
 __xcind-application-find-workspace() {
   local dir="${1:-$PWD}"
 
-  if [[ ! -d "$dir" ]]; then
+  if [[ ! -d $dir ]]; then
     return 1
   fi
   dir=$(cd "$dir" && pwd)
@@ -484,7 +504,7 @@ __xcind-application-find-workspace() {
   while true; do
     local parent
     parent=$(dirname "$current")
-    if [[ "$parent" == "/" || "$parent" == "$current" ]]; then
+    if [[ $parent == "/" || $parent == "$current" ]]; then
       return 1
     fi
     if __xcind-is-workspace-dir "$parent"; then
@@ -498,6 +518,7 @@ __xcind-application-find-workspace() {
 __xcind-application-list() {
   local _flag_json=false
   local dir=""
+  local dir_set=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -521,15 +542,20 @@ __xcind-application-list() {
       exit 1
       ;;
     *)
+      if [[ $dir_set == true ]]; then
+        echo "Error: Unexpected argument for list: $1" >&2
+        exit 1
+      fi
       dir="$1"
+      dir_set=true
       shift
       ;;
     esac
   done
 
-  [[ -z "$dir" ]] && dir="$PWD"
+  [[ -z $dir ]] && dir="$PWD"
 
-  if [[ ! -d "$dir" ]]; then
+  if [[ ! -d $dir ]]; then
     echo "Error: Directory not found: $dir" >&2
     exit 1
   fi
@@ -561,7 +587,7 @@ __xcind-application-list() {
     shopt -s nullglob
     local subdir
     for subdir in "$ws_root"/*/; do
-      [[ ! -d "$subdir" ]] && continue
+      [[ ! -d $subdir ]] && continue
       local candidate="${subdir%/}"
       [[ ! -f "$candidate/.xcind.sh" ]] && continue
       if ! __xcind-is-workspace-dir "$candidate"; then
@@ -590,12 +616,12 @@ __xcind-application-list() {
       _i=$((_i + 1))
     done
     while IFS= read -r _sorted_line; do
-      [[ -z "$_sorted_line" ]] && continue
+      [[ -z $_sorted_line ]] && continue
       sorted_indices+=("${_sorted_line##*$'\t'}")
     done < <(printf '%s' "$_sort_input" | sort -t $'\t' -k1,1)
   fi
 
-  if [[ "$_flag_json" == true ]]; then
+  if [[ $_flag_json == true ]]; then
     if ! command -v jq >/dev/null 2>&1; then
       echo "Error: jq is required for --json output." >&2
       exit 1
@@ -625,7 +651,7 @@ __xcind-application-list() {
   fi
 
   if [[ ${#sorted_indices[@]} -eq 0 ]]; then
-    if [[ -n "$ws_root" ]]; then
+    if [[ -n $ws_root ]]; then
       echo "No applications in workspace: $ws_name ($ws_root)"
     else
       echo "No applications found at $dir."

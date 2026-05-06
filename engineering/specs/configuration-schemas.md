@@ -4,19 +4,33 @@
 
 ---
 
-## Design Rationale: Stateless Configuration
+## Design Rationale: Declarative Configuration
 
-Xcind is stateless — all configuration is declarative (`.xcind.sh` files) and runtime state is inferred from Docker. There are no state files, manifests, or registries.
+Xcind configuration is declarative: `.xcind.sh` files and proxy
+`config.sh` describe desired workspace, application, and proxy behavior. They do
+not describe whether an app is currently running, which generated override
+files are current, or which sticky host ports have been assigned.
+
+Xcind also maintains narrowly-scoped runtime state and generated artifacts under
+`${XDG_STATE_HOME:-$HOME/.local/state}/xcind/` and per-app `.xcind/generated/`
+directories. That state is not user-authored configuration; it supports
+workspace discovery, assigned-port stability, generated proxy files, and
+Docker-backed runtime lifecycle operations.
 
 | Aspect | Source |
 |--------|--------|
 | Proxy settings | `~/.config/xcind/proxy/config.sh` |
 | Workspace definition | `{workspace}/.xcind.sh` with `XCIND_IS_WORKSPACE=1` |
 | App configuration | `{app}/.xcind.sh` |
-| Running containers | Docker daemon |
-| Generated files | `.xcind/generated/{sha}/` (per-app) and `~/.local/state/xcind/proxy/` (global) |
+| Workspace registry | `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/workspaces.tsv` |
+| Assigned-port state | `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy/assigned-ports.tsv` |
+| Running containers and networks | Docker daemon |
+| Generated files | `.xcind/generated/{sha}/` (per-app) and `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy/` (global) |
 
-This separation ensures configuration files are simple Bash scripts that can be version-controlled, while runtime state is ephemeral and derived from Docker.
+This separation ensures configuration files are simple Bash scripts that can be
+version-controlled, while runtime state remains operational data owned by Xcind
+and Docker. For the workspace lifecycle state files, see
+[Workspace Lifecycle: State](./workspace-lifecycle.md#state).
 
 For schema definitions and field references, see [Configuration Reference](../reference/configuration.md).
 
