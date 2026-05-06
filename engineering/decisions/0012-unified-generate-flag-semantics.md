@@ -55,4 +55,4 @@ Stderr from `docker compose config` is no longer suppressed.
 ## Related Documents
 
 - [CLI Reference](../reference/cli.md) - Updated flag documentation
-- [Dev Containers](../devcontainers.md) - Updated examples
+- [Dev Containers](../reference/devcontainers.md) - Updated examples

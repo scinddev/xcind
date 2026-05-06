@@ -46,41 +46,57 @@ __xcind-proxy-init() {
   local _flag_tls_cert_file=""
   local _flag_tls_key_file=""
 
+  __xcind-proxy-init-require-value() {
+    if [[ $# -lt 2 ]]; then
+      echo "Error: Missing value for init option: $1" >&2
+      exit 1
+    fi
+  }
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --proxy-domain)
+      __xcind-proxy-init-require-value "$@"
       _flag_proxy_domain="$2"
       shift 2
       ;;
     --http-port)
+      __xcind-proxy-init-require-value "$@"
       _flag_http_port="$2"
       shift 2
       ;;
     --image)
+      __xcind-proxy-init-require-value "$@"
       _flag_image="$2"
       shift 2
       ;;
     --dashboard)
+      __xcind-proxy-init-require-value "$@"
       _flag_dashboard="$2"
       shift 2
       ;;
     --dashboard-port)
+      __xcind-proxy-init-require-value "$@"
       _flag_dashboard_port="$2"
       shift 2
       ;;
     --tls-mode)
+      __xcind-proxy-init-require-value "$@"
       _flag_tls_mode="$2"
       shift 2
       ;;
     --https-port)
+      __xcind-proxy-init-require-value "$@"
       _flag_https_port="$2"
       shift 2
       ;;
     --tls-cert-file)
+      __xcind-proxy-init-require-value "$@"
       _flag_tls_cert_file="$2"
       shift 2
       ;;
     --tls-key-file)
+      __xcind-proxy-init-require-value "$@"
       _flag_tls_key_file="$2"
       shift 2
       ;;
@@ -117,23 +133,23 @@ __xcind-proxy-init() {
 
   # Apply CLI flag overrides (variables consumed by __xcind-proxy-write-config)
   # shellcheck disable=SC2034
-  [[ -n "$_flag_proxy_domain" ]] && XCIND_PROXY_DOMAIN="$_flag_proxy_domain"
+  [[ -n $_flag_proxy_domain ]] && XCIND_PROXY_DOMAIN="$_flag_proxy_domain"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_http_port" ]] && XCIND_PROXY_HTTP_PORT="$_flag_http_port"
+  [[ -n $_flag_http_port ]] && XCIND_PROXY_HTTP_PORT="$_flag_http_port"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_image" ]] && XCIND_PROXY_IMAGE="$_flag_image"
+  [[ -n $_flag_image ]] && XCIND_PROXY_IMAGE="$_flag_image"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_dashboard" ]] && XCIND_PROXY_DASHBOARD="$_flag_dashboard"
+  [[ -n $_flag_dashboard ]] && XCIND_PROXY_DASHBOARD="$_flag_dashboard"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_dashboard_port" ]] && XCIND_PROXY_DASHBOARD_PORT="$_flag_dashboard_port"
+  [[ -n $_flag_dashboard_port ]] && XCIND_PROXY_DASHBOARD_PORT="$_flag_dashboard_port"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_tls_mode" ]] && XCIND_PROXY_TLS_MODE="$_flag_tls_mode"
+  [[ -n $_flag_tls_mode ]] && XCIND_PROXY_TLS_MODE="$_flag_tls_mode"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_https_port" ]] && XCIND_PROXY_HTTPS_PORT="$_flag_https_port"
+  [[ -n $_flag_https_port ]] && XCIND_PROXY_HTTPS_PORT="$_flag_https_port"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_tls_cert_file" ]] && XCIND_PROXY_TLS_CERT_FILE="$_flag_tls_cert_file"
+  [[ -n $_flag_tls_cert_file ]] && XCIND_PROXY_TLS_CERT_FILE="$_flag_tls_cert_file"
   # shellcheck disable=SC2034
-  [[ -n "$_flag_tls_key_file" ]] && XCIND_PROXY_TLS_KEY_FILE="$_flag_tls_key_file"
+  [[ -n $_flag_tls_key_file ]] && XCIND_PROXY_TLS_KEY_FILE="$_flag_tls_key_file"
 
   # Write config (always — merges existing + overrides)
   __xcind-proxy-write-config
@@ -150,9 +166,22 @@ __xcind-proxy-init() {
 
 __xcind-proxy-up() {
   local force=false
-  if [[ ${1:-} == "--force" ]]; then
-    force=true
-  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --force)
+      force=true
+      shift
+      ;;
+    -*)
+      echo "Error: Unknown option for up: $1" >&2
+      exit 1
+      ;;
+    *)
+      echo "Error: Unexpected argument for up: $1" >&2
+      exit 1
+      ;;
+    esac
+  done
 
   if [[ $force == true ]]; then
     # Tear down existing containers so the network can be recreated
@@ -175,6 +204,11 @@ __xcind-proxy-up() {
 }
 
 __xcind-proxy-down() {
+  if [[ $# -gt 0 ]]; then
+    echo "Error: Unexpected argument for down: $1" >&2
+    exit 1
+  fi
+
   local compose_file="$XCIND_PROXY_COMPOSE"
 
   # Fallback for pre-migration installs. Checked in ascending-recency
@@ -199,14 +233,27 @@ __xcind-proxy-down() {
 
 __xcind-proxy-status() {
   local json_mode=false
-  if [[ ${1:-} == "--json" ]]; then
-    json_mode=true
-  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --json)
+      json_mode=true
+      shift
+      ;;
+    -*)
+      echo "Error: Unknown option for status: $1" >&2
+      exit 1
+      ;;
+    *)
+      echo "Error: Unexpected argument for status: $1" >&2
+      exit 1
+      ;;
+    esac
+  done
 
   # jq is required for --json output (the hand-rolled printf template used
   # to be tolerant of missing jq, but since the output is now built with
   # `jq -n`, fail loudly instead of producing broken JSON).
-  if [[ "$json_mode" == true ]] && ! command -v jq &>/dev/null; then
+  if [[ $json_mode == true ]] && ! command -v jq &>/dev/null; then
     echo "Error: jq is required for --json output." >&2
     exit 1
   fi
@@ -387,6 +434,10 @@ __xcind-proxy-release() {
     echo "Usage: xcind-proxy release <port>" >&2
     exit 1
   fi
+  if [[ $# -gt 1 ]]; then
+    echo "Error: Unexpected argument for release: $2" >&2
+    exit 1
+  fi
   if ! [[ $port =~ ^[0-9]+$ ]]; then
     echo "Error: port must be a positive integer, got: $port" >&2
     exit 1
@@ -400,6 +451,11 @@ __xcind-proxy-release() {
 }
 
 __xcind-proxy-prune() {
+  if [[ $# -gt 0 ]]; then
+    echo "Error: Unexpected argument for prune: $1" >&2
+    exit 1
+  fi
+
   local pruned
   pruned=$(__xcind-with-assigned-lock __xcind-assigned-prune)
   echo "Pruned $pruned stale assigned port entries"
@@ -421,7 +477,7 @@ __xcind-proxy-logs() {
 __xcind-proxy-init-help() {
   echo "Usage: xcind-proxy init [OPTIONS]"
   echo ""
-  echo "Create proxy infrastructure files (config.sh, docker-compose.yaml, Traefik config)."
+  echo "Create proxy infrastructure files (config.sh, compose.yaml, Traefik config)."
   echo ""
   echo "Options:"
   echo "  --proxy-domain DOMAIN     Set domain suffix (default: localhost)"
@@ -480,8 +536,14 @@ init)
   shift
   __xcind-proxy-init "$@"
   ;;
-up) __xcind-proxy-up "${2:-}" ;;
-down) __xcind-proxy-down ;;
+up)
+  shift
+  __xcind-proxy-up "$@"
+  ;;
+down)
+  shift
+  __xcind-proxy-down "$@"
+  ;;
 status)
   shift
   __xcind-proxy-status "$@"
@@ -492,10 +554,11 @@ logs)
   ;;
 release)
   shift
-  __xcind-proxy-release "${1:-}"
+  __xcind-proxy-release "$@"
   ;;
 prune)
-  __xcind-proxy-prune
+  shift
+  __xcind-proxy-prune "$@"
   ;;
 --help | -h)
   __xcind-proxy-help

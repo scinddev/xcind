@@ -551,6 +551,26 @@ content=$(<"$WS_NAMED/.xcind.sh")
 assert_contains "update: new domain applied" 'XCIND_PROXY_DOMAIN="new.example"' "$content"
 assert_contains "update: prior name preserved" 'XCIND_WORKSPACE="myteam"' "$content"
 
+# Re-init with flags preserves unrelated workspace configuration
+WS_PRESERVE=$(mktemp_d)
+cat >"$WS_PRESERVE/.xcind.sh" <<'EOF'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_IS_WORKSPACE=1
+XCIND_WORKSPACE="oldteam"
+XCIND_PROXY_DOMAIN="old.example"
+XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.local.sh")
+EOF
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_PRESERVE" --name "newteam" \
+  --proxy-domain "new.example" >/dev/null
+content=$(<"$WS_PRESERVE/.xcind.sh")
+assert_contains "update preserves unrelated config" \
+  'XCIND_ADDITIONAL_CONFIG_FILES=(".xcind.local.sh")' "$content"
+assert_contains "update applies new name" 'XCIND_WORKSPACE="newteam"' "$content"
+assert_contains "update applies new domain" 'XCIND_PROXY_DOMAIN="new.example"' "$content"
+assert_not_contains "update drops old name" 'XCIND_WORKSPACE="oldteam"' "$content"
+assert_not_contains "update drops old domain" 'XCIND_PROXY_DOMAIN="old.example"' "$content"
+
 # Init on a directory containing a non-workspace .xcind.sh (an app config) fails
 APP_DIR=$(mktemp_d)
 echo '# app config (no XCIND_IS_WORKSPACE)' >"$APP_DIR/.xcind.sh"
@@ -569,6 +589,29 @@ unk_err=$(<"$unk_err_file")
 rm -f "$unk_err_file"
 assert_eq "unknown init flag: exits 1" "1" "$unk_rc"
 assert_contains "unknown init flag: error names the flag" "--bogus" "$unk_err"
+
+# A second positional DIR is invalid; the parser must not silently overwrite
+# the first target.
+ws_init_extra_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" init "$WS_PLAIN" "$WS_NAMED" 2>"$ws_init_extra_err_file" && ws_init_extra_rc=0 || ws_init_extra_rc=$?
+ws_init_extra_err=$(<"$ws_init_extra_err_file")
+rm -f "$ws_init_extra_err_file"
+assert_eq "init repeated DIR: exits 1" "1" "$ws_init_extra_rc"
+assert_contains "init repeated DIR: reports unexpected" "Unexpected argument" "$ws_init_extra_err"
+
+# Missing values for value-taking init flags should report a CLI error rather
+# than aborting through set -u.
+for missing_ws_init_flag in --name --proxy-domain; do
+  missing_ws_err_file=$(mktemp)
+  "$XCIND_ROOT/bin/xcind-workspace" init "$WS_PLAIN" "$missing_ws_init_flag" 2>"$missing_ws_err_file" && missing_ws_rc=0 || missing_ws_rc=$?
+  missing_ws_err=$(<"$missing_ws_err_file")
+  rm -f "$missing_ws_err_file"
+  assert_eq "init ${missing_ws_init_flag}: missing value exits non-zero" "1" "$missing_ws_rc"
+  assert_contains "init ${missing_ws_init_flag}: missing value reports Error" "Error:" "$missing_ws_err"
+  assert_contains "init ${missing_ws_init_flag}: missing value names flag" "$missing_ws_init_flag" "$missing_ws_err"
+  assert_not_contains "init ${missing_ws_init_flag}: no unbound variable error" "unbound variable" "$missing_ws_err"
+done
+unset missing_ws_init_flag missing_ws_err_file missing_ws_err missing_ws_rc
 
 # --version short-circuits
 ver_out=$("$XCIND_ROOT/bin/xcind-workspace" --version)
@@ -694,6 +737,15 @@ rm -f "$status_unk_err_file"
 assert_eq "unknown status flag: exits 1" "1" "$status_unk_rc"
 assert_contains "unknown status flag: error names the flag" \
   "--bogus" "$status_unk_err"
+
+status_extra_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS" "$WS_STATUS/webapp" \
+  2>"$status_extra_err_file" && status_extra_rc=0 || status_extra_rc=$?
+status_extra_err=$(<"$status_extra_err_file")
+rm -f "$status_extra_err_file"
+assert_eq "status repeated DIR: exits 1" "1" "$status_extra_rc"
+assert_contains "status repeated DIR: reports unexpected" \
+  "Unexpected argument" "$status_extra_err"
 
 export HOME="$_ws_status_orig_HOME"
 export PATH="$_ws_status_orig_PATH"
@@ -2790,6 +2842,19 @@ assert_contains "nested init: mentions workspace name" "workspace: nestedws" "$n
 app_unk_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" init "$APP_PLAIN/demo2" --bogus)
 assert_eq "unknown init flag: exits 1" "1" "$app_unk_status"
 
+app_init_extra_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" init "$APP_PLAIN/demo2" "$APP_NAMED/svc")
+assert_eq "init repeated DIR: exits 1" "1" "$app_init_extra_status"
+
+app_missing_name_err_file=$(mktemp)
+"$XCIND_ROOT/bin/xcind-application" init "$APP_PLAIN/demo2" --name 2>"$app_missing_name_err_file" && app_missing_name_rc=0 || app_missing_name_rc=$?
+app_missing_name_err=$(<"$app_missing_name_err_file")
+rm -f "$app_missing_name_err_file"
+assert_eq "init --name: missing value exits non-zero" "1" "$app_missing_name_rc"
+assert_contains "init --name: missing value reports Error" "Error:" "$app_missing_name_err"
+assert_contains "init --name: missing value names flag" "--name" "$app_missing_name_err"
+assert_not_contains "init --name: no unbound variable error" "unbound variable" "$app_missing_name_err"
+unset app_missing_name_err_file app_missing_name_err app_missing_name_rc
+
 # --version short-circuits
 app_ver_out=$("$XCIND_ROOT/bin/xcind-application" --version)
 assert_contains "--version: prints xcind-application" "xcind-application" "$app_ver_out"
@@ -2839,6 +2904,9 @@ assert_eq "list --json: two applications" "2" "$list_json_count"
 # workspace's apps (walks up to find the enclosing workspace).
 list_nested=$("$XCIND_ROOT/bin/xcind-application" list "$APP_LIST_WS/alpha")
 assert_contains "list from app dir: shows siblings" "beta" "$list_nested"
+
+list_extra_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" list "$APP_LIST_WS" "$APP_LIST_WS/alpha")
+assert_eq "list repeated DIR: exits 1" "1" "$list_extra_status"
 
 # Hidden directories and nested workspaces must NOT appear as apps.
 mkdir -p "$APP_LIST_WS/.git"
@@ -2950,6 +3018,9 @@ assert_eq "status outside app: exits 1" "1" "$status_outside_status"
 status_missing_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" status "/nonexistent/does-not-exist-xcind-app")
 assert_eq "status missing dir: exits 1" "1" "$status_missing_status"
 
+app_status_extra_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_WS/webapp" "$APP_STATUS_WS")
+assert_eq "status repeated DIR: exits 1" "1" "$app_status_extra_status"
+
 export HOME="$_app_status_orig_HOME"
 export PATH="$_app_status_orig_PATH"
 unset _app_status_orig_HOME _app_status_orig_PATH
@@ -2984,6 +3055,7 @@ rm -f "$dbg_err"
 assert_eq "debug emits when XCIND_DEBUG=1" "xcind: debug: hello world" "$dbg_output"
 
 # XCIND_DEBUG=anything-not-1 — silent (not a truthy-match implementation)
+# shellcheck disable=SC2034
 XCIND_DEBUG=true
 dbg_err=$(mktemp)
 __xcind-debug "should not appear" 2>"$dbg_err"

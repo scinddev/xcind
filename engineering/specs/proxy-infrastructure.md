@@ -46,18 +46,22 @@ See [Docker Labels — Traefik Routing Labels](./docker-labels.md#traefik-routin
 
 Creates proxy infrastructure across two directories:
 
-- **Config** (`~/.config/xcind/proxy/`): user-editable `config.sh`; optional `certs/wildcard.{crt,key}` for user-supplied certificates
+- **Config** (`~/.config/xcind/proxy/`): `config.sh` containing persisted proxy settings; optional `certs/wildcard.{crt,key}` for user-supplied certificates
 - **State** (`~/.local/state/xcind/proxy/`): generated `compose.yaml`, `traefik.yaml`, `dynamic/tls.yaml`, and `certs/`
 
 Steps:
 
-1. Creates `config.sh` (only if it doesn't exist — never overwrites user config)
-2. Sources `config.sh` for variable expansion
-3. Generates `compose.yaml` (always regenerated) in state dir; includes `:443`, `./certs`, and `./dynamic` bind mounts when TLS is enabled
-4. Generates `traefik.yaml` (always regenerated) in state dir; includes `websecure` entrypoint and file provider when TLS is enabled
-5. Generates `dynamic/tls.yaml` pointing at the wildcard cert (TLS-enabled modes only)
-6. Removes any stale generated files from legacy locations — `docker-compose.yaml` / `traefik.yaml` in the config dir (pre-config/state split) and `docker-compose.yaml` in the state dir (pre-rename to Compose-Specification-standard `compose.yaml`)
-7. Creates `xcind-proxy` Docker network if it doesn't exist
+1. Sources any existing `config.sh` so known `XCIND_PROXY_*` values become defaults
+2. Applies CLI flag overrides
+3. Regenerates `config.sh` from the known proxy settings, preserving existing known values when no override is supplied and persisting any flags passed to `init`
+4. Sources `config.sh` again for generated-file variable expansion
+5. Generates `compose.yaml` (always regenerated) in state dir; includes `:443`, `./certs`, and `./dynamic` bind mounts when TLS is enabled
+6. Generates `traefik.yaml` (always regenerated) in state dir; includes `websecure` entrypoint and file provider when TLS is enabled
+7. Generates `dynamic/tls.yaml` pointing at the wildcard cert (TLS-enabled modes only)
+8. Removes any stale generated files from legacy locations — `docker-compose.yaml` / `traefik.yaml` in the config dir (pre-config/state split) and `docker-compose.yaml` in the state dir (pre-rename to Compose-Specification-standard `compose.yaml`)
+9. Creates `xcind-proxy` Docker network if it doesn't exist
+
+`xcind-proxy init` rewrites `config.sh` on each invocation using the current known proxy values plus any provided flags. The lower-level auto-init path used by hooks only creates `config.sh` when it is missing, but still regenerates the state files from the current config.
 
 Certificate provisioning happens lazily on `xcind-proxy up` / auto-start — see [TLS Certificate Management](#tls-certificate-management).
 

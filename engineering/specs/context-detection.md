@@ -82,9 +82,9 @@ xcind-compose up -d          # Finds .xcind.sh in /path/to/app/
 XCIND_APP_ROOT=/path/to/app xcind-compose up -d
 
 # Debug what was detected
-xcind-config                 # JSON output with appRoot
+xcind-config                 # Show help
+xcind-config --json          # JSON output with appRoot, resolved files, and metadata
 xcind-config --preview       # Show the full docker compose command
-xcind-config --json          # Show resolved files and metadata
 ```
 
 ---

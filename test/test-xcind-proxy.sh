@@ -207,6 +207,26 @@ invalid_tls_mode=$("$XCIND_ROOT/bin/xcind-proxy" init --tls-mode weird 2>&1) && 
 assert_eq "--tls-mode invalid exits non-zero" "1" "$itm_rc"
 assert_contains "--tls-mode invalid mentions auto/custom/disabled" "auto" "$invalid_tls_mode"
 
+# Missing values for value-taking init flags are rejected before set -u can
+# abort with an unbound-variable shell error.
+for missing_init_flag in \
+  --proxy-domain \
+  --http-port \
+  --image \
+  --dashboard \
+  --dashboard-port \
+  --tls-mode \
+  --https-port \
+  --tls-cert-file \
+  --tls-key-file; do
+  missing_init_out=$("$XCIND_ROOT/bin/xcind-proxy" init "$missing_init_flag" 2>&1) && missing_init_rc=0 || missing_init_rc=$?
+  assert_eq "init ${missing_init_flag}: missing value exits non-zero" "1" "$missing_init_rc"
+  assert_contains "init ${missing_init_flag}: missing value reports Error" "Error:" "$missing_init_out"
+  assert_contains "init ${missing_init_flag}: missing value names flag" "$missing_init_flag" "$missing_init_out"
+  assert_not_contains "init ${missing_init_flag}: no unbound variable error" "unbound variable" "$missing_init_out"
+done
+unset missing_init_flag missing_init_out missing_init_rc
+
 export HOME="$REAL_HOME"
 export PATH="$REAL_PATH"
 rm -rf "$MOCK_HOME2"
@@ -346,6 +366,8 @@ echo "=== Test: xcind-proxy init --help / -h ==="
 init_help_long=$("$XCIND_ROOT/bin/xcind-proxy" init --help 2>&1) && init_help_long_rc=0 || init_help_long_rc=$?
 assert_eq "init --help exits 0" "0" "$init_help_long_rc"
 assert_contains "init --help shows usage" "Usage: xcind-proxy init" "$init_help_long"
+assert_contains "init --help mentions compose.yaml" "compose.yaml" "$init_help_long"
+assert_not_contains "init --help omits legacy docker-compose.yaml" "docker-compose.yaml" "$init_help_long"
 assert_contains "init --help mentions --proxy-domain" "--proxy-domain" "$init_help_long"
 assert_contains "init --help mentions --tls-mode" "--tls-mode" "$init_help_long"
 
@@ -2734,6 +2756,32 @@ cat >"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv" <<EOF
 5432		gone	db	5432	$CLI_HOME/missing	2026-04-10T00:00:00Z
 6379	dev	alive	cache	6379	$CLI_HOME/alive	2026-04-10T00:00:00Z
 EOF
+
+# Invalid proxy subcommand arguments must be rejected before touching
+# Docker or assigned-port state.
+up_bogus=$("$XCIND_ROOT/bin/xcind-proxy" up --bogus 2>&1) && up_bogus_rc=0 || up_bogus_rc=$?
+assert_eq "up unknown flag exits 1" "1" "$up_bogus_rc"
+assert_contains "up unknown flag names flag" "--bogus" "$up_bogus"
+
+up_extra=$("$XCIND_ROOT/bin/xcind-proxy" up --force extra 2>&1) && up_extra_rc=0 || up_extra_rc=$?
+assert_eq "up --force extra exits 1" "1" "$up_extra_rc"
+assert_contains "up --force extra reports unexpected" "Unexpected argument" "$up_extra"
+
+status_extra=$("$XCIND_ROOT/bin/xcind-proxy" status --json extra 2>&1) && status_extra_rc=0 || status_extra_rc=$?
+assert_eq "status --json extra exits 1" "1" "$status_extra_rc"
+assert_contains "status --json extra reports unexpected" "Unexpected argument" "$status_extra"
+
+down_extra=$("$XCIND_ROOT/bin/xcind-proxy" down extra 2>&1) && down_extra_rc=0 || down_extra_rc=$?
+assert_eq "down extra exits 1" "1" "$down_extra_rc"
+assert_contains "down extra reports unexpected" "Unexpected argument" "$down_extra"
+
+prune_extra=$("$XCIND_ROOT/bin/xcind-proxy" prune extra 2>&1) && prune_extra_rc=0 || prune_extra_rc=$?
+assert_eq "prune extra exits 1" "1" "$prune_extra_rc"
+assert_contains "prune extra reports unexpected" "Unexpected argument" "$prune_extra"
+
+release_extra=$("$XCIND_ROOT/bin/xcind-proxy" release 3306 extra 2>&1) && release_extra_rc=0 || release_extra_rc=$?
+assert_eq "release extra exits 1" "1" "$release_extra_rc"
+assert_contains "release extra reports unexpected" "Unexpected argument" "$release_extra"
 
 # release an existing port
 release_out=$("$XCIND_ROOT/bin/xcind-proxy" release 3306 2>&1) && release_rc=0 || release_rc=$?
