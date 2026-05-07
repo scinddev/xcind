@@ -8,3 +8,4 @@ Documentation maintenance procedures for Xcind.
 - [refine.md](refine.md) --- Improve quality without code changes
 - [sync.md](sync.md) --- Verify docs match implementation
 - [update.md](update.md) --- Update docs after code changes
+- [source-review-plan.md](source-review-plan.md) --- Source review findings and implementation plan
