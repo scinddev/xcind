@@ -75,7 +75,7 @@ The core runtime resolves the application root, sources workspace/app/additional
 
 | ID | Layer | Document | Summary | Status |
 |----|-------|----------|---------|--------|
-| `CORE-RUNTIME-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration section says there are no state files or registries, but assigned-port and workspace registry files are current behavior. | Open |
+| `CORE-RUNTIME-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration section says there are no state files or registries, but assigned-port and workspace registry files are current behavior. | Closed |
 | `CORE-RUNTIME-DOC-002` | Specifications | `engineering/specs/generated-override-files.md` | Cache-key summary omits several implemented inputs: env files, additional config files, `XCIND_TOOLS`, host-gateway settings, and detected host-gateway value. | Open |
 | `CORE-RUNTIME-DOC-003` | Specifications | `engineering/specs/configuration-schemas.md` | Source-order section omits `.xcind.override.sh` siblings and `XCIND_ADDITIONAL_CONFIG_FILES` for workspace and app configs. | Open |
 | `CORE-RUNTIME-DOC-004` | Implementation | `engineering/implementation/project-layout.md` | Runtime layout omits `xcind-bootstrap.bash` and newer installed libraries/hooks now sourced by `xcind-lib.bash`. | Open |
@@ -379,7 +379,7 @@ Replace the exact caller count with "all bin callers" or update the count.
 
 ## CORE-RUNTIME-DOC-001: Stateless configuration wording conflicts with current state files
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Specifications
 **Implementation Source**: `lib/xcind/xcind-registry-lib.bash:1`
 **Document Source**: `engineering/specs/configuration-schemas.md`
@@ -395,6 +395,25 @@ Current runtime behavior uses persistent state under `${XDG_STATE_HOME:-$HOME/.l
 ### Authority Decision
 
 Code correct, docs stale.
+
+### Resolution
+
+`engineering/specs/configuration-schemas.md` no longer claims Xcind is
+stateless. The "Design Rationale: Declarative Configuration" section now
+distinguishes declarative configuration (`.xcind.sh`, proxy `config.sh`)
+from narrowly-scoped runtime state and generated artifacts under
+`${XDG_STATE_HOME:-$HOME/.local/state}/xcind/` and per-app
+`.xcind/generated/` directories. The aspect table lists the workspace
+registry (`workspaces.tsv`) and the assigned-port state
+(`proxy/assigned-ports.tsv`) alongside the existing declarative sources,
+and links to [Workspace Lifecycle: State](../specs/workspace-lifecycle.md#state)
+so the two specs stay aligned. The doc-only edit landed on the current
+branch in commit `733dcbf` ahead of this ledger update.
+
+### Validation
+
+- `rtk make lint`: passed (shfmt + shellcheck clean on tracked SHELL_FILES).
+- No source files changed; tests not re-run for this doc-only drift item.
 
 ### Proposed Documentation Update
 
