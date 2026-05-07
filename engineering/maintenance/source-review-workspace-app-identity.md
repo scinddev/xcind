@@ -57,7 +57,7 @@ The workspace and app identity area provides generated Compose overlays for app 
 - `xcind-application init/status/list` scaffold app config, reject workspace roots for app init, derive status from `xcind-config --json`, and enumerate immediate non-hidden app directories in a workspace.
 
 **Risks assessed**:
-- Correctness and failure handling: The hook generation paths mostly soft-skip as documented, but workspace network creation suppresses all Docker failures, and several CLI parsers accept malformed argument shapes.
+- Correctness and failure handling: The hook generation paths mostly soft-skip as documented, but workspace network creation previously suppressed all Docker failures (fixed in WAI-004 to warn on real failures), and several CLI parsers accept malformed argument shapes.
 - Bash 3.2 portability: Arrays, process substitution, dynamic scoping callbacks, and `local` usage are consistent with the rest of the project and pass shellcheck.
 - Shell safety and maintainability: Paths are generally quoted. The init writers intentionally rewrite `.xcind.sh`; the application CLI documents that caveat, but workspace init does not.
 - State/cache/generated files: App/workspace generated files are deterministic on cache miss. Workspace registry writes are silent by design, but `list --prune` mutates state and was not run during this review.
@@ -80,7 +80,7 @@ The workspace and app identity area provides generated Compose overlays for app 
 |----|-------|----------|---------|--------|
 | `WAI-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration rationale still says there are no state files, manifests, or registries, but workspace registry and assigned-port state are current behavior. | Closed |
 | `WAI-DOC-002` | Specifications | `engineering/specs/directory-structure.md` | Global state tree documents proxy state but omits `${XDG_STATE_HOME}/xcind/workspaces.tsv`. | Closed |
-| `WAI-DOC-003` | Implementation | `engineering/implementation/project-layout.md` | Source layout omits `bin/xcind-workspace`, `bin/xcind-application`, `xcind-app-lib.bash`, and other current built-in libraries/hooks. | Open |
+| `WAI-DOC-003` | Implementation | `engineering/implementation/project-layout.md` | Source layout omits `bin/xcind-workspace`, `bin/xcind-application`, `xcind-app-lib.bash`, and other current built-in libraries/hooks. | Closed |
 | `WAI-DOC-004` | Architecture | `engineering/architecture/overview.md` | Architecture says the workspace internal network is created by `xcind-workspace-hook` and omits several current GENERATE hooks from the pipeline list. | Open |
 | `WAI-DOC-005` | Specifications | `engineering/specs/hook-lifecycle.md` | Built-in hook table says `xcind-proxy-hook` emits context labels even though app/workspace context labels are now emitted by dedicated hooks. | Open |
 | `WAI-DOC-006` | Specifications | `engineering/specs/context-detection.md` | Quick reference says bare `xcind-config` shows JSON/appRoot, but implementation and CLI reference make bare `xcind-config` show help. | Open |

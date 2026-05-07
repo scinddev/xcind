@@ -121,6 +121,7 @@ __xcind-workspace-execute-hook() {
   fi
 
   echo "Warning: Failed to create workspace network '$network'." >&2
+  local line
   if [[ -n $create_err ]]; then
     echo "Warning: docker network create output:" >&2
     while IFS= read -r line || [[ -n $line ]]; do
