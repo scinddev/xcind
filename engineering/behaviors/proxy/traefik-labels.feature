@@ -66,11 +66,6 @@ Feature: Traefik Label Generation
     When xcind-proxy-hook generates the compose overlay
     Then the generated YAML routes the "web" service to port 80
 
-  Scenario: App name label is set
-    Given XCIND_PROXY_EXPORTS contains "web"
-    When xcind-proxy-hook generates the compose overlay
-    Then the generated YAML contains label "xcind.app.name" with value "myapp"
-
   Scenario: Export-specific host labels are set
     Given XCIND_PROXY_EXPORTS contains "web" and "db=postgres:5432"
     When xcind-proxy-hook generates the compose overlay

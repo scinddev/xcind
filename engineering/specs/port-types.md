@@ -32,6 +32,15 @@ export_name[=compose_service][:port][;key=value[;key=value…]]
 
 Only `type` is accepted in the metadata section today; unknown keys and invalid `type` values cause the hooks to fail fast.
 
+For `type=proxied` entries, `tls` controls TLS behavior for that specific export:
+
+| Key | Accepted Values | Default | Description |
+|-----|----------------|---------|-------------|
+| `type` | `proxied`, `assigned` | `proxied` | Export mechanism |
+| `tls` | `auto`, `require`, `disable` | `auto` | Per-export TLS override (only meaningful when `type=proxied`) |
+
+The effective TLS behavior for each export is resolved from the global `XCIND_PROXY_TLS_MODE` and the per-export `tls` key. When the global mode is `disabled`, all exports are HTTP-only regardless of per-export `tls`. Unknown keys and invalid `type` or `tls` values cause the hooks to fail fast.
+
 ## Proxied Ports
 
 Traffic is routed through Traefik on the HTTP entrypoint (port configurable via `XCIND_PROXY_HTTP_PORT`, default `80`).

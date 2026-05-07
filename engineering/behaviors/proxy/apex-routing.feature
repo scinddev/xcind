@@ -19,7 +19,9 @@ Feature: Apex URL Routing
     When xcind-proxy-hook generates the compose overlay
     Then the generated YAML contains apex hostname "myapp.localhost"
     And the generated YAML contains label "xcind.apex.host" with value "myapp.localhost"
-    And the generated YAML contains label "xcind.apex.url" with value "http://myapp.localhost"
+    And the generated YAML contains label "xcind.apex.http.url" with value "http://myapp.localhost"
+    And the generated YAML contains label "xcind.apex.https.url" with value "https://myapp.localhost"
+    And the generated YAML contains label "xcind.apex.url" with value "https://myapp.localhost"
 
   Scenario: Primary export retains its export hostname alongside apex
     Given XCIND_WORKSPACELESS is 1

@@ -108,8 +108,9 @@ The pipeline uses two hook phases (see [Hook Lifecycle Spec](../specs/hook-lifec
 
 - **`xcind-naming-hook`**: Sets the Docker Compose project `name:` to prevent container/volume/network collisions
 - **`xcind-app-env-hook`**: Injects `XCIND_APP_ENV_FILES` into services via `env_file:` directives
-- **`xcind-proxy-hook`**: Generates Traefik labels, `xcind-proxy` network attachment, and context/export labels
-- **`xcind-workspace-hook`**: Generates workspace network aliases for inter-app communication
+- **`xcind-proxy-hook`**: Generates Traefik routing labels, `xcind-proxy` network attachment, export labels (`xcind.export.*`), and apex labels (`xcind.apex.*`)
+- **`xcind-app-hook`**: Generates app context labels (`xcind.app.*`)
+- **`xcind-workspace-hook`**: Generates workspace network aliases and workspace context labels (`xcind.workspace.*`) for inter-app communication
 
 **EXECUTE hooks** (`XCIND_HOOKS_EXECUTE`) — ensure runtime preconditions, never cached:
 

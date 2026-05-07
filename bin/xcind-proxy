@@ -123,6 +123,29 @@ __xcind-proxy-init() {
     esac
   fi
 
+  # Validate port flags: must be positive integers in valid port range.
+  __xcind-proxy-init-validate-port() {
+    local flag="$1" val="$2"
+    if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt 1 ] || [ "$val" -gt 65535 ]; then
+      echo "Error: $flag must be a port number between 1 and 65535 (got: $val)" >&2
+      exit 1
+    fi
+  }
+  [[ -n $_flag_http_port ]] && __xcind-proxy-init-validate-port "--http-port" "$_flag_http_port"
+  [[ -n $_flag_https_port ]] && __xcind-proxy-init-validate-port "--https-port" "$_flag_https_port"
+  [[ -n $_flag_dashboard_port ]] && __xcind-proxy-init-validate-port "--dashboard-port" "$_flag_dashboard_port"
+
+  # Validate --dashboard: must be 'true' or 'false'.
+  if [[ -n $_flag_dashboard ]]; then
+    case "$_flag_dashboard" in
+    true | false) ;;
+    *)
+      echo "Error: --dashboard must be 'true' or 'false' (got: $_flag_dashboard)" >&2
+      exit 1
+      ;;
+    esac
+  fi
+
   mkdir -p "$XCIND_PROXY_CONFIG_DIR" "$XCIND_PROXY_STATE_DIR"
 
   # Source existing config if present (provides current values as defaults)
@@ -198,8 +221,9 @@ __xcind-proxy-up() {
   if [ "$force" = true ]; then
     docker compose -f "$XCIND_PROXY_COMPOSE" up -d || return $?
   else
-    # Start if not already running
-    XCIND_PROXY_AUTO_START=1 __xcind-proxy-ensure-running
+    # Start if not already running; strict=true so explicit CLI up propagates
+    # docker compose failures instead of silently swallowing them.
+    XCIND_PROXY_AUTO_START=1 __xcind-proxy-ensure-running strict
   fi
 }
 

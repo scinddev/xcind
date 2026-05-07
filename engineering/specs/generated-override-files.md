@@ -148,25 +148,43 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=xcind-proxy"
+      # HTTP router
       - "traefik.http.routers.dev-frontend-web-http.rule=Host(`dev-frontend-web.localhost`)"
       - "traefik.http.routers.dev-frontend-web-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-web-http.service=dev-frontend-web-http"
       - "traefik.http.services.dev-frontend-web-http.loadbalancer.server.port=80"
+      # HTTPS router (emitted when XCIND_PROXY_TLS_MODE != disabled)
+      - "traefik.http.routers.dev-frontend-web-https.rule=Host(`dev-frontend-web.localhost`)"
+      - "traefik.http.routers.dev-frontend-web-https.entrypoints=websecure"
+      - "traefik.http.routers.dev-frontend-web-https.tls=true"
+      - "traefik.http.routers.dev-frontend-web-https.service=dev-frontend-web-https"
+      - "traefik.http.services.dev-frontend-web-https.loadbalancer.server.port=80"
+      # Apex routers
       - "traefik.http.routers.dev-frontend-http.rule=Host(`dev-frontend.localhost`)"
       - "traefik.http.routers.dev-frontend-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
       - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
+      - "traefik.http.routers.dev-frontend-https.rule=Host(`dev-frontend.localhost`)"
+      - "traefik.http.routers.dev-frontend-https.entrypoints=websecure"
+      - "traefik.http.routers.dev-frontend-https.tls=true"
+      - "traefik.http.routers.dev-frontend-https.service=dev-frontend-https"
+      - "traefik.http.services.dev-frontend-https.loadbalancer.server.port=80"
+      # Export labels — preferred URL is https when TLS is enabled
       - "xcind.export.web.host=dev-frontend-web.localhost"
-      - "xcind.export.web.url=http://dev-frontend-web.localhost"
+      - "xcind.export.web.http.url=http://dev-frontend-web.localhost"
+      - "xcind.export.web.https.url=https://dev-frontend-web.localhost"
+      - "xcind.export.web.url=https://dev-frontend-web.localhost"
       - "xcind.apex.host=dev-frontend.localhost"
-      - "xcind.apex.url=http://dev-frontend.localhost"
+      - "xcind.apex.http.url=http://dev-frontend.localhost"
+      - "xcind.apex.https.url=https://dev-frontend.localhost"
+      - "xcind.apex.url=https://dev-frontend.localhost"
 
 networks:
   xcind-proxy:
     external: true
 ```
 
-For a complete unabridged example, see the [Generated Override Files Appendix](./appendices/generated-override-files/).
+The example above reflects the default `XCIND_PROXY_TLS_MODE=auto` behavior. When TLS is disabled (`XCIND_PROXY_TLS_MODE=disabled` or per-export `tls=disable`), only HTTP routers are emitted and `.url` labels use `http://`. For a complete unabridged example, see the [Generated Override Files Appendix](./appendices/generated-override-files/).
 
 ### `compose.workspace.yaml`
 

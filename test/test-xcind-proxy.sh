@@ -227,6 +227,59 @@ for missing_init_flag in \
 done
 unset missing_init_flag missing_init_out missing_init_rc
 
+# PROXY-ROUTING-002: config.sh values must round-trip literally through
+# double-quote escaping — shell metacharacters must not execute on source.
+echo "=== Test: proxy init config.sh safe serialization (PROXY-ROUTING-002) ==="
+
+# Sandbox a fresh HOME so these tests do not pollute the main MOCK_HOME2.
+PR002_HOME=$(mktemp_d)
+PR002_CONFIG_DIR="${PR002_HOME}/.config/xcind/proxy"
+mkdir -p "${PR002_HOME}/bin"
+cat >"${PR002_HOME}/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+exit 0
+MOCKEOF
+chmod +x "${PR002_HOME}/bin/docker"
+export HOME="$PR002_HOME"
+export PATH="${PR002_HOME}/bin:$REAL_PATH"
+XCIND_PROXY_CONFIG_DIR="$PR002_CONFIG_DIR"
+XCIND_PROXY_STATE_DIR="${PR002_HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$PR002_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${PR002_HOME}/.local/state/xcind/proxy/compose.yaml"
+
+# Regression: a $(cmd) domain must not execute when config.sh is sourced.
+PR002_SENTINEL="${PR002_HOME}/cmd_executed"
+"$XCIND_ROOT/bin/xcind-proxy" init --proxy-domain 'safe$(touch '"$PR002_SENTINEL"')end' >/dev/null 2>&1
+assert_eq 'PROXY-ROUTING-002: $(cmd) not executed on source' "false" \
+  "$([ -f "$PR002_SENTINEL" ] && echo true || echo false)"
+
+# Round-trip checks: verify literal preservation for each dangerous char class.
+PR002_CASES=(
+  'double"quote'
+  'dollar$sign'
+  'back`tick'
+  'back\\slash'
+  'space in value'
+  'combo"$`\\test'
+)
+for pr002_val in "${PR002_CASES[@]}"; do
+  "$XCIND_ROOT/bin/xcind-proxy" init --proxy-domain "$pr002_val" >/dev/null 2>&1
+  # Source the written config into a subshell and print the domain value
+  # to verify literal round-trip without executing embedded shell syntax.
+  pr002_read=$(bash -c 'source "$1/config.sh" && printf "%s" "$XCIND_PROXY_DOMAIN"' _ "$PR002_CONFIG_DIR" 2>/dev/null)
+  assert_eq "PROXY-ROUTING-002 round-trip: '$pr002_val'" "$pr002_val" "$pr002_read"
+done
+unset pr002_val pr002_read PR002_CASES PR002_SENTINEL
+
+export HOME="$REAL_HOME"
+export PATH="$REAL_PATH"
+XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
+rm -rf "$PR002_HOME"
+unset PR002_HOME PR002_CONFIG_DIR
+
 export HOME="$REAL_HOME"
 export PATH="$REAL_PATH"
 rm -rf "$MOCK_HOME2"
@@ -344,7 +397,116 @@ rm -rf "$MOCK_HOME2"
 
 # ======================================================================
 echo ""
-echo "=== Test: xcind-proxy version ==="
+echo "=== Test: xcind-proxy up strict failure (PROXY-ROUTING-001) ==="
+
+# xcind-proxy up (without --force) must propagate docker compose up -d failures
+# and exit non-zero. The EXECUTE hook path must remain non-fatal.
+
+PR001_HOME=$(mktemp_d)
+export HOME="$PR001_HOME"
+XCIND_PROXY_CONFIG_DIR="${PR001_HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${PR001_HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
+mkdir -p "${PR001_HOME}/bin"
+cat >"${PR001_HOME}/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Simulate: ps returns empty (not running), compose up fails, network ok.
+case "$1" in
+  ps) exit 0 ;;
+  compose) echo "mock: compose up failed" >&2; exit 1 ;;
+  network) exit 0 ;;
+esac
+exit 0
+MOCKEOF
+chmod +x "${PR001_HOME}/bin/docker"
+export PATH="${PR001_HOME}/bin:$REAL_PATH"
+
+# Lay down a minimal proxy compose file so xcind-proxy up can proceed to
+# the docker compose step without re-running full ensure-init.
+mkdir -p "$XCIND_PROXY_STATE_DIR" "$XCIND_PROXY_CONFIG_DIR"
+cat >"$XCIND_PROXY_CONFIG_DIR/config.sh" <<'CFG'
+XCIND_PROXY_DOMAIN="localhost"
+XCIND_PROXY_IMAGE="traefik:v3"
+XCIND_PROXY_HTTP_PORT="80"
+XCIND_PROXY_DASHBOARD="false"
+XCIND_PROXY_DASHBOARD_PORT="8080"
+XCIND_PROXY_TLS_MODE="disabled"
+XCIND_PROXY_HTTPS_PORT="443"
+XCIND_PROXY_TLS_CERT_FILE=""
+XCIND_PROXY_TLS_KEY_FILE=""
+CFG
+
+# xcind-proxy up must exit non-zero when docker compose up fails.
+up_fail_out=$("$XCIND_ROOT/bin/xcind-proxy" up 2>&1) && up_fail_rc=0 || up_fail_rc=$?
+assert_eq "PROXY-ROUTING-001: xcind-proxy up exits non-zero on compose failure" "1" "$up_fail_rc"
+assert_contains "PROXY-ROUTING-001: up failure mentions Traefik" "Failed to start Traefik" "$up_fail_out"
+
+# EXECUTE hook (non-strict) must remain non-fatal on the same failure.
+execute_hook_out=$(__xcind-proxy-execute-hook . 2>&1) && execute_hook_rc=0 || execute_hook_rc=$?
+assert_eq "PROXY-ROUTING-001: execute hook stays non-fatal on compose failure" "0" "$execute_hook_rc"
+
+unset -f docker 2>/dev/null || true
+export HOME="$REAL_HOME"
+export PATH="$REAL_PATH"
+XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
+rm -rf "$PR001_HOME"
+unset PR001_HOME
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy init input validation (PROXY-ROUTING-003) ==="
+
+# Port flags must reject non-integer and out-of-range values.
+PR003_HOME=$(mktemp_d)
+mkdir -p "${PR003_HOME}/bin"
+cat >"${PR003_HOME}/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+exit 0
+MOCKEOF
+chmod +x "${PR003_HOME}/bin/docker"
+export HOME="$PR003_HOME"
+export PATH="${PR003_HOME}/bin:$REAL_PATH"
+XCIND_PROXY_CONFIG_DIR="${PR003_HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${PR003_HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${PR003_HOME}/.local/state/xcind/proxy/compose.yaml"
+
+for pr003_flag in --http-port --https-port --dashboard-port; do
+  for pr003_val in nope 0 65536 -1 3.14 "8 0"; do
+    pr003_out=$("$XCIND_ROOT/bin/xcind-proxy" init "$pr003_flag" "$pr003_val" 2>&1) && pr003_rc=0 || pr003_rc=$?
+    assert_eq "PROXY-ROUTING-003: $pr003_flag '$pr003_val' exits non-zero" "1" "$pr003_rc"
+    assert_contains "PROXY-ROUTING-003: $pr003_flag '$pr003_val' reports Error" "Error:" "$pr003_out"
+  done
+done
+unset pr003_flag pr003_val pr003_out pr003_rc
+
+# Valid port values must be accepted.
+for pr003_flag in --http-port --https-port --dashboard-port; do
+  pr003_out=$("$XCIND_ROOT/bin/xcind-proxy" init "$pr003_flag" 8080 2>&1) && pr003_rc=0 || pr003_rc=$?
+  assert_eq "PROXY-ROUTING-003: $pr003_flag 8080 exits zero" "0" "$pr003_rc"
+done
+unset pr003_flag pr003_out pr003_rc
+
+# --dashboard must reject values other than 'true' and 'false'.
+for pr003_val in maybe 1 yes TRUE; do
+  pr003_out=$("$XCIND_ROOT/bin/xcind-proxy" init --dashboard "$pr003_val" 2>&1) && pr003_rc=0 || pr003_rc=$?
+  assert_eq "PROXY-ROUTING-003: --dashboard '$pr003_val' exits non-zero" "1" "$pr003_rc"
+  assert_contains "PROXY-ROUTING-003: --dashboard '$pr003_val' reports Error" "Error:" "$pr003_out"
+done
+unset pr003_val pr003_out pr003_rc
+
+export HOME="$REAL_HOME"
+export PATH="$REAL_PATH"
+XCIND_PROXY_CONFIG_DIR="${HOME}/.config/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_PROXY_DIR="$XCIND_PROXY_CONFIG_DIR"
+XCIND_PROXY_COMPOSE="${XCIND_PROXY_STATE_DIR}/compose.yaml"
+rm -rf "$PR003_HOME"
+unset PR003_HOME
 
 version_output=$("$XCIND_ROOT/bin/xcind-proxy" --version)
 assert_contains "version output has xcind-proxy" "xcind-proxy" "$version_output"
@@ -941,6 +1103,49 @@ assert_file_exists "auto-start=0: compose.proxy.yaml still created" "$XCIND_GENE
 auto_start_off_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
 assert_contains "auto-start=0: yaml has web service" "web:" "$auto_start_off_yaml"
 assert_contains "auto-start=0: yaml has traefik labels" "traefik.enable=true" "$auto_start_off_yaml"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy-hook port validation (PROXY-ROUTING-004) ==="
+
+# Explicit non-numeric port must fail the hook.
+XCIND_PROXY_EXPORTS=("web:notaport")
+export XCIND_PROXY_EXPORTS
+rm -f "$XCIND_GENERATED_DIR/compose.proxy.yaml"
+pr004_bad_port_out=$(xcind-proxy-hook "$HOOK_APP" 2>&1) && pr004_rc=0 || pr004_rc=$?
+assert_eq "PROXY-ROUTING-004: non-numeric explicit port exits non-zero" "1" "$pr004_rc"
+assert_contains "PROXY-ROUTING-004: non-numeric explicit port reports Error" "Error:" "$pr004_bad_port_out"
+assert_contains "PROXY-ROUTING-004: error names the export" "web" "$pr004_bad_port_out"
+assert_file_missing "PROXY-ROUTING-004: no compose.proxy.yaml written on port error" \
+  "$XCIND_GENERATED_DIR/compose.proxy.yaml"
+unset pr004_bad_port_out pr004_rc
+
+# Port 0 is also invalid.
+XCIND_PROXY_EXPORTS=("web:0")
+pr004_zero_out=$(xcind-proxy-hook "$HOOK_APP" 2>&1) && pr004_zero_rc=0 || pr004_zero_rc=$?
+assert_eq "PROXY-ROUTING-004: port 0 exits non-zero" "1" "$pr004_zero_rc"
+unset pr004_zero_out pr004_zero_rc
+
+# A protocol-suffix port (e.g. 80/tcp from yq) must be stripped to a valid number.
+XCIND_PROXY_EXPORTS=("web:80/tcp")
+rm -f "$XCIND_GENERATED_DIR/compose.proxy.yaml"
+pr004_proto_out=$(xcind-proxy-hook "$HOOK_APP" 2>&1) && pr004_proto_rc=0 || pr004_proto_rc=$?
+assert_eq "PROXY-ROUTING-004: port 80/tcp accepted after suffix strip" "0" "$pr004_proto_rc"
+pr004_proto_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "PROXY-ROUTING-004: port 80/tcp yields label with 80" ".server.port=80" "$pr004_proto_yaml"
+unset pr004_proto_out pr004_proto_rc pr004_proto_yaml
+
+# Valid explicit numeric port.
+XCIND_PROXY_EXPORTS=("web:8080")
+rm -f "$XCIND_GENERATED_DIR/compose.proxy.yaml"
+pr004_valid_out=$(xcind-proxy-hook "$HOOK_APP" 2>&1) && pr004_valid_rc=0 || pr004_valid_rc=$?
+assert_eq "PROXY-ROUTING-004: numeric port 8080 exits zero" "0" "$pr004_valid_rc"
+pr004_valid_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "PROXY-ROUTING-004: numeric port 8080 in label" ".server.port=8080" "$pr004_valid_yaml"
+unset pr004_valid_out pr004_valid_rc pr004_valid_yaml
+
+# Reset export for remaining hook tests.
+XCIND_PROXY_EXPORTS=("web:3000")
 
 # ======================================================================
 echo ""
