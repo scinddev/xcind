@@ -68,7 +68,7 @@ The core runtime resolves the application root, sources workspace/app/additional
 |----|----------|-------|-----------------|--------|
 | `CORE-RUNTIME-001` | `P1` | Partial generated directories are trusted as cache hits and can skip hooks | `lib/xcind/xcind-lib.bash:1852` | Closed |
 | `CORE-RUNTIME-002` | `P1` | Assigned-port generation is cached despite depending on live state outside the SHA | `lib/xcind/xcind-lib.bash:1846` | Closed |
-| `CORE-RUNTIME-003` | `P2` | Cache `config.json` is written before post-hook assigned-port state exists | `lib/xcind/xcind-lib.bash:589` | Open |
+| `CORE-RUNTIME-003` | `P2` | Cache `config.json` is written before post-hook assigned-port state exists | `lib/xcind/xcind-lib.bash:589` | Closed |
 | `CORE-RUNTIME-004` | `P3` | Bootstrap source comment still says there are four callers | `lib/xcind/xcind-bootstrap.bash:10` | Closed |
 
 ## Documentation Drift
@@ -263,9 +263,46 @@ Use the existing handoff direction: separate always-run generation from pure cac
 ## CORE-RUNTIME-003: Cache `config.json` is written before post-hook assigned-port state exists
 
 **Priority**: `P2`
-**Status**: Open
+**Status**: Closed
 **Source**: `lib/xcind/xcind-lib.bash:589`
 **Area**: Core runtime
+
+### Resolution
+
+Split the cache `config.json` write out of `__xcind-populate-cache` into a
+new `__xcind-write-cache-config-json` helper in `lib/xcind/xcind-lib.bash`.
+`__xcind-populate-cache` now writes only `resolved-config.yaml` (still
+called before hooks because hooks consume it for service enumeration).
+`__xcind-prepare-app` invokes `__xcind-write-cache-config-json` after
+`__xcind-run-hooks`, so the cached JSON reflects post-hook
+`assignedExports` (and any other state hooks mutate). The helper writes
+through a `.tmp` sidecar and `mv`s into place to avoid leaving a corrupt
+`config.json` if `jq` fails, and is a no-op when `jq` is unavailable —
+matching the prior behavior of `__xcind-populate-cache`. Cache miss and
+cache hit paths both benefit because `__xcind-prepare-app` always reaches
+the post-hook write step.
+
+### Validation
+
+- New deterministic regression coverage in `test/test-xcind-proxy.sh`
+  ("cache config.json reflects post-hook assignedExports" group): seeds
+  `resolved-config.yaml` with a single `mysql` service, registers the
+  real `xcind-assigned-hook` in `XCIND_HOOKS_GENERATE` /
+  `XCIND_HOOKS_ALWAYS`, drives `__xcind-run-hooks` followed by
+  `__xcind-write-cache-config-json`, and asserts:
+  - `config.json` does not exist until the post-hook write step.
+  - The TSV row for the app records the assigned host port.
+  - `.assignedExports.db.host_port` in the cached JSON equals the TSV
+    host port.
+  - `.assignedExports.db.container_port` and `.compose_service` match
+    the declared export.
+  - Cached `config.json` matches the live `__xcind-resolve-json` output
+    byte-for-byte (the path `xcind-config --json` uses), confirming the
+    direct cache reader sees the same state.
+- `bash test/test-xcind.sh`: 501 passed, 0 failed.
+- `bash test/test-xcind-proxy.sh`: 532 passed, 0 failed.
+- `make lint`: clean.
+- `make check`: passed (exit 0).
 
 ### Behavior Observed
 

@@ -596,6 +596,12 @@ __xcind-prepare-app() {
     # function called in a conditional context (`__xcind-prepare-app || exit 1`).
     __xcind-populate-cache "$app_root" || return 1
     __xcind-run-hooks "$app_root" || return 1
+    # config.json must reflect post-hook state (e.g. assignedExports updated
+    # by xcind-assigned-hook). Writing it after hooks ensures direct readers
+    # of .xcind/cache/{sha}/config.json see the same resolved state that
+    # `xcind-config --json` reports. resolved-config.yaml stays in
+    # __xcind-populate-cache because hooks consume it for service enumeration.
+    __xcind-write-cache-config-json "$app_root" || return 1
   else
     __xcind-debug "prepare-app: skipping hooks — XCIND_HOOKS_GENERATE is empty"
   fi
@@ -1156,8 +1162,10 @@ __xcind-compute-sha() {
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
-# Populate the cache directory with resolved config artifacts.
-# Runs docker compose config and writes config.json + resolved-config.yaml.
+# Populate the cache directory with resolved-config.yaml.
+# Runs docker compose config so hooks that need the resolved service
+# enumeration can read it. config.json is written separately, after hooks
+# run, by __xcind-write-cache-config-json.
 #
 # Usage:
 #   __xcind-populate-cache /path/to/app/root
@@ -1175,10 +1183,28 @@ __xcind-populate-cache() {
     rm -f -- "$_resolved_tmp"
     return 1
   fi
+}
 
-  # Write config.json (matching xcind-config format)
-  if command -v jq &>/dev/null; then
-    __xcind-resolve-json "$app_root" >"$XCIND_CACHE_DIR/config.json"
+# Write .xcind/cache/{sha}/config.json from the current resolved state.
+# Called after __xcind-run-hooks so post-hook updates (assigned-port state in
+# particular) are reflected in the cached JSON. No-op when jq is missing,
+# matching the prior behavior of __xcind-populate-cache.
+#
+# Usage:
+#   __xcind-write-cache-config-json /path/to/app/root
+__xcind-write-cache-config-json() {
+  local app_root="$1"
+
+  command -v jq &>/dev/null || return 0
+
+  mkdir -p "$XCIND_CACHE_DIR"
+
+  local _json_tmp="$XCIND_CACHE_DIR/config.json.tmp"
+  if __xcind-resolve-json "$app_root" >"$_json_tmp"; then
+    mv -- "$_json_tmp" "$XCIND_CACHE_DIR/config.json"
+  else
+    rm -f -- "$_json_tmp"
+    return 1
   fi
 }
 

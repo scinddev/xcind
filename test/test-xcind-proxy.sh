@@ -2960,6 +2960,112 @@ rm -rf "$CLI_HOME"
 
 # ======================================================================
 echo ""
+echo "=== Test: cache config.json reflects post-hook assignedExports ==="
+
+# CORE-RUNTIME-003 regression: __xcind-prepare-app must rewrite
+# .xcind/cache/{sha}/config.json AFTER GENERATE hooks run so that direct
+# readers of the cache file see the same assignedExports state that
+# `xcind-config --json` reports. Previously the cache file was written by
+# __xcind-populate-cache before xcind-assigned-hook updated assigned-port
+# state, leaving stale or empty assignedExports on cache miss.
+
+POSTHOOK_APP=$(mktemp_d)
+_orig_posthook_home="$HOME"
+_orig_posthook_xdg="${XDG_STATE_HOME:-}"
+HOME=$(mktemp_d)
+export HOME
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+export XCIND_APP="posthookapp"
+export XCIND_WORKSPACE=""
+export XCIND_SHA="posthooksha"
+export XCIND_CACHE_DIR="$POSTHOOK_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$POSTHOOK_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+YAML
+
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() { return 0; }
+
+XCIND_HOOKS_GENERATE=("xcind-assigned-hook")
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+# __xcind-resolve-json reads several variables that are normally populated
+# by the prepare-app pipeline; default them to empty for this isolated test.
+XCIND_TOOLS=()
+XCIND_COMPOSE_ENV_FILES=()
+XCIND_APP_ENV_FILES=()
+XCIND_COMPOSE_FILES=()
+XCIND_BAKE_FILES=()
+XCIND_DOCKER_COMPOSE_OPTS=()
+__XCIND_SOURCED_CONFIG_FILES=()
+
+# Simulate the prepare-app order: resolved-config.yaml is already on disk
+# (placed by __xcind-populate-cache in production via `docker compose
+# config`), hooks run, THEN config.json is written from post-hook state.
+# __xcind-populate-cache itself is not invoked here because it requires
+# docker; the structural change being verified is that the cache file
+# write moved out of populate-cache into __xcind-write-cache-config-json.
+__xcind-run-hooks "$POSTHOOK_APP"
+assert_file_missing "config.json absent until post-hook write" \
+  "$XCIND_CACHE_DIR/config.json"
+
+__xcind-write-cache-config-json "$POSTHOOK_APP"
+assert_file_exists "config.json written after hooks" \
+  "$XCIND_CACHE_DIR/config.json"
+
+# Cached config.json must contain the assignedExports for db. The TSV row
+# for posthookapp/mysql/3306 holds the assigned host port.
+posthook_tsv=$(awk -F'\t' '!/^#/ && NF>0 && $3=="posthookapp" {print $1}' \
+  "$XCIND_ASSIGNED_PORTS_FILE")
+assert_contains "TSV recorded an assignment for posthookapp" "3306" \
+  "$posthook_tsv"
+
+cached_assigned_host=$(jq -r '.assignedExports.db.host_port // empty' \
+  "$XCIND_CACHE_DIR/config.json")
+assert_eq "cache config.json assignedExports.db.host_port matches TSV" \
+  "$posthook_tsv" "$cached_assigned_host"
+cached_assigned_cport=$(jq -r '.assignedExports.db.container_port // empty' \
+  "$XCIND_CACHE_DIR/config.json")
+assert_eq "cache config.json assignedExports.db.container_port is 3306" \
+  "3306" "$cached_assigned_cport"
+cached_assigned_svc=$(jq -r '.assignedExports.db.compose_service // empty' \
+  "$XCIND_CACHE_DIR/config.json")
+assert_eq "cache config.json assignedExports.db.compose_service is mysql" \
+  "mysql" "$cached_assigned_svc"
+
+# Reading via __xcind-resolve-json (the path xcind-config --json uses) must
+# match the cached file byte-for-byte after the post-hook write.
+live_json=$(__xcind-resolve-json "$POSTHOOK_APP")
+cached_json=$(<"$XCIND_CACHE_DIR/config.json")
+assert_eq "cache config.json matches live xcind-config --json output" \
+  "$live_json" "$cached_json"
+
+unset -f __xcind-assigned-port-available
+rm -rf "$POSTHOOK_APP" "$HOME"
+HOME="$_orig_posthook_home"
+export HOME
+[[ -n $_orig_posthook_xdg ]] && export XDG_STATE_HOME="$_orig_posthook_xdg"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+
+# ======================================================================
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
