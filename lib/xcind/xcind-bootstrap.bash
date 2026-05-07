@@ -8,7 +8,7 @@
 # separate file (rather than inlining the source directly in each bin
 # stub) gives us a single place to add shared setup logic in the
 # future — hook discovery, env-var defaults, etc. — without touching
-# four callers.
+# every bin caller.
 
 if [[ -z ${XCIND_ROOT:-} ]]; then
   echo "xcind-bootstrap: XCIND_ROOT is not set; call from a bin/ stub." >&2
