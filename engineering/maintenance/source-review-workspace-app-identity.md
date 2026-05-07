@@ -98,7 +98,7 @@ For the follow-up implementation pass (Round 4), `make check` passed for the cor
 ## Blockers or Follow-Up
 
 - All implementation findings have been implemented and closed.
-- WAI-DOC-001 and WAI-DOC-002 were closed in Round 4.
+- WAI-DOC-001, WAI-DOC-002, and WAI-DOC-003 were closed in Round 4.
 - WAI-001, WAI-002, and WAI-003 overlap with CLI-area findings and were resolved in Round 1 follow-ups.
 - WAI-004 was resolved in Round 4.
 
@@ -384,7 +384,7 @@ Updated `engineering/specs/directory-structure.md` Global Configuration section.
 
 ## WAI-DOC-003: Project layout omits current workspace/application entrypoints and identity hooks
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Implementation
 **Implementation Source**: `bin/xcind-workspace:1`
 **Document Source**: `engineering/implementation/project-layout.md`
@@ -408,6 +408,16 @@ Refresh the source tree and built-in hook list in `engineering/implementation/pr
 ### Related Finding
 
 None.
+
+### Resolution
+
+Confirmed that `engineering/implementation/project-layout.md` was already refreshed in a previous round: it contains all `bin/` entrypoints (including `xcind-workspace` and `xcind-application`), all `lib/xcind/*.bash` files (including `xcind-app-lib.bash`, `xcind-assigned-lib.bash`, etc.), and all built-in hooks.
+
+### Validation
+
+- `rtk rg --files bin lib/xcind`
+- `rtk rg -n "xcind-workspace|xcind-application|xcind-app-lib|xcind-workspace-lib|__xcind-workspace-execute-hook|Built-in hooks|lib/xcind/xcind-registry-lib.bash" engineering/implementation/project-layout.md`
+- `rtk git diff --check`
 
 ## WAI-DOC-004: Architecture overview has stale workspace network and hook pipeline wording
 
