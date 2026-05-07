@@ -754,6 +754,81 @@ rm -rf "$WS_STATUS" "$WS_STATUS_HOME" "$OUTSIDE_DIR"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-workspace-execute-hook network diagnostics ==="
+
+WS_NET_TMP=$(mktemp_d)
+WS_NET_BIN="$WS_NET_TMP/bin"
+mkdir -p "$WS_NET_BIN"
+ws_net_old_path="$PATH"
+
+cat >"$WS_NET_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+case "$1 $2" in
+"network inspect")
+  exit 1
+  ;;
+"network create")
+  echo "daemon unavailable" >&2
+  echo "permission denied" >&2
+  exit 42
+  ;;
+*)
+  exit 0
+  ;;
+esac
+MOCKEOF
+chmod +x "$WS_NET_BIN/docker"
+export PATH="$WS_NET_BIN:$PATH"
+
+ws_net_err_file=$(mktemp)
+XCIND_WORKSPACELESS=0 XCIND_WORKSPACE="brokenws" \
+  __xcind-workspace-execute-hook "$WS_NET_TMP/app" 2>"$ws_net_err_file" &&
+  ws_net_rc=0 || ws_net_rc=$?
+ws_net_err=$(<"$ws_net_err_file")
+rm -f "$ws_net_err_file"
+assert_eq "network create failure remains non-fatal" "0" "$ws_net_rc"
+assert_contains "network create failure warns" \
+  "Failed to create workspace network 'brokenws-internal'" "$ws_net_err"
+assert_contains "network create failure includes docker error" \
+  "Warning:   daemon unavailable" "$ws_net_err"
+assert_contains "network create failure prefixes second docker error line" \
+  "Warning:   permission denied" "$ws_net_err"
+assert_contains "network create failure warns compose may fail" \
+  "Docker Compose may fail" "$ws_net_err"
+
+cat >"$WS_NET_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+case "$1 $2" in
+"network inspect")
+  exit 0
+  ;;
+"network create")
+  echo "create should not be called" >&2
+  exit 99
+  ;;
+*)
+  exit 0
+  ;;
+esac
+MOCKEOF
+chmod +x "$WS_NET_BIN/docker"
+
+ws_net_exists_err_file=$(mktemp)
+XCIND_WORKSPACELESS=0 XCIND_WORKSPACE="readyws" \
+  __xcind-workspace-execute-hook "$WS_NET_TMP/app" 2>"$ws_net_exists_err_file" &&
+  ws_net_exists_rc=0 || ws_net_exists_rc=$?
+ws_net_exists_err=$(<"$ws_net_exists_err_file")
+rm -f "$ws_net_exists_err_file"
+assert_eq "existing network remains non-fatal" "0" "$ws_net_exists_rc"
+assert_eq "existing network emits no warning" "" "$ws_net_exists_err"
+
+export PATH="$ws_net_old_path"
+unset ws_net_old_path ws_net_err_file ws_net_err ws_net_rc \
+  ws_net_exists_err_file ws_net_exists_err ws_net_exists_rc
+rm -rf "$WS_NET_TMP"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-late-bind-workspace ==="
 
 # Test: late-bind when app sets XCIND_WORKSPACE

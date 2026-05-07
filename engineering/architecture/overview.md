@@ -79,7 +79,7 @@ The architecture achieves the product vision (see [Vision](../product/vision.md)
 - **Name**: `{workspace}-internal` (e.g., `dev-internal`)
 - **Scope**: Per-workspace
 - **Purpose**: Enables inter-application communication within a workspace using stable aliases
-- **Created by**: `xcind-workspace-hook` (lazy, idempotent — created if not exists)
+- **Created by**: `__xcind-workspace-execute-hook` (lazy, idempotent — created if missing in workspace mode)
 
 ### Application Default Networks
 
@@ -107,15 +107,17 @@ The pipeline uses two hook phases (see [Hook Lifecycle Spec](../specs/hook-lifec
 **GENERATE hooks** (`XCIND_HOOKS_GENERATE`) — produce compose overlay files, cached by SHA:
 
 - **`xcind-naming-hook`**: Sets the Docker Compose project `name:` to prevent container/volume/network collisions
-- **`xcind-app-env-hook`**: Injects `XCIND_APP_ENV_FILES` into services via `env_file:` directives
-- **`xcind-proxy-hook`**: Generates Traefik routing labels, `xcind-proxy` network attachment, export labels (`xcind.export.*`), and apex labels (`xcind.apex.*`)
 - **`xcind-app-hook`**: Generates app context labels (`xcind.app.*`)
+- **`xcind-app-env-hook`**: Injects `XCIND_APP_ENV_FILES` into services via `env_file:` directives
+- **`xcind-host-gateway-hook`**: Injects `host.docker.internal` into services via `extra_hosts` (if enabled)
+- **`xcind-proxy-hook`**: Generates Traefik routing labels, `xcind-proxy` network attachment, export labels (`xcind.export.*`), and apex labels (`xcind.apex.*`)
+- **`xcind-assigned-hook`**: Assigns host ports sequentially starting from `$XCIND_ASSIGNED_PORT` for mapped service ports
 - **`xcind-workspace-hook`**: Generates workspace network aliases and workspace context labels (`xcind.workspace.*`) for inter-app communication
 
 **EXECUTE hooks** (`XCIND_HOOKS_EXECUTE`) — ensure runtime preconditions, never cached:
 
 - **`__xcind-proxy-execute-hook`**: Ensures Traefik proxy is running (if `XCIND_PROXY_EXPORTS` is set)
-- **`__xcind-workspace-execute-hook`**: Ensures workspace network exists (if in workspace mode)
+- **`__xcind-workspace-execute-hook`**: Ensures workspace network exists (creates it if missing in workspace mode)
 
 See [Generated Override Files Spec](../specs/generated-override-files.md) for overlay details.
 

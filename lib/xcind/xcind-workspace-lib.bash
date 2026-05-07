@@ -105,5 +105,29 @@ __xcind-workspace-execute-hook() {
   fi
 
   local network="${XCIND_WORKSPACE}-internal"
-  docker network create "$network" >/dev/null 2>&1 || true
+  if docker network inspect "$network" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local create_err
+  if create_err=$(docker network create "$network" 2>&1 >/dev/null); then
+    return 0
+  fi
+
+  # Suppress the create/inspect race but make real failures visible before
+  # Docker Compose later reports the missing external network.
+  if docker network inspect "$network" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Warning: Failed to create workspace network '$network'." >&2
+  local line
+  if [[ -n $create_err ]]; then
+    echo "Warning: docker network create output:" >&2
+    while IFS= read -r line || [[ -n $line ]]; do
+      echo "Warning:   $line" >&2
+    done <<<"$create_err"
+  fi
+  echo "Warning: Docker Compose may fail because external workspace network '$network' is unavailable." >&2
+  return 0
 }

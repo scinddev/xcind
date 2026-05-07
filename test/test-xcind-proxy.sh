@@ -1771,21 +1771,31 @@ echo ""
 echo "=== Test: __xcind-workspace-execute-hook ==="
 
 # Should create network when in workspace mode
-DOCKER_CMDS=""
+DOCKER_CMDS_FILE=$(mktemp)
 # shellcheck disable=SC2317
-docker() { DOCKER_CMDS+="$* "; }
+docker() {
+  printf '%s\n' "$*" >>"$DOCKER_CMDS_FILE"
+  if [[ $1 == "network" && $2 == "inspect" ]]; then
+    return 1
+  fi
+  return 0
+}
 export -f docker
 XCIND_WORKSPACELESS="0"
 XCIND_WORKSPACE="dev"
 __xcind-workspace-execute-hook "/tmp/test-app"
+DOCKER_CMDS=$(tr '\n' ' ' <"$DOCKER_CMDS_FILE")
+assert_contains "workspace execute hook: checks network first" "network inspect dev-internal" "$DOCKER_CMDS"
 assert_contains "workspace execute hook: creates network" "network create dev-internal" "$DOCKER_CMDS"
 
 # Should skip when workspaceless
-DOCKER_CMDS=""
+: >"$DOCKER_CMDS_FILE"
 XCIND_WORKSPACELESS="1"
 __xcind-workspace-execute-hook "/tmp/test-app"
+DOCKER_CMDS=$(tr '\n' ' ' <"$DOCKER_CMDS_FILE")
 assert_eq "workspace execute hook: skips when workspaceless" "" "$DOCKER_CMDS"
 unset -f docker
+rm -f "$DOCKER_CMDS_FILE"
 
 # ======================================================================
 echo ""

@@ -284,7 +284,8 @@ archive the scratchpad.
 
 ## Round 3: Proxy and Routing
 
-Status: pending.
+Status: complete. Source review ledger marks all findings and documentation
+drift closed, with `make check` passing after implementation follow-up.
 
 Source review document:
 
