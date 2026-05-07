@@ -67,7 +67,7 @@ The core runtime resolves the application root, sources workspace/app/additional
 | ID | Priority | Title | Source Location | Status |
 |----|----------|-------|-----------------|--------|
 | `CORE-RUNTIME-001` | `P1` | Partial generated directories are trusted as cache hits and can skip hooks | `lib/xcind/xcind-lib.bash:1852` | Closed |
-| `CORE-RUNTIME-002` | `P1` | Assigned-port generation is cached despite depending on live state outside the SHA | `lib/xcind/xcind-lib.bash:1846` | Open |
+| `CORE-RUNTIME-002` | `P1` | Assigned-port generation is cached despite depending on live state outside the SHA | `lib/xcind/xcind-lib.bash:1846` | Closed |
 | `CORE-RUNTIME-003` | `P2` | Cache `config.json` is written before post-hook assigned-port state exists | `lib/xcind/xcind-lib.bash:589` | Open |
 | `CORE-RUNTIME-004` | `P3` | Bootstrap source comment still says there are four callers | `lib/xcind/xcind-bootstrap.bash:10` | Closed |
 
@@ -195,9 +195,44 @@ Make generation atomic and validate completeness. One practical shape: write hoo
 ## CORE-RUNTIME-002: Assigned-port generation is cached despite depending on live state outside the SHA
 
 **Priority**: `P1`
-**Status**: Open
+**Status**: Closed
 **Source**: `lib/xcind/xcind-lib.bash:1846`
 **Area**: Core runtime
+
+### Resolution
+
+Introduced a new `XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")` array in
+`lib/xcind/xcind-lib.bash`. The assigned hook stays in
+`XCIND_HOOKS_GENERATE` so ordering, the `.complete` marker, and the
+per-hook completeness check from CORE-RUNTIME-001 remain intact, but on a
+cache HIT replay `__xcind-run-hooks` now consults the new
+`__xcind-hook-is-always` helper and re-runs any hook in
+`XCIND_HOOKS_ALWAYS` against current live state instead of replaying its
+persisted output. Pure GENERATE hooks (naming, app, app-env,
+host-gateway, proxy, workspace) continue to replay from
+`.hook-output-{name}` exactly as before. The re-run path also refreshes
+the persisted output so a future run that drops the hook from
+`XCIND_HOOKS_ALWAYS` still sees current state. Cache miss behavior is
+unchanged.
+
+### Validation
+
+- New deterministic regression coverage:
+  - `test/test-xcind.sh` "always-run" group — a stub `XCIND_HOOKS_ALWAYS`
+    hook re-runs on cache hit when its live token mutates, while a sibling
+    pure hook still replays from cache and the deleted overlay
+    regenerates with the new token.
+  - `test/test-xcind-proxy.sh` "xcind-assigned-hook re-runs through
+    __xcind-run-hooks on cache hit" group — drives the full
+    `__xcind-run-hooks` path with the real assigned hook: clears
+    `~/.local/state/xcind/proxy/assigned-ports.tsv` and removes
+    `compose.assigned.yaml` between two runs sharing the same SHA. The
+    second run replays the pure stub from cache, re-runs
+    `xcind-assigned-hook`, regenerates the overlay, and repopulates the
+    TSV.
+- `bash test/test-xcind.sh`: 501 passed, 0 failed.
+- `bash test/test-xcind-proxy.sh`: 525 passed, 0 failed.
+- `make check`: passed (lint + tests, exit 0).
 
 ### Behavior Observed
 

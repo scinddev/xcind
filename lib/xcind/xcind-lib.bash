@@ -89,6 +89,14 @@ source "$__XCIND_LIB_DIR/xcind-registry-lib.bash"
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
+# Hooks whose output depends on live state outside the cache SHA inputs
+# (e.g. `~/.local/state/xcind/proxy/assigned-ports.tsv` for the assigned
+# hook). These are still listed in `XCIND_HOOKS_GENERATE` to preserve
+# ordering, marker semantics, and the cache-completeness check, but on a
+# cache HIT replay `__xcind-run-hooks` re-runs them instead of replaying
+# their persisted output. Pure hooks continue to replay from cache.
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+
 # Names of hooks that soft-skipped this run because yq was missing.
 # Populated by hooks themselves; drained and reported as a single
 # consolidated warning by __xcind-run-hooks.
@@ -1828,6 +1836,18 @@ __xcind-append-hook-output-to-opts() {
   done <<<"$output"
 }
 
+# Return 0 if `$1` is registered in `XCIND_HOOKS_ALWAYS`. Used by
+# `__xcind-run-hooks` to decide whether a hook should re-run on cache hit
+# rather than replay its persisted output.
+__xcind-hook-is-always() {
+  local needle="$1"
+  local h
+  for h in "${XCIND_HOOKS_ALWAYS[@]+"${XCIND_HOOKS_ALWAYS[@]}"}"; do
+    [[ $h == "$needle" ]] && return 0
+  done
+  return 1
+}
+
 # Run GENERATE hooks with cache hit/miss logic.
 # On cache miss: runs hooks, persists output, appends to XCIND_DOCKER_COMPOSE_OPTS.
 # On cache hit: replays persisted output, validates referenced files.
@@ -1866,10 +1886,31 @@ __xcind-run-hooks() {
   fi
 
   if [ "$cache_valid" -eq 1 ]; then
-    # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order
+    # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order.
+    # Hooks listed in XCIND_HOOKS_ALWAYS are re-run (their output depends on
+    # live state outside the SHA, so a stale replay would silently disagree
+    # with current state — see CORE-RUNTIME-002).
     local hook_name
     for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
       local hook_output_file="$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+
+      if __xcind-hook-is-always "$hook_name"; then
+        __xcind-debug "run-hooks: cache HIT but always-run hook=$hook_name re-running"
+        local output
+        output=$("$hook_name" "$app_root") || {
+          local rc=$?
+          echo "Error: Hook '$hook_name' failed with exit code $rc" >&2
+          return $rc
+        }
+        # Refresh persisted output so a subsequent run sees current state
+        # if the hook is later moved out of XCIND_HOOKS_ALWAYS.
+        printf '%s\n' "$output" >"$hook_output_file"
+        if [ -n "$output" ]; then
+          __xcind-append-hook-output-to-opts "$output"
+        fi
+        continue
+      fi
+
       __xcind-debug "run-hooks: cache HIT hook=$hook_name"
 
       # Read persisted output

@@ -1417,10 +1417,107 @@ unset -f newhook_old_hook newhook_new_hook
 rm -rf "$NEWHOOK_APP"
 rm -f "$NEWHOOK_OLD_FILE" "$NEWHOOK_NEW_FILE"
 
+# 7. Hooks listed in XCIND_HOOKS_ALWAYS re-run on cache hit even though
+#    pure hooks replay from cache. Regression for CORE-RUNTIME-002:
+#    assigned-hook output depends on live state outside the SHA, so a
+#    cache-hit replay can disagree with current state. After the fix, the
+#    always-listed hook re-runs every invocation while pure hooks still
+#    replay from `.hook-output-{name}`.
+ALWAYS_APP=$(mktemp_d)
+echo '# always-run hook test' >"$ALWAYS_APP/.xcind.sh"
+touch "$ALWAYS_APP/compose.yaml"
+
+export XCIND_SHA="always007"
+export XCIND_CACHE_DIR="$ALWAYS_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$ALWAYS_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+ALWAYS_PURE_FILE=$(mktemp)
+ALWAYS_LIVE_FILE=$(mktemp)
+ALWAYS_LIVE_TOKEN_FILE=$(mktemp)
+echo 0 >"$ALWAYS_PURE_FILE"
+echo 0 >"$ALWAYS_LIVE_FILE"
+echo "first" >"$ALWAYS_LIVE_TOKEN_FILE"
+
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+always_pure_hook() {
+  local count
+  count=$(<"$ALWAYS_PURE_FILE")
+  count=$((count + 1))
+  echo "$count" >"$ALWAYS_PURE_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.pure.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.pure.yaml"
+}
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+always_live_hook() {
+  local count token
+  count=$(<"$ALWAYS_LIVE_FILE")
+  count=$((count + 1))
+  echo "$count" >"$ALWAYS_LIVE_FILE"
+  token=$(<"$ALWAYS_LIVE_TOKEN_FILE")
+  mkdir -p "$XCIND_GENERATED_DIR"
+  printf '%s\n' "$token" >"$XCIND_GENERATED_DIR/compose.live.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.live.yaml"
+}
+
+XCIND_HOOKS_GENERATE=("always_pure_hook" "always_live_hook")
+XCIND_HOOKS_ALWAYS=("always_live_hook")
+
+# First run: cache miss, both hooks run, both outputs persisted.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_APP"
+__xcind-run-hooks "$ALWAYS_APP"
+assert_eq "always-run: pure hook ran on first invocation" "1" \
+  "$(<"$ALWAYS_PURE_FILE")"
+assert_eq "always-run: live hook ran on first invocation" "1" \
+  "$(<"$ALWAYS_LIVE_FILE")"
+assert_eq "always-run: live overlay reflects first token" "first" \
+  "$(<"$XCIND_GENERATED_DIR/compose.live.yaml")"
+assert_file_exists "always-run: completion marker written" \
+  "$XCIND_GENERATED_DIR/.complete"
+
+# Mutate live state outside the SHA and delete the live overlay (mirrors
+# what happens when assigned-ports.tsv changes between runs and any prior
+# `compose.assigned.yaml` is no longer accurate).
+echo "second" >"$ALWAYS_LIVE_TOKEN_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.live.yaml"
+
+# Second run: cache HIT (marker + both .hook-output-* still present).
+# Pure hook must replay (count stays at 1, no new invocation). Live hook
+# must re-run (count -> 2) and regenerate the deleted overlay with the new
+# token.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_APP"
+__xcind-run-hooks "$ALWAYS_APP"
+assert_eq "always-run: pure hook replayed from cache (no re-run)" "1" \
+  "$(<"$ALWAYS_PURE_FILE")"
+assert_eq "always-run: live hook re-ran on cache hit" "2" \
+  "$(<"$ALWAYS_LIVE_FILE")"
+assert_file_exists "always-run: live overlay regenerated" \
+  "$XCIND_GENERATED_DIR/compose.live.yaml"
+assert_eq "always-run: live overlay reflects mutated token" "second" \
+  "$(<"$XCIND_GENERATED_DIR/compose.live.yaml")"
+always_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "always-run: pure overlay still in compose opts" \
+  "compose.pure.yaml" "$always_opts"
+assert_contains "always-run: live overlay in compose opts" \
+  "compose.live.yaml" "$always_opts"
+
+unset -f always_pure_hook always_live_hook
+rm -rf "$ALWAYS_APP"
+rm -f "$ALWAYS_PURE_FILE" "$ALWAYS_LIVE_FILE" "$ALWAYS_LIVE_TOKEN_FILE"
+
 # Restore default hooks and clean environment for subsequent tests
 unset XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
 # shellcheck disable=SC2034 # reset for downstream tests
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
 reset_xcind_state
 
 # ======================================================================

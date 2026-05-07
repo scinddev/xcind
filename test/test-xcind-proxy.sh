@@ -2526,6 +2526,116 @@ unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DI
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-assigned-hook re-runs through __xcind-run-hooks on cache hit ==="
+
+# CORE-RUNTIME-002 regression: when the assigned-ports TSV is mutated or
+# deleted between two GENERATE-hook runs that share a stable SHA, the
+# assigned hook must re-run instead of replaying its persisted output.
+# Pure hooks must continue to replay from cache. Exercises the full
+# `__xcind-run-hooks` path with the real `xcind-assigned-hook`.
+
+REGEN_APP=$(mktemp_d)
+_orig_regen_home="$HOME"
+_orig_regen_xdg="${XDG_STATE_HOME:-}"
+HOME=$(mktemp_d)
+export HOME
+unset XDG_STATE_HOME
+XCIND_ASSIGNED_DIR="${HOME}/.local/state/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+
+export XCIND_APP="regenapp"
+export XCIND_WORKSPACE=""
+export XCIND_SHA="regenrun001"
+export XCIND_CACHE_DIR="$REGEN_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$REGEN_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  mysql:
+    image: mysql
+    ports:
+      - target: 3306
+YAML
+
+# Stub port availability so the test does not depend on host networking.
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() { return 0; }
+
+# Pure stub hook to confirm replay path keeps working alongside the
+# always-run assigned hook.
+REGEN_PURE_FILE=$(mktemp)
+echo 0 >"$REGEN_PURE_FILE"
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+regen_pure_hook() {
+  local count
+  count=$(<"$REGEN_PURE_FILE")
+  count=$((count + 1))
+  echo "$count" >"$REGEN_PURE_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.regen-pure.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.regen-pure.yaml"
+}
+
+XCIND_HOOKS_GENERATE=("regen_pure_hook" "xcind-assigned-hook")
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+
+# First run: cache miss. Both hooks run, overlay + persisted output land.
+__xcind-run-hooks "$REGEN_APP"
+assert_eq "regen: pure hook ran on first invocation" "1" "$(<"$REGEN_PURE_FILE")"
+assert_file_exists "regen: compose.assigned.yaml created on first run" \
+  "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+assert_file_exists "regen: completion marker present" \
+  "$XCIND_GENERATED_DIR/.complete"
+first_assigned=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+assert_contains "regen: first run binds 3306:3306" '"3306:3306"' "$first_assigned"
+
+# Mutate live TSV state outside the SHA: drop all assignment rows and
+# delete the cached overlay. SHA inputs are unchanged.
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+
+# Reset compose opts so we can inspect what gets appended on the second run.
+XCIND_DOCKER_COMPOSE_OPTS=()
+
+# Second run: cache HIT. Pure hook replays from cache (no re-run). Assigned
+# hook re-runs and regenerates the deleted overlay against the mutated TSV.
+__xcind-run-hooks "$REGEN_APP"
+assert_eq "regen: pure hook replayed from cache (no re-run)" "1" \
+  "$(<"$REGEN_PURE_FILE")"
+assert_file_exists "regen: compose.assigned.yaml regenerated" \
+  "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+second_assigned=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+assert_contains "regen: second run still binds 3306:3306" \
+  '"3306:3306"' "$second_assigned"
+regen_state=$(<"$XCIND_ASSIGNED_PORTS_FILE")
+assert_contains "regen: TSV repopulated by re-run" "regenapp" "$regen_state"
+regen_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "regen: assigned overlay added to compose opts" \
+  "compose.assigned.yaml" "$regen_opts"
+assert_contains "regen: pure overlay still added to compose opts" \
+  "compose.regen-pure.yaml" "$regen_opts"
+
+unset -f regen_pure_hook __xcind-assigned-port-available
+rm -rf "$REGEN_APP" "$HOME"
+rm -f "$REGEN_PURE_FILE"
+HOME="$_orig_regen_home"
+export HOME
+[[ -n $_orig_regen_xdg ]] && export XDG_STATE_HOME="$_orig_regen_xdg"
+XCIND_ASSIGNED_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+XCIND_ASSIGNED_PORTS_FILE="${XCIND_ASSIGNED_DIR}/assigned-ports.tsv"
+XCIND_ASSIGNED_PORTS_LOCK="${XCIND_ASSIGNED_DIR}/assigned-ports.lock"
+unset XCIND_PROXY_EXPORTS XCIND_APP XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
+# Restore default hook arrays for downstream tests.
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-assigned-hook debug tracing ==="
 
 DBG_APP=$(mktemp_d)
