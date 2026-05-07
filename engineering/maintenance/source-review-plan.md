@@ -439,7 +439,7 @@ open a PR, subscribe to events, and archive the scratchpad.
 
 ## Round 5: Cross-Document Drift Sweep
 
-Status: pending.
+Status: complete. Cross-document consistency verified 2026-05-07. Added link to source-review-plan.md in engineering/maintenance/README.md. All checked areas (terminology, hook ownership, cache-key docs, project layout, xcind-config examples, proxy appendices, cross-doc links) are accurate.
 
 Purpose:
 
