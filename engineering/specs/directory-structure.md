@@ -12,6 +12,7 @@
     └── config.sh                     # User-editable proxy configuration
 
 ~/.local/state/xcind/
+├── workspaces.tsv                    # Workspace discovery registry
 └── proxy/
     ├── compose.yaml                  # Generated Traefik service definition
     ├── traefik.yaml                  # Generated Traefik static configuration
@@ -19,7 +20,7 @@
     └── assigned-ports.lock           # flock(1) serialization file
 ```
 
-Created by `xcind-proxy init`. Config values are preserved on re-init; `compose.yaml` and `traefik.yaml` are regenerated on each init. `assigned-ports.tsv` is written lazily by `xcind-assigned-hook` whenever an application declares a `type=assigned` entry in `XCIND_PROXY_EXPORTS`.
+Created by `xcind-proxy init` and workspace commands. Config values are preserved on re-init; `compose.yaml` and `traefik.yaml` are regenerated on each init. `assigned-ports.tsv` is written lazily by `xcind-assigned-hook` whenever an application declares a `type=assigned` entry in `XCIND_PROXY_EXPORTS`. `workspaces.tsv` is the workspace discovery registry state consumed by `xcind-workspace list/register/forget`.
 
 ---
 

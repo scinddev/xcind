@@ -769,6 +769,7 @@ case "$1 $2" in
   ;;
 "network create")
   echo "daemon unavailable" >&2
+  echo "permission denied" >&2
   exit 42
   ;;
 *)
@@ -789,7 +790,9 @@ assert_eq "network create failure remains non-fatal" "0" "$ws_net_rc"
 assert_contains "network create failure warns" \
   "Failed to create workspace network 'brokenws-internal'" "$ws_net_err"
 assert_contains "network create failure includes docker error" \
-  "daemon unavailable" "$ws_net_err"
+  "Warning:   daemon unavailable" "$ws_net_err"
+assert_contains "network create failure prefixes second docker error line" \
+  "Warning:   permission denied" "$ws_net_err"
 assert_contains "network create failure warns compose may fail" \
   "Docker Compose may fail" "$ws_net_err"
 

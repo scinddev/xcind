@@ -122,7 +122,10 @@ __xcind-workspace-execute-hook() {
 
   echo "Warning: Failed to create workspace network '$network'." >&2
   if [[ -n $create_err ]]; then
-    echo "Warning: docker network create output: $create_err" >&2
+    echo "Warning: docker network create output:" >&2
+    while IFS= read -r line || [[ -n $line ]]; do
+      echo "Warning:   $line" >&2
+    done <<<"$create_err"
   fi
   echo "Warning: Docker Compose may fail because external workspace network '$network' is unavailable." >&2
   return 0

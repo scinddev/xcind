@@ -79,7 +79,7 @@ The workspace and app identity area provides generated Compose overlays for app 
 | ID | Layer | Document | Summary | Status |
 |----|-------|----------|---------|--------|
 | `WAI-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration rationale still says there are no state files, manifests, or registries, but workspace registry and assigned-port state are current behavior. | Closed |
-| `WAI-DOC-002` | Specifications | `engineering/specs/directory-structure.md` | Global state tree documents proxy state but omits `${XDG_STATE_HOME}/xcind/workspaces.tsv`. | Open |
+| `WAI-DOC-002` | Specifications | `engineering/specs/directory-structure.md` | Global state tree documents proxy state but omits `${XDG_STATE_HOME}/xcind/workspaces.tsv`. | Closed |
 | `WAI-DOC-003` | Implementation | `engineering/implementation/project-layout.md` | Source layout omits `bin/xcind-workspace`, `bin/xcind-application`, `xcind-app-lib.bash`, and other current built-in libraries/hooks. | Open |
 | `WAI-DOC-004` | Architecture | `engineering/architecture/overview.md` | Architecture says the workspace internal network is created by `xcind-workspace-hook` and omits several current GENERATE hooks from the pipeline list. | Open |
 | `WAI-DOC-005` | Specifications | `engineering/specs/hook-lifecycle.md` | Built-in hook table says `xcind-proxy-hook` emits context labels even though app/workspace context labels are now emitted by dedicated hooks. | Open |
@@ -91,15 +91,16 @@ The workspace and app identity area provides generated Compose overlays for app 
 rtk make lint
 ```
 
-**Result**: Passed.
+**Result**: Passed for the initial review pass.
 
-`make check` was not run because this was a review-only pass with no implementation changes, and the request limited validation to non-mutating checks unless needed.
+For the follow-up implementation pass (Round 4), `make check` passed for the core staged patch in a clean temporary worktree. In the local orchestrator environment, `make check` is occasionally blocked at the `shfmt --diff .` step by unrelated untracked `pi/` directories, but focused validation (`shfmt`, `shellcheck`, and `make test`) passes for the modified files.
 
 ## Blockers or Follow-Up
 
-- No blockers.
-- Implement findings in focused follow-up changes, then run `make check`.
-- Keep the previous CLI entrypoint review in mind because `WAI-001`, `WAI-002`, and `WAI-003` overlap with the CLI-area findings for these same entrypoints.
+- All implementation findings have been implemented and closed.
+- WAI-DOC-001 and WAI-DOC-002 were closed in Round 4.
+- WAI-001, WAI-002, and WAI-003 overlap with CLI-area findings and were resolved in Round 1 follow-ups.
+- WAI-004 was resolved in Round 4.
 
 ## WAI-001: Workspace/application init flags without values abort through `set -u`
 
@@ -345,7 +346,7 @@ No additional documentation edit was needed. `engineering/specs/configuration-sc
 
 ## WAI-DOC-002: Directory structure omits workspace registry state
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Specifications
 **Implementation Source**: `bin/xcind-workspace:54`
 **Document Source**: `engineering/specs/directory-structure.md`
@@ -369,6 +370,17 @@ Add `workspaces.tsv` to the global state tree and describe it as the workspace d
 ### Related Finding
 
 None.
+
+### Resolution
+
+Updated `engineering/specs/directory-structure.md` Global Configuration section. Added `workspaces.tsv` outside the `proxy/` subdirectory and updated text to describe it as the workspace discovery registry state consumed by `xcind-workspace list/register/forget`.
+
+### Validation
+
+- `rtk rg -n "workspaces\.tsv|xcind-workspace list/register/forget|XCIND_REGISTRY_FILE|XCIND_REGISTRY_DIR" engineering/specs/directory-structure.md lib/xcind/xcind-registry-lib.bash bin/xcind-workspace`
+- `make check` was attempted in the local worktree and stopped at
+  repository-wide `shfmt --diff .` due to unrelated untracked
+  `pi/examples/extensions/doom-overlay/doom/build.sh` formatting drift.
 
 ## WAI-DOC-003: Project layout omits current workspace/application entrypoints and identity hooks
 
