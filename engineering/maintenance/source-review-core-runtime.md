@@ -78,7 +78,7 @@ The core runtime resolves the application root, sources workspace/app/additional
 | `CORE-RUNTIME-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration section says there are no state files or registries, but assigned-port and workspace registry files are current behavior. | Closed |
 | `CORE-RUNTIME-DOC-002` | Specifications | `engineering/specs/generated-override-files.md` | Cache-key summary omits several implemented inputs: env files, additional config files, `XCIND_TOOLS`, host-gateway settings, and detected host-gateway value. | Closed |
 | `CORE-RUNTIME-DOC-003` | Specifications | `engineering/specs/configuration-schemas.md` | Source-order section omits `.xcind.override.sh` siblings and `XCIND_ADDITIONAL_CONFIG_FILES` for workspace and app configs. | Closed |
-| `CORE-RUNTIME-DOC-004` | Implementation | `engineering/implementation/project-layout.md` | Runtime layout omits `xcind-bootstrap.bash` and newer installed libraries/hooks now sourced by `xcind-lib.bash`. | Open |
+| `CORE-RUNTIME-DOC-004` | Implementation | `engineering/implementation/project-layout.md` | Runtime layout omits `xcind-bootstrap.bash` and newer installed libraries/hooks now sourced by `xcind-lib.bash`. | Closed |
 
 ## Commands Run
 
@@ -496,7 +496,7 @@ None.
 
 ## CORE-RUNTIME-DOC-004: Project layout omits bootstrap and newer runtime libraries
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Implementation
 **Implementation Source**: `lib/xcind/xcind-bootstrap.bash:1`
 **Document Source**: `engineering/implementation/project-layout.md`
@@ -512,6 +512,39 @@ Bin scripts source `xcind-bootstrap.bash`, which then sources `xcind-lib.bash`. 
 ### Authority Decision
 
 Code correct, docs stale.
+
+### Resolution
+
+`engineering/implementation/project-layout.md` already enumerated the full
+bin entrypoint set (`xcind-compose`, `xcind-config`, `xcind-proxy`,
+`xcind-workspace`, `xcind-application`) and every maintained `lib/xcind`
+file (`xcind-bootstrap.bash`, `xcind-lib.bash`, `xcind-app-lib.bash`,
+`xcind-app-env-lib.bash`, `xcind-assigned-lib.bash`,
+`xcind-host-gateway-lib.bash`, `xcind-naming-lib.bash`,
+`xcind-proxy-lib.bash`, `xcind-registry-lib.bash`,
+`xcind-workspace-lib.bash`, `xcind-completion-bash.bash`,
+`xcind-completion-zsh.bash`) after commit `733dcbf`. This pass tightened
+the responsibility column to match current Round 2 runtime behavior:
+
+- Clarified that `xcind-bootstrap.bash` validates `XCIND_ROOT` and sources
+  `xcind-lib.bash`, and called out why it is centralized.
+- Expanded the `xcind-lib.bash` summary to mention app preparation, the
+  generated-cache `.complete` marker + per-hook completeness gate
+  (CORE-RUNTIME-001), the `XCIND_HOOKS_ALWAYS` registration introduced by
+  CORE-RUNTIME-002, and the fact that it sources every other
+  `xcind-*-lib.bash` so hooks are available to all entrypoints.
+- Tagged each hook library with the registered hook name(s) and phase, and
+  noted that `xcind-assigned-lib.bash` participates in
+  `XCIND_HOOKS_ALWAYS` and that `xcind-host-gateway-lib.bash` contributes
+  the runtime-detected gateway value to the cache SHA when enabled.
+- Pointed `xcind-registry-lib.bash` and the assigned-ports helper at the
+  `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/` state files
+  (`workspaces.tsv`, `proxy/assigned-ports.tsv`).
+
+### Validation
+
+- `rtk make lint`: clean (shfmt + shellcheck on tracked SHELL_FILES).
+- Docs-only change; tests not re-run.
 
 ### Proposed Documentation Update
 
