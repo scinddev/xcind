@@ -1202,7 +1202,12 @@ __xcind-write-cache-config-json() {
   local _json_tmp
   _json_tmp=$(mktemp "${XCIND_CACHE_DIR}/config.json.XXXXXX") || return 1
   if __xcind-resolve-json "$app_root" >"$_json_tmp"; then
-    mv -- "$_json_tmp" "$XCIND_CACHE_DIR/config.json"
+    if mv -- "$_json_tmp" "$XCIND_CACHE_DIR/config.json"; then
+      :
+    else
+      rm -f -- "$_json_tmp"
+      return 1
+    fi
   else
     rm -f -- "$_json_tmp"
     return 1
