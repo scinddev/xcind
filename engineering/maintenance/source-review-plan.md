@@ -358,7 +358,7 @@ scratchpad.
 
 ## Round 4: Workspace and App Identity
 
-Status: pending.
+Status: complete. Scratchpad `Source Review Workspace App Identity Round 4` was archived. All findings (WAI-001 through WAI-004, WAI-DOC-001 through WAI-DOC-006) are closed. PR #66 merged 2026-05-07.
 
 Source review document:
 
