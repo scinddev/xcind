@@ -77,7 +77,7 @@ The core runtime resolves the application root, sources workspace/app/additional
 |----|-------|----------|---------|--------|
 | `CORE-RUNTIME-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration section says there are no state files or registries, but assigned-port and workspace registry files are current behavior. | Closed |
 | `CORE-RUNTIME-DOC-002` | Specifications | `engineering/specs/generated-override-files.md` | Cache-key summary omits several implemented inputs: env files, additional config files, `XCIND_TOOLS`, host-gateway settings, and detected host-gateway value. | Closed |
-| `CORE-RUNTIME-DOC-003` | Specifications | `engineering/specs/configuration-schemas.md` | Source-order section omits `.xcind.override.sh` siblings and `XCIND_ADDITIONAL_CONFIG_FILES` for workspace and app configs. | Open |
+| `CORE-RUNTIME-DOC-003` | Specifications | `engineering/specs/configuration-schemas.md` | Source-order section omits `.xcind.override.sh` siblings and `XCIND_ADDITIONAL_CONFIG_FILES` for workspace and app configs. | Closed |
 | `CORE-RUNTIME-DOC-004` | Implementation | `engineering/implementation/project-layout.md` | Runtime layout omits `xcind-bootstrap.bash` and newer installed libraries/hooks now sourced by `xcind-lib.bash`. | Open |
 
 ## Commands Run
@@ -461,7 +461,7 @@ Expand the cache-key list in `engineering/specs/generated-override-files.md` or 
 
 ## CORE-RUNTIME-DOC-003: Configuration source order omits override and additional config sourcing
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Specifications
 **Implementation Source**: `lib/xcind/xcind-lib.bash:543`
 **Document Source**: `engineering/specs/configuration-schemas.md`
@@ -481,6 +481,14 @@ Code correct, docs stale.
 ### Proposed Documentation Update
 
 Revise the source-order section in `engineering/specs/configuration-schemas.md` to describe the runtime app-resolution order precisely and note that global proxy config is consumed by proxy behavior rather than universally sourced before workspace/app config.
+
+### Resolution
+
+Rewrote the "Source Order" subsection of `engineering/specs/configuration-schemas.md` to document the actual six-step app-resolution chain: workspace `.xcind.sh`, workspace `.xcind.override.sh`, workspace `XCIND_ADDITIONAL_CONFIG_FILES` plus their `.override.sh` siblings, application `.xcind.sh`, application `.xcind.override.sh`, and application additional config files plus their `.override.sh` siblings. Added a clarifying note that global proxy `config.sh` is consumed by proxy-specific code paths (proxy hook, `xcind-proxy` commands) and is not part of the generic workspace/app source chain. Documented that `.override.sh` siblings are derived by replacing the trailing `.sh` with `.override.sh` and are only sourced when present.
+
+### Validation
+
+`rtk make lint`: clean (shfmt + shellcheck on tracked SHELL_FILES). Docs-only change; tests not re-run.
 
 ### Related Finding
 
