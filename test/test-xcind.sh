@@ -1512,6 +1512,68 @@ unset -f always_pure_hook always_live_hook
 rm -rf "$ALWAYS_APP"
 rm -f "$ALWAYS_PURE_FILE" "$ALWAYS_LIVE_FILE" "$ALWAYS_LIVE_TOKEN_FILE"
 
+# 8. Always-run hook output is validated: if the hook re-runs on a cache hit
+#    but fails to create the file it referenced with -f, __xcind-run-hooks
+#    must fail with a non-zero exit rather than appending a missing-file path
+#    to XCIND_DOCKER_COMPOSE_OPTS (Copilot review comment on CORE-RUNTIME-002).
+ALWAYS_VAL_APP=$(mktemp_d)
+echo '# always-run output-validation test' >"$ALWAYS_VAL_APP/.xcind.sh"
+touch "$ALWAYS_VAL_APP/compose.yaml"
+
+export XCIND_SHA="alwaysval001"
+export XCIND_CACHE_DIR="$ALWAYS_VAL_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$ALWAYS_VAL_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+# shellcheck disable=SC2317,SC2329
+always_val_stub_hook() {
+  # Always creates its overlay so the first run and cache-hit-replay path work.
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.valstub.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.valstub.yaml"
+}
+# shellcheck disable=SC2317,SC2329
+always_val_broken_hook() {
+  # Claims to produce an overlay but never creates the file.
+  echo "-f $XCIND_GENERATED_DIR/compose.broken.yaml"
+}
+
+XCIND_HOOKS_GENERATE=("always_val_stub_hook" "always_val_broken_hook")
+XCIND_HOOKS_ALWAYS=("always_val_broken_hook")
+
+# First run: cache miss — broken hook emits a missing-file path; the
+# cache-miss path does NOT call __xcind-validate-hook-output (the overlay
+# is presumed written by the hook). Seed a marker so the second run is a
+# cache hit.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_VAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_VAL_APP"
+__xcind-run-hooks "$ALWAYS_VAL_APP" 2>/dev/null || true
+# Manually write the missing overlay and marker so the second run sees a
+# complete, valid cache hit where the always-run hook will be re-invoked.
+touch "$XCIND_GENERATED_DIR/compose.broken.yaml"
+printf '%s\n' "always_val_stub_hook always_val_broken_hook" >"$XCIND_GENERATED_DIR/.complete"
+printf '%s\n' "-f $XCIND_GENERATED_DIR/compose.valstub.yaml" >"$XCIND_GENERATED_DIR/.hook-output-always_val_stub_hook"
+printf '%s\n' "-f $XCIND_GENERATED_DIR/compose.broken.yaml" >"$XCIND_GENERATED_DIR/.hook-output-always_val_broken_hook"
+# Now remove the overlay so the always-run hook re-emits a missing-file path.
+rm -f "$XCIND_GENERATED_DIR/compose.broken.yaml"
+
+# Second run: cache HIT, always-run hook re-runs and emits a -f that points
+# at a non-existent file. __xcind-run-hooks must fail non-zero.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_VAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_VAL_APP"
+always_val_run_out=$(__xcind-run-hooks "$ALWAYS_VAL_APP" 2>&1) && always_val_rc=0 || always_val_rc=$?
+assert_eq "always-run output validation: fails when -f file is missing" "1" "$always_val_rc"
+assert_contains "always-run output validation: error mentions hook name" \
+  "always_val_broken_hook" "$always_val_run_out"
+
+unset -f always_val_stub_hook always_val_broken_hook
+rm -rf "$ALWAYS_VAL_APP"
+unset ALWAYS_VAL_APP always_val_run_out always_val_rc
+
 # Restore default hooks and clean environment for subsequent tests
 unset XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
 # shellcheck disable=SC2034 # reset for downstream tests

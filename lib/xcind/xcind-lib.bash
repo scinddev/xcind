@@ -1199,7 +1199,8 @@ __xcind-write-cache-config-json() {
 
   mkdir -p "$XCIND_CACHE_DIR"
 
-  local _json_tmp="$XCIND_CACHE_DIR/config.json.tmp"
+  local _json_tmp
+  _json_tmp=$(mktemp "${XCIND_CACHE_DIR}/config.json.XXXXXX") || return 1
   if __xcind-resolve-json "$app_root" >"$_json_tmp"; then
     mv -- "$_json_tmp" "$XCIND_CACHE_DIR/config.json"
   else
@@ -1928,6 +1929,12 @@ __xcind-run-hooks() {
           echo "Error: Hook '$hook_name' failed with exit code $rc" >&2
           return $rc
         }
+        # Validate output: an always-run hook ran against live state, so a
+        # missing -f file is a hook error, not a stale-cache trigger.
+        if ! __xcind-validate-hook-output "$output"; then
+          echo "Error: Hook '$hook_name' output references a missing file" >&2
+          return 1
+        fi
         # Refresh persisted output so a subsequent run sees current state
         # if the hook is later moved out of XCIND_HOOKS_ALWAYS.
         printf '%s\n' "$output" >"$hook_output_file"

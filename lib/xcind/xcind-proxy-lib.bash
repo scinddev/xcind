@@ -57,10 +57,12 @@ __xcind-proxy-quote-value() {
 # Each value is serialized via __xcind-proxy-quote-value so that
 # double-quotes, dollar signs, backticks, and backslashes in CLI-supplied
 # values do not corrupt the sourceable file or execute shell code on
-# next source. Writes to a .tmp sidecar and renames into place atomically.
+# next source. Writes to a process-unique mktemp sidecar and renames into
+# place atomically; removes the sidecar on mv failure.
 # Callers must set the variables before calling this function.
 __xcind-proxy-write-config() {
-  local tmp="${XCIND_PROXY_CONFIG_DIR}/config.sh.tmp"
+  local tmp
+  tmp=$(mktemp "${XCIND_PROXY_CONFIG_DIR}/config.sh.XXXXXX") || return 1
   local q_domain q_image q_http_port q_dashboard q_dashboard_port
   local q_tls_mode q_https_port q_tls_cert q_tls_key
   q_domain=$(__xcind-proxy-quote-value "${XCIND_PROXY_DOMAIN:-localhost}")
@@ -105,7 +107,10 @@ XCIND_PROXY_HTTPS_PORT=${q_https_port}
 XCIND_PROXY_TLS_CERT_FILE=${q_tls_cert}
 XCIND_PROXY_TLS_KEY_FILE=${q_tls_key}
 EOF
-  mv "$tmp" "${XCIND_PROXY_CONFIG_DIR}/config.sh"
+  if ! mv -- "$tmp" "${XCIND_PROXY_CONFIG_DIR}/config.sh"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 # Ensure proxy infrastructure files exist.
