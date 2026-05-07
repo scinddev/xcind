@@ -1262,6 +1262,161 @@ unset -f bad_path_hook
 rm -rf "$BAD_APP"
 rm -f "$BAD_COUNT_FILE"
 
+# 5. Hook fails after an earlier hook persisted output. The cache-miss path
+#    must not leave a partial generated dir behind: the failed run cleans up
+#    and the next invocation runs every hook again instead of replaying the
+#    half-written cache (which would silently drop the failed hook).
+PARTIAL_APP=$(mktemp_d)
+echo '# partial cache test' >"$PARTIAL_APP/.xcind.sh"
+touch "$PARTIAL_APP/compose.yaml"
+
+export XCIND_SHA="partial005"
+export XCIND_CACHE_DIR="$PARTIAL_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$PARTIAL_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+PARTIAL_FIRST_FILE=$(mktemp)
+PARTIAL_SECOND_FILE=$(mktemp)
+echo 0 >"$PARTIAL_FIRST_FILE"
+echo 0 >"$PARTIAL_SECOND_FILE"
+PARTIAL_SECOND_MODE_FILE=$(mktemp)
+echo "fail" >"$PARTIAL_SECOND_MODE_FILE"
+
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+partial_first_hook() {
+  local count
+  count=$(<"$PARTIAL_FIRST_FILE")
+  count=$((count + 1))
+  echo "$count" >"$PARTIAL_FIRST_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.first.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.first.yaml"
+}
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+partial_second_hook() {
+  local count
+  count=$(<"$PARTIAL_SECOND_FILE")
+  count=$((count + 1))
+  echo "$count" >"$PARTIAL_SECOND_FILE"
+  if [ "$(<"$PARTIAL_SECOND_MODE_FILE")" = "fail" ]; then
+    echo "Error: forced failure" >&2
+    return 9
+  fi
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.second.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.second.yaml"
+}
+XCIND_HOOKS_GENERATE=("partial_first_hook" "partial_second_hook")
+
+reset_xcind_state
+__xcind-load-config "$PARTIAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$PARTIAL_APP"
+
+# First run: second hook fails. Pipeline must propagate the failure and
+# clean up so the dir is not replayable.
+__xcind-run-hooks "$PARTIAL_APP" 2>/dev/null && partial_rc1=0 || partial_rc1=$?
+assert_eq "partial cache: first run propagates failure" "9" "$partial_rc1"
+assert_eq "partial cache: generated dir removed after failure" "false" \
+  "$([ -d "$XCIND_GENERATED_DIR" ] && echo true || echo false)"
+
+# Second run: flip the second hook to succeed. Both hooks must run again
+# (no half-replay), and the generated dir must end up complete.
+echo "ok" >"$PARTIAL_SECOND_MODE_FILE"
+
+reset_xcind_state
+__xcind-load-config "$PARTIAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$PARTIAL_APP"
+__xcind-run-hooks "$PARTIAL_APP" && partial_rc2=0 || partial_rc2=$?
+assert_eq "partial cache: second run succeeds" "0" "$partial_rc2"
+assert_eq "partial cache: first hook re-ran" "2" "$(<"$PARTIAL_FIRST_FILE")"
+assert_eq "partial cache: second hook re-ran" "2" "$(<"$PARTIAL_SECOND_FILE")"
+assert_file_exists "partial cache: completion marker written" \
+  "$XCIND_GENERATED_DIR/.complete"
+assert_file_exists "partial cache: first hook output persisted" \
+  "$XCIND_GENERATED_DIR/.hook-output-partial_first_hook"
+assert_file_exists "partial cache: second hook output persisted" \
+  "$XCIND_GENERATED_DIR/.hook-output-partial_second_hook"
+
+unset -f partial_first_hook partial_second_hook
+rm -rf "$PARTIAL_APP"
+rm -f "$PARTIAL_FIRST_FILE" "$PARTIAL_SECOND_FILE" "$PARTIAL_SECOND_MODE_FILE"
+
+# 6. New hook registered between two runs with the same SHA. The previous
+#    generated directory has no `.hook-output-{new_hook}`, so the cache must
+#    be treated as incomplete and rebuilt — the new hook MUST run instead of
+#    being silently skipped.
+NEWHOOK_APP=$(mktemp_d)
+echo '# new hook test' >"$NEWHOOK_APP/.xcind.sh"
+touch "$NEWHOOK_APP/compose.yaml"
+
+export XCIND_SHA="newhook006"
+export XCIND_CACHE_DIR="$NEWHOOK_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$NEWHOOK_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+NEWHOOK_OLD_FILE=$(mktemp)
+NEWHOOK_NEW_FILE=$(mktemp)
+echo 0 >"$NEWHOOK_OLD_FILE"
+echo 0 >"$NEWHOOK_NEW_FILE"
+
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+newhook_old_hook() {
+  local count
+  count=$(<"$NEWHOOK_OLD_FILE")
+  count=$((count + 1))
+  echo "$count" >"$NEWHOOK_OLD_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.old.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.old.yaml"
+}
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+newhook_new_hook() {
+  local count
+  count=$(<"$NEWHOOK_NEW_FILE")
+  count=$((count + 1))
+  echo "$count" >"$NEWHOOK_NEW_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.new.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.new.yaml"
+}
+
+# First run: only the old hook is registered.
+XCIND_HOOKS_GENERATE=("newhook_old_hook")
+reset_xcind_state
+__xcind-load-config "$NEWHOOK_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$NEWHOOK_APP"
+__xcind-run-hooks "$NEWHOOK_APP"
+assert_eq "new hook: old hook ran on first invocation" "1" \
+  "$(<"$NEWHOOK_OLD_FILE")"
+assert_eq "new hook: new hook did not run yet" "0" \
+  "$(<"$NEWHOOK_NEW_FILE")"
+
+# Second run: register a new hook alongside the old one with the same SHA.
+# The cache hit completeness check must detect the missing output for the
+# new hook and rebuild — both hooks run again.
+XCIND_HOOKS_GENERATE=("newhook_old_hook" "newhook_new_hook")
+reset_xcind_state
+__xcind-load-config "$NEWHOOK_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$NEWHOOK_APP"
+__xcind-run-hooks "$NEWHOOK_APP"
+assert_eq "new hook: old hook re-ran after registration changed" "2" \
+  "$(<"$NEWHOOK_OLD_FILE")"
+assert_eq "new hook: new hook ran on rebuild" "1" \
+  "$(<"$NEWHOOK_NEW_FILE")"
+assert_file_exists "new hook: completion marker present" \
+  "$XCIND_GENERATED_DIR/.complete"
+new_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "new hook: new overlay in compose opts" \
+  "compose.new.yaml" "$new_opts"
+
+unset -f newhook_old_hook newhook_new_hook
+rm -rf "$NEWHOOK_APP"
+rm -f "$NEWHOOK_OLD_FILE" "$NEWHOOK_NEW_FILE"
+
 # Restore default hooks and clean environment for subsequent tests
 unset XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
 # shellcheck disable=SC2034 # reset for downstream tests
