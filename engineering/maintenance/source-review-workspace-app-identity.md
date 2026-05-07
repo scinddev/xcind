@@ -81,7 +81,7 @@ The workspace and app identity area provides generated Compose overlays for app 
 | `WAI-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration rationale still says there are no state files, manifests, or registries, but workspace registry and assigned-port state are current behavior. | Closed |
 | `WAI-DOC-002` | Specifications | `engineering/specs/directory-structure.md` | Global state tree documents proxy state but omits `${XDG_STATE_HOME}/xcind/workspaces.tsv`. | Closed |
 | `WAI-DOC-003` | Implementation | `engineering/implementation/project-layout.md` | Source layout omits `bin/xcind-workspace`, `bin/xcind-application`, `xcind-app-lib.bash`, and other current built-in libraries/hooks. | Closed |
-| `WAI-DOC-004` | Architecture | `engineering/architecture/overview.md` | Architecture says the workspace internal network is created by `xcind-workspace-hook` and omits several current GENERATE hooks from the pipeline list. | Open |
+| `WAI-DOC-004` | Architecture | `engineering/architecture/overview.md` | Architecture says the workspace internal network is created by `xcind-workspace-hook` and omits several current GENERATE hooks from the pipeline list. | Closed |
 | `WAI-DOC-005` | Specifications | `engineering/specs/hook-lifecycle.md` | Built-in hook table says `xcind-proxy-hook` emits context labels even though app/workspace context labels are now emitted by dedicated hooks. | Open |
 | `WAI-DOC-006` | Specifications | `engineering/specs/context-detection.md` | Quick reference says bare `xcind-config` shows JSON/appRoot, but implementation and CLI reference make bare `xcind-config` show help. | Open |
 
@@ -98,7 +98,7 @@ For the follow-up implementation pass (Round 4), `make check` passed for the cor
 ## Blockers or Follow-Up
 
 - All implementation findings have been implemented and closed.
-- WAI-DOC-001, WAI-DOC-002, and WAI-DOC-003 were closed in Round 4.
+- WAI-DOC-001, WAI-DOC-002, WAI-DOC-003, and WAI-DOC-004 were closed in Round 4.
 - WAI-001, WAI-002, and WAI-003 overlap with CLI-area findings and were resolved in Round 1 follow-ups.
 - WAI-004 was resolved in Round 4.
 
@@ -421,7 +421,7 @@ Confirmed that `engineering/implementation/project-layout.md` was already refres
 
 ## WAI-DOC-004: Architecture overview has stale workspace network and hook pipeline wording
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Architecture
 **Implementation Source**: `lib/xcind/xcind-workspace-lib.bash:99`
 **Document Source**: `engineering/architecture/overview.md`
@@ -441,6 +441,16 @@ Code correct, docs stale.
 ### Proposed Documentation Update
 
 Update the architecture overview to attribute workspace network creation to the EXECUTE hook and refresh the hook pipeline list with all default built-in hooks.
+
+### Resolution
+
+- Reordered and populated the `GENERATE hooks` list in `engineering/architecture/overview.md` to precisely match the actual `XCIND_HOOKS_GENERATE` declaration in `lib/xcind/xcind-lib.bash`.
+- Attributed workspace internal network creation to `__xcind-workspace-execute-hook` in both the network section and EXECUTE hook list.
+
+### Validation
+
+- `rtk rg -n "XCIND_HOOKS_GENERATE|xcind-naming-hook|xcind-app-hook|xcind-app-env-hook|xcind-host-gateway-hook|xcind-proxy-hook|xcind-assigned-hook|xcind-workspace-hook|XCIND_HOOKS_EXECUTE|__xcind-workspace-execute-hook|workspace network" lib/xcind/xcind-lib.bash lib/xcind/xcind-workspace-lib.bash engineering/architecture/overview.md`
+- `rtk git diff --check`
 
 ### Related Finding
 
