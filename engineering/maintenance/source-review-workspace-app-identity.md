@@ -82,8 +82,8 @@ The workspace and app identity area provides generated Compose overlays for app 
 | `WAI-DOC-002` | Specifications | `engineering/specs/directory-structure.md` | Global state tree documents proxy state but omits `${XDG_STATE_HOME}/xcind/workspaces.tsv`. | Closed |
 | `WAI-DOC-003` | Implementation | `engineering/implementation/project-layout.md` | Source layout omits `bin/xcind-workspace`, `bin/xcind-application`, `xcind-app-lib.bash`, and other current built-in libraries/hooks. | Closed |
 | `WAI-DOC-004` | Architecture | `engineering/architecture/overview.md` | Architecture says the workspace internal network is created by `xcind-workspace-hook` and omits several current GENERATE hooks from the pipeline list. | Closed |
-| `WAI-DOC-005` | Specifications | `engineering/specs/hook-lifecycle.md` | Built-in hook table says `xcind-proxy-hook` emits context labels even though app/workspace context labels are now emitted by dedicated hooks. | Open |
-| `WAI-DOC-006` | Specifications | `engineering/specs/context-detection.md` | Quick reference says bare `xcind-config` shows JSON/appRoot, but implementation and CLI reference make bare `xcind-config` show help. | Open |
+| `WAI-DOC-005` | Specifications | `engineering/specs/hook-lifecycle.md` | Built-in hook table says `xcind-proxy-hook` emits context labels even though app/workspace context labels are now emitted by dedicated hooks. | Closed |
+| `WAI-DOC-006` | Specifications | `engineering/specs/context-detection.md` | Quick reference says bare `xcind-config` shows JSON/appRoot, but implementation and CLI reference make bare `xcind-config` show help. | Closed |
 
 ## Commands Run
 
@@ -98,7 +98,7 @@ For the follow-up implementation pass (Round 4), `make check` passed for the cor
 ## Blockers or Follow-Up
 
 - All implementation findings have been implemented and closed.
-- WAI-DOC-001, WAI-DOC-002, WAI-DOC-003, and WAI-DOC-004 were closed in Round 4.
+- WAI-DOC-001, WAI-DOC-002, WAI-DOC-003, WAI-DOC-004, WAI-DOC-005, and WAI-DOC-006 were closed in Round 4.
 - WAI-001, WAI-002, and WAI-003 overlap with CLI-area findings and were resolved in Round 1 follow-ups.
 - WAI-004 was resolved in Round 4.
 
@@ -458,7 +458,7 @@ None.
 
 ## WAI-DOC-005: Hook lifecycle still attributes context labels to the proxy hook
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Specifications
 **Implementation Source**: `lib/xcind/xcind-app-lib.bash:17`
 **Document Source**: `engineering/specs/hook-lifecycle.md`
@@ -479,13 +479,24 @@ Code correct, docs stale.
 
 Change the proxy hook purpose to Traefik labels, proxy network attachment, and export labels. Leave context labels documented on app/workspace hooks, matching `engineering/specs/docker-labels.md`.
 
+### Resolution
+
+Updated the GENERATE built-in hooks table in `engineering/specs/hook-lifecycle.md`:
+- `xcind-proxy-hook` purpose changed from "Traefik labels, proxy network, context labels" to "Traefik labels, proxy network attachment, export labels"
+- `xcind-app-hook` purpose changed from "App identity labels for all services" to "App context labels for all services" (matching `docker-labels.md` language)
+- `xcind-workspace-hook` purpose changed from "Workspace network aliases" to "Workspace network aliases and context labels"
+
+### Validation
+
+Focused `rtk rg` validation confirmed no remaining "context labels" attribution to `xcind-proxy-hook` in `hook-lifecycle.md`. `rtk git diff --check` passed. `rtk make check` passed in clean temporary worktree.
+
 ### Related Finding
 
 None.
 
 ## WAI-DOC-006: Context detection quick reference has stale `xcind-config` no-arg behavior
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Specifications
 **Implementation Source**: `bin/xcind-config:1`
 **Document Source**: `engineering/specs/context-detection.md`
@@ -505,6 +516,14 @@ Code correct, docs stale.
 ### Proposed Documentation Update
 
 Remove or correct the bare `xcind-config` line and keep `xcind-config --json` as the JSON/appRoot example.
+
+### Resolution
+
+No change required. The current `engineering/specs/context-detection.md` quick reference already shows `xcind-config` as `# Show help` and `xcind-config --json` as the JSON output command. The document was already correct at the time of Round 4 work; the finding was stale. Confirmed against `bin/xcind-config` implementation: no-arg path sets `_do_help=true` (line 210) and the `--json` flag is required for JSON output.
+
+### Validation
+
+`rtk rg` confirmed the quick reference in `context-detection.md` already reads `# Show help` for bare `xcind-config`. No file changes needed.
 
 ### Related Finding
 
