@@ -42,15 +42,6 @@ Feature: Proxy Hostname Generation
     When xcind-proxy-hook generates the compose overlay
     Then the generated YAML contains hostname "dev-myapp-web.localhost"
 
-  Scenario: Workspace labels are set
-    Given XCIND_WORKSPACELESS is 0
-    And XCIND_WORKSPACE is "dev"
-    And XCIND_WORKSPACE_ROOT is "/workspaces/dev"
-    And XCIND_PROXY_EXPORTS contains "web"
-    When xcind-proxy-hook generates the compose overlay
-    Then the generated YAML contains label "xcind.workspace.name" with value "dev"
-    And the generated YAML contains label "xcind.workspace.path" with value "/workspaces/dev"
-
   # --- Edge Cases ---
 
   Scenario: Empty exports produce no output

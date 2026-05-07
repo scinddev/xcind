@@ -27,16 +27,16 @@ Directory structure and file responsibilities for Xcind.
 
 | File | Responsibility |
 |------|----------------|
-| `lib/xcind/xcind-bootstrap.bash` | Common startup shim sourced by every entrypoint after `XCIND_ROOT` is resolved. It loads the full shared runtime. |
-| `lib/xcind/xcind-lib.bash` | Core runtime: version/build metadata, app root detection, config loading, dependency checks, file resolution, hook registration, hook execution, and app preparation. |
-| `lib/xcind/xcind-app-lib.bash` | GENERATE hook for app identity labels so xcind-managed containers remain discoverable. |
-| `lib/xcind/xcind-app-env-lib.bash` | GENERATE hook for injecting app-level env files into Compose services. |
-| `lib/xcind/xcind-assigned-lib.bash` | GENERATE hook and helpers for stable assigned host ports and `compose.assigned.yaml`. |
-| `lib/xcind/xcind-host-gateway-lib.bash` | GENERATE hook for normalizing `host.docker.internal` access across Docker Desktop, Linux, and WSL modes. |
-| `lib/xcind/xcind-naming-lib.bash` | GENERATE hook for Docker Compose project naming and collision avoidance. |
-| `lib/xcind/xcind-proxy-lib.bash` | Proxy GENERATE/EXECUTE hooks plus shared proxy lifecycle, config, and state helpers. |
-| `lib/xcind/xcind-registry-lib.bash` | Workspace registry persistence and locking helpers for workspace discovery. |
-| `lib/xcind/xcind-workspace-lib.bash` | Workspace networking GENERATE/EXECUTE hooks and shared workspace network helpers. |
+| `lib/xcind/xcind-bootstrap.bash` | Common startup shim sourced by every bin entrypoint after `XCIND_ROOT` is resolved. It validates `XCIND_ROOT` is set and then sources `xcind-lib.bash`, giving the caller the full Xcind shell environment in one step. Centralized so future shared setup (hook discovery, env defaults) can be added without touching each bin stub. |
+| `lib/xcind/xcind-lib.bash` | Core runtime: version/build metadata, app root detection, workspace/app/additional config loading, dependency checks, compose/env file resolution, generation SHA computation, generated-cache population (with `.complete` marker + per-hook completeness gate), `XCIND_HOOKS_GENERATE` / `XCIND_HOOKS_ALWAYS` / `XCIND_HOOKS_EXECUTE` registration and execution, and app preparation (`__xcind-prepare-app`). Sources every other `xcind-*-lib.bash` file in this directory so the registered hook set is available to all entrypoints. |
+| `lib/xcind/xcind-app-lib.bash` | `xcind-app-hook` (GENERATE) — adds app identity labels so xcind-managed containers remain discoverable. |
+| `lib/xcind/xcind-app-env-lib.bash` | `xcind-app-env-hook` (GENERATE) — injects app-level env files (`XCIND_APP_ENV_FILES`) into Compose services. |
+| `lib/xcind/xcind-assigned-lib.bash` | `xcind-assigned-hook` (GENERATE + `XCIND_HOOKS_ALWAYS`) and helpers for stable assigned host ports, `compose.assigned.yaml`, and the `proxy/assigned-ports.tsv` registry under `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/`. Re-runs on every cache hit to keep allocations consistent with live state. |
+| `lib/xcind/xcind-host-gateway-lib.bash` | `xcind-host-gateway-hook` (GENERATE) — normalizes `host.docker.internal` access across Docker Desktop, Linux, and WSL modes; the runtime-detected gateway value is also folded into the cache SHA when host-gateway support is enabled. |
+| `lib/xcind/xcind-naming-lib.bash` | `xcind-naming-hook` (GENERATE) — sets the Docker Compose project name and handles workspace/workspaceless collision avoidance. |
+| `lib/xcind/xcind-proxy-lib.bash` | `xcind-proxy-hook` (GENERATE) and `__xcind-proxy-execute-hook` (EXECUTE) plus the shared proxy lifecycle, configuration, and state helpers used by `bin/xcind-proxy`. |
+| `lib/xcind/xcind-registry-lib.bash` | Workspace registry persistence and locking helpers backing the `workspaces.tsv` state file under `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/`. Used by `bin/xcind-workspace` and the workspace lookup paths in `xcind-lib.bash`. |
+| `lib/xcind/xcind-workspace-lib.bash` | `xcind-workspace-hook` (GENERATE) and `__xcind-workspace-execute-hook` (EXECUTE) plus shared helpers that create and join the per-workspace Docker network and emit network aliases. |
 | `lib/xcind/xcind-completion-bash.bash` | Bash completion implementation emitted by `xcind-config completion bash`. |
 | `lib/xcind/xcind-completion-zsh.bash` | Zsh completion implementation emitted by `xcind-config completion zsh`. |
 

@@ -30,7 +30,14 @@ export_name[=compose_service][:port][;key=value[;key=value…]]
 | `"worker:9000;type=assigned"` | `worker` | `worker` | `9000` | `assigned` |
 | `"database=db:3306;type=assigned"` | `database` | `db` | `3306` | `assigned` |
 
-Only `type` is accepted in the metadata section today; unknown keys and invalid `type` values cause the hooks to fail fast.
+The following keys are accepted in the metadata section today; unknown keys and invalid values cause the hooks to fail fast.
+
+| Key | Accepted Values | Default | Description |
+|-----|----------------|---------|-------------|
+| `type` | `proxied`, `assigned` | `proxied` | Export mechanism |
+| `tls` | `auto`, `require`, `disable` | `auto` | Per-export TLS override (only meaningful when `type=proxied`) |
+
+The effective TLS behavior for each export is resolved from the global `XCIND_PROXY_TLS_MODE` and the per-export `tls` key. When the global mode is `disabled`, all exports are HTTP-only regardless of per-export `tls`.
 
 ## Proxied Ports
 

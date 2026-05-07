@@ -69,9 +69,18 @@ XCIND_PROXY_EXPORTS=("web:3000")
 
 ### Source Order
 
-1. Global proxy `config.sh` (sourced by proxy hook when needed)
-2. Workspace `.xcind.sh` (if in workspace mode)
-3. Application `.xcind.sh` (overrides workspace settings)
+App resolution sources files in this order, with each later file able to override values set by earlier ones:
+
+1. Workspace `.xcind.sh` (if in workspace mode)
+2. Workspace `.xcind.override.sh` (sibling override of the workspace config)
+3. Workspace `XCIND_ADDITIONAL_CONFIG_FILES`, in declared order; for each, its `.override.sh` sibling is sourced immediately after if present
+4. Application `.xcind.sh`
+5. Application `.xcind.override.sh` (sibling override of the app config)
+6. Application `XCIND_ADDITIONAL_CONFIG_FILES`, in declared order; for each, its `.override.sh` sibling is sourced immediately after if present
+
+Global proxy `config.sh` is not part of this chain. It is consumed by proxy-specific code paths (e.g., the proxy hook and `xcind-proxy` commands) rather than universally sourced before workspace and app config.
+
+`.override.sh` siblings are resolved by replacing the trailing `.sh` of the base file name with `.override.sh`, and they are only sourced when the file exists.
 
 ---
 

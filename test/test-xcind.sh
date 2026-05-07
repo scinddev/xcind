@@ -1262,10 +1262,324 @@ unset -f bad_path_hook
 rm -rf "$BAD_APP"
 rm -f "$BAD_COUNT_FILE"
 
+# 5. Hook fails after an earlier hook persisted output. The cache-miss path
+#    must not leave a partial generated dir behind: the failed run cleans up
+#    and the next invocation runs every hook again instead of replaying the
+#    half-written cache (which would silently drop the failed hook).
+PARTIAL_APP=$(mktemp_d)
+echo '# partial cache test' >"$PARTIAL_APP/.xcind.sh"
+touch "$PARTIAL_APP/compose.yaml"
+
+export XCIND_SHA="partial005"
+export XCIND_CACHE_DIR="$PARTIAL_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$PARTIAL_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+PARTIAL_FIRST_FILE=$(mktemp)
+PARTIAL_SECOND_FILE=$(mktemp)
+echo 0 >"$PARTIAL_FIRST_FILE"
+echo 0 >"$PARTIAL_SECOND_FILE"
+PARTIAL_SECOND_MODE_FILE=$(mktemp)
+echo "fail" >"$PARTIAL_SECOND_MODE_FILE"
+
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+partial_first_hook() {
+  local count
+  count=$(<"$PARTIAL_FIRST_FILE")
+  count=$((count + 1))
+  echo "$count" >"$PARTIAL_FIRST_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.first.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.first.yaml"
+}
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+partial_second_hook() {
+  local count
+  count=$(<"$PARTIAL_SECOND_FILE")
+  count=$((count + 1))
+  echo "$count" >"$PARTIAL_SECOND_FILE"
+  if [ "$(<"$PARTIAL_SECOND_MODE_FILE")" = "fail" ]; then
+    echo "Error: forced failure" >&2
+    return 9
+  fi
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.second.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.second.yaml"
+}
+XCIND_HOOKS_GENERATE=("partial_first_hook" "partial_second_hook")
+
+reset_xcind_state
+__xcind-load-config "$PARTIAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$PARTIAL_APP"
+
+# First run: second hook fails. Pipeline must propagate the failure and
+# clean up so the dir is not replayable.
+__xcind-run-hooks "$PARTIAL_APP" 2>/dev/null && partial_rc1=0 || partial_rc1=$?
+assert_eq "partial cache: first run propagates failure" "9" "$partial_rc1"
+assert_eq "partial cache: generated dir removed after failure" "false" \
+  "$([ -d "$XCIND_GENERATED_DIR" ] && echo true || echo false)"
+
+# Second run: flip the second hook to succeed. Both hooks must run again
+# (no half-replay), and the generated dir must end up complete.
+echo "ok" >"$PARTIAL_SECOND_MODE_FILE"
+
+reset_xcind_state
+__xcind-load-config "$PARTIAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$PARTIAL_APP"
+__xcind-run-hooks "$PARTIAL_APP" && partial_rc2=0 || partial_rc2=$?
+assert_eq "partial cache: second run succeeds" "0" "$partial_rc2"
+assert_eq "partial cache: first hook re-ran" "2" "$(<"$PARTIAL_FIRST_FILE")"
+assert_eq "partial cache: second hook re-ran" "2" "$(<"$PARTIAL_SECOND_FILE")"
+assert_file_exists "partial cache: completion marker written" \
+  "$XCIND_GENERATED_DIR/.complete"
+assert_file_exists "partial cache: first hook output persisted" \
+  "$XCIND_GENERATED_DIR/.hook-output-partial_first_hook"
+assert_file_exists "partial cache: second hook output persisted" \
+  "$XCIND_GENERATED_DIR/.hook-output-partial_second_hook"
+
+unset -f partial_first_hook partial_second_hook
+rm -rf "$PARTIAL_APP"
+rm -f "$PARTIAL_FIRST_FILE" "$PARTIAL_SECOND_FILE" "$PARTIAL_SECOND_MODE_FILE"
+
+# 6. New hook registered between two runs with the same SHA. The previous
+#    generated directory has no `.hook-output-{new_hook}`, so the cache must
+#    be treated as incomplete and rebuilt — the new hook MUST run instead of
+#    being silently skipped.
+NEWHOOK_APP=$(mktemp_d)
+echo '# new hook test' >"$NEWHOOK_APP/.xcind.sh"
+touch "$NEWHOOK_APP/compose.yaml"
+
+export XCIND_SHA="newhook006"
+export XCIND_CACHE_DIR="$NEWHOOK_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$NEWHOOK_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+NEWHOOK_OLD_FILE=$(mktemp)
+NEWHOOK_NEW_FILE=$(mktemp)
+echo 0 >"$NEWHOOK_OLD_FILE"
+echo 0 >"$NEWHOOK_NEW_FILE"
+
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+newhook_old_hook() {
+  local count
+  count=$(<"$NEWHOOK_OLD_FILE")
+  count=$((count + 1))
+  echo "$count" >"$NEWHOOK_OLD_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.old.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.old.yaml"
+}
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+newhook_new_hook() {
+  local count
+  count=$(<"$NEWHOOK_NEW_FILE")
+  count=$((count + 1))
+  echo "$count" >"$NEWHOOK_NEW_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.new.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.new.yaml"
+}
+
+# First run: only the old hook is registered.
+XCIND_HOOKS_GENERATE=("newhook_old_hook")
+reset_xcind_state
+__xcind-load-config "$NEWHOOK_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$NEWHOOK_APP"
+__xcind-run-hooks "$NEWHOOK_APP"
+assert_eq "new hook: old hook ran on first invocation" "1" \
+  "$(<"$NEWHOOK_OLD_FILE")"
+assert_eq "new hook: new hook did not run yet" "0" \
+  "$(<"$NEWHOOK_NEW_FILE")"
+
+# Second run: register a new hook alongside the old one with the same SHA.
+# The cache hit completeness check must detect the missing output for the
+# new hook and rebuild — both hooks run again.
+XCIND_HOOKS_GENERATE=("newhook_old_hook" "newhook_new_hook")
+reset_xcind_state
+__xcind-load-config "$NEWHOOK_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$NEWHOOK_APP"
+__xcind-run-hooks "$NEWHOOK_APP"
+assert_eq "new hook: old hook re-ran after registration changed" "2" \
+  "$(<"$NEWHOOK_OLD_FILE")"
+assert_eq "new hook: new hook ran on rebuild" "1" \
+  "$(<"$NEWHOOK_NEW_FILE")"
+assert_file_exists "new hook: completion marker present" \
+  "$XCIND_GENERATED_DIR/.complete"
+new_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "new hook: new overlay in compose opts" \
+  "compose.new.yaml" "$new_opts"
+
+unset -f newhook_old_hook newhook_new_hook
+rm -rf "$NEWHOOK_APP"
+rm -f "$NEWHOOK_OLD_FILE" "$NEWHOOK_NEW_FILE"
+
+# 7. Hooks listed in XCIND_HOOKS_ALWAYS re-run on cache hit even though
+#    pure hooks replay from cache. Regression for CORE-RUNTIME-002:
+#    assigned-hook output depends on live state outside the SHA, so a
+#    cache-hit replay can disagree with current state. After the fix, the
+#    always-listed hook re-runs every invocation while pure hooks still
+#    replay from `.hook-output-{name}`.
+ALWAYS_APP=$(mktemp_d)
+echo '# always-run hook test' >"$ALWAYS_APP/.xcind.sh"
+touch "$ALWAYS_APP/compose.yaml"
+
+export XCIND_SHA="always007"
+export XCIND_CACHE_DIR="$ALWAYS_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$ALWAYS_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+ALWAYS_PURE_FILE=$(mktemp)
+ALWAYS_LIVE_FILE=$(mktemp)
+ALWAYS_LIVE_TOKEN_FILE=$(mktemp)
+echo 0 >"$ALWAYS_PURE_FILE"
+echo 0 >"$ALWAYS_LIVE_FILE"
+echo "first" >"$ALWAYS_LIVE_TOKEN_FILE"
+
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+always_pure_hook() {
+  local count
+  count=$(<"$ALWAYS_PURE_FILE")
+  count=$((count + 1))
+  echo "$count" >"$ALWAYS_PURE_FILE"
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.pure.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.pure.yaml"
+}
+# shellcheck disable=SC2317,SC2329 # invoked via XCIND_HOOKS_GENERATE
+always_live_hook() {
+  local count token
+  count=$(<"$ALWAYS_LIVE_FILE")
+  count=$((count + 1))
+  echo "$count" >"$ALWAYS_LIVE_FILE"
+  token=$(<"$ALWAYS_LIVE_TOKEN_FILE")
+  mkdir -p "$XCIND_GENERATED_DIR"
+  printf '%s\n' "$token" >"$XCIND_GENERATED_DIR/compose.live.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.live.yaml"
+}
+
+XCIND_HOOKS_GENERATE=("always_pure_hook" "always_live_hook")
+XCIND_HOOKS_ALWAYS=("always_live_hook")
+
+# First run: cache miss, both hooks run, both outputs persisted.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_APP"
+__xcind-run-hooks "$ALWAYS_APP"
+assert_eq "always-run: pure hook ran on first invocation" "1" \
+  "$(<"$ALWAYS_PURE_FILE")"
+assert_eq "always-run: live hook ran on first invocation" "1" \
+  "$(<"$ALWAYS_LIVE_FILE")"
+assert_eq "always-run: live overlay reflects first token" "first" \
+  "$(<"$XCIND_GENERATED_DIR/compose.live.yaml")"
+assert_file_exists "always-run: completion marker written" \
+  "$XCIND_GENERATED_DIR/.complete"
+
+# Mutate live state outside the SHA and delete the live overlay (mirrors
+# what happens when assigned-ports.tsv changes between runs and any prior
+# `compose.assigned.yaml` is no longer accurate).
+echo "second" >"$ALWAYS_LIVE_TOKEN_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.live.yaml"
+
+# Second run: cache HIT (marker + both .hook-output-* still present).
+# Pure hook must replay (count stays at 1, no new invocation). Live hook
+# must re-run (count -> 2) and regenerate the deleted overlay with the new
+# token.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_APP"
+__xcind-run-hooks "$ALWAYS_APP"
+assert_eq "always-run: pure hook replayed from cache (no re-run)" "1" \
+  "$(<"$ALWAYS_PURE_FILE")"
+assert_eq "always-run: live hook re-ran on cache hit" "2" \
+  "$(<"$ALWAYS_LIVE_FILE")"
+assert_file_exists "always-run: live overlay regenerated" \
+  "$XCIND_GENERATED_DIR/compose.live.yaml"
+assert_eq "always-run: live overlay reflects mutated token" "second" \
+  "$(<"$XCIND_GENERATED_DIR/compose.live.yaml")"
+always_opts="${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+assert_contains "always-run: pure overlay still in compose opts" \
+  "compose.pure.yaml" "$always_opts"
+assert_contains "always-run: live overlay in compose opts" \
+  "compose.live.yaml" "$always_opts"
+
+unset -f always_pure_hook always_live_hook
+rm -rf "$ALWAYS_APP"
+rm -f "$ALWAYS_PURE_FILE" "$ALWAYS_LIVE_FILE" "$ALWAYS_LIVE_TOKEN_FILE"
+
+# 8. Always-run hook output is validated: if the hook re-runs on a cache hit
+#    but fails to create the file it referenced with -f, __xcind-run-hooks
+#    must fail with a non-zero exit rather than appending a missing-file path
+#    to XCIND_DOCKER_COMPOSE_OPTS (Copilot review comment on CORE-RUNTIME-002).
+ALWAYS_VAL_APP=$(mktemp_d)
+echo '# always-run output-validation test' >"$ALWAYS_VAL_APP/.xcind.sh"
+touch "$ALWAYS_VAL_APP/compose.yaml"
+
+export XCIND_SHA="alwaysval001"
+export XCIND_CACHE_DIR="$ALWAYS_VAL_APP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$ALWAYS_VAL_APP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR"
+
+# shellcheck disable=SC2317,SC2329
+always_val_stub_hook() {
+  # Always creates its overlay so the first run and cache-hit-replay path work.
+  mkdir -p "$XCIND_GENERATED_DIR"
+  touch "$XCIND_GENERATED_DIR/compose.valstub.yaml"
+  echo "-f $XCIND_GENERATED_DIR/compose.valstub.yaml"
+}
+# shellcheck disable=SC2317,SC2329
+always_val_broken_hook() {
+  # Claims to produce an overlay but never creates the file.
+  echo "-f $XCIND_GENERATED_DIR/compose.broken.yaml"
+}
+
+XCIND_HOOKS_GENERATE=("always_val_stub_hook" "always_val_broken_hook")
+XCIND_HOOKS_ALWAYS=("always_val_broken_hook")
+
+# First run: cache miss — broken hook emits a missing-file path; the
+# cache-miss path does NOT call __xcind-validate-hook-output (the overlay
+# is presumed written by the hook). Seed a marker so the second run is a
+# cache hit.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_VAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_VAL_APP"
+__xcind-run-hooks "$ALWAYS_VAL_APP" 2>/dev/null || true
+# Manually write the missing overlay and marker so the second run sees a
+# complete, valid cache hit where the always-run hook will be re-invoked.
+touch "$XCIND_GENERATED_DIR/compose.broken.yaml"
+printf '%s\n' "always_val_stub_hook always_val_broken_hook" >"$XCIND_GENERATED_DIR/.complete"
+printf '%s\n' "-f $XCIND_GENERATED_DIR/compose.valstub.yaml" >"$XCIND_GENERATED_DIR/.hook-output-always_val_stub_hook"
+printf '%s\n' "-f $XCIND_GENERATED_DIR/compose.broken.yaml" >"$XCIND_GENERATED_DIR/.hook-output-always_val_broken_hook"
+# Now remove the overlay so the always-run hook re-emits a missing-file path.
+rm -f "$XCIND_GENERATED_DIR/compose.broken.yaml"
+
+# Second run: cache HIT, always-run hook re-runs and emits a -f that points
+# at a non-existent file. __xcind-run-hooks must fail non-zero.
+reset_xcind_state
+__xcind-load-config "$ALWAYS_VAL_APP"
+XCIND_COMPOSE_FILES=("compose.yaml")
+__xcind-build-compose-opts "$ALWAYS_VAL_APP"
+always_val_run_out=$(__xcind-run-hooks "$ALWAYS_VAL_APP" 2>&1) && always_val_rc=0 || always_val_rc=$?
+assert_eq "always-run output validation: fails when -f file is missing" "1" "$always_val_rc"
+assert_contains "always-run output validation: error mentions hook name" \
+  "always_val_broken_hook" "$always_val_run_out"
+
+unset -f always_val_stub_hook always_val_broken_hook
+rm -rf "$ALWAYS_VAL_APP"
+unset ALWAYS_VAL_APP always_val_run_out always_val_rc
+
 # Restore default hooks and clean environment for subsequent tests
 unset XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
 # shellcheck disable=SC2034 # reset for downstream tests
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+# shellcheck disable=SC2034 # reset for downstream tests
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
 reset_xcind_state
 
 # ======================================================================

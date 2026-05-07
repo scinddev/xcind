@@ -3,9 +3,13 @@
 # Scenario: Workspace "dev", application "frontend" with two exports:
 #   XCIND_PROXY_EXPORTS=("web:80" "api=app:3000")
 # Domain: localhost
+# TLS mode: auto (default) — emits HTTP + HTTPS routers; preferred URL is https://
 #
 # Note: Context labels (xcind.app.*, xcind.workspace.*) are now applied by
 # the dedicated xcind-app-hook and xcind-workspace-hook respectively.
+#
+# For HTTP-only output, set XCIND_PROXY_TLS_MODE=disabled or use
+# per-export tls=disable metadata.
 #
 # Parent: ../../generated-override-files.md
 
@@ -18,18 +22,37 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=xcind-proxy"
+      # HTTP router
       - "traefik.http.routers.dev-frontend-web-http.rule=Host(`dev-frontend-web.localhost`)"
       - "traefik.http.routers.dev-frontend-web-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-web-http.service=dev-frontend-web-http"
       - "traefik.http.services.dev-frontend-web-http.loadbalancer.server.port=80"
+      # HTTPS router (TLS auto/require modes)
+      - "traefik.http.routers.dev-frontend-web-https.rule=Host(`dev-frontend-web.localhost`)"
+      - "traefik.http.routers.dev-frontend-web-https.entrypoints=websecure"
+      - "traefik.http.routers.dev-frontend-web-https.tls=true"
+      - "traefik.http.routers.dev-frontend-web-https.service=dev-frontend-web-https"
+      - "traefik.http.services.dev-frontend-web-https.loadbalancer.server.port=80"
+      # Apex HTTP router
       - "traefik.http.routers.dev-frontend-http.rule=Host(`dev-frontend.localhost`)"
       - "traefik.http.routers.dev-frontend-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
       - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
+      # Apex HTTPS router (TLS auto/require modes)
+      - "traefik.http.routers.dev-frontend-https.rule=Host(`dev-frontend.localhost`)"
+      - "traefik.http.routers.dev-frontend-https.entrypoints=websecure"
+      - "traefik.http.routers.dev-frontend-https.tls=true"
+      - "traefik.http.routers.dev-frontend-https.service=dev-frontend-https"
+      - "traefik.http.services.dev-frontend-https.loadbalancer.server.port=80"
+      # Export labels — preferred scheme is https when TLS is enabled
       - "xcind.export.web.host=dev-frontend-web.localhost"
-      - "xcind.export.web.url=http://dev-frontend-web.localhost"
+      - "xcind.export.web.http.url=http://dev-frontend-web.localhost"
+      - "xcind.export.web.https.url=https://dev-frontend-web.localhost"
+      - "xcind.export.web.url=https://dev-frontend-web.localhost"
       - "xcind.apex.host=dev-frontend.localhost"
-      - "xcind.apex.url=http://dev-frontend.localhost"
+      - "xcind.apex.http.url=http://dev-frontend.localhost"
+      - "xcind.apex.https.url=https://dev-frontend.localhost"
+      - "xcind.apex.url=https://dev-frontend.localhost"
 
   app:
     networks:
@@ -38,12 +61,22 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=xcind-proxy"
+      # HTTP router
       - "traefik.http.routers.dev-frontend-api-http.rule=Host(`dev-frontend-api.localhost`)"
       - "traefik.http.routers.dev-frontend-api-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-api-http.service=dev-frontend-api-http"
       - "traefik.http.services.dev-frontend-api-http.loadbalancer.server.port=3000"
+      # HTTPS router (TLS auto/require modes)
+      - "traefik.http.routers.dev-frontend-api-https.rule=Host(`dev-frontend-api.localhost`)"
+      - "traefik.http.routers.dev-frontend-api-https.entrypoints=websecure"
+      - "traefik.http.routers.dev-frontend-api-https.tls=true"
+      - "traefik.http.routers.dev-frontend-api-https.service=dev-frontend-api-https"
+      - "traefik.http.services.dev-frontend-api-https.loadbalancer.server.port=3000"
+      # Export labels
       - "xcind.export.api.host=dev-frontend-api.localhost"
-      - "xcind.export.api.url=http://dev-frontend-api.localhost"
+      - "xcind.export.api.http.url=http://dev-frontend-api.localhost"
+      - "xcind.export.api.https.url=https://dev-frontend-api.localhost"
+      - "xcind.export.api.url=https://dev-frontend-api.localhost"
 
 networks:
   xcind-proxy:

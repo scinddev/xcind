@@ -89,6 +89,14 @@ source "$__XCIND_LIB_DIR/xcind-registry-lib.bash"
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
+# Hooks whose output depends on live state outside the cache SHA inputs
+# (e.g. `~/.local/state/xcind/proxy/assigned-ports.tsv` for the assigned
+# hook). These are still listed in `XCIND_HOOKS_GENERATE` to preserve
+# ordering, marker semantics, and the cache-completeness check, but on a
+# cache HIT replay `__xcind-run-hooks` re-runs them instead of replaying
+# their persisted output. Pure hooks continue to replay from cache.
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+
 # Names of hooks that soft-skipped this run because yq was missing.
 # Populated by hooks themselves; drained and reported as a single
 # consolidated warning by __xcind-run-hooks.
@@ -588,6 +596,12 @@ __xcind-prepare-app() {
     # function called in a conditional context (`__xcind-prepare-app || exit 1`).
     __xcind-populate-cache "$app_root" || return 1
     __xcind-run-hooks "$app_root" || return 1
+    # config.json must reflect post-hook state (e.g. assignedExports updated
+    # by xcind-assigned-hook). Writing it after hooks ensures direct readers
+    # of .xcind/cache/{sha}/config.json see the same resolved state that
+    # `xcind-config --json` reports. resolved-config.yaml stays in
+    # __xcind-populate-cache because hooks consume it for service enumeration.
+    __xcind-write-cache-config-json "$app_root" || return 1
   else
     __xcind-debug "prepare-app: skipping hooks — XCIND_HOOKS_GENERATE is empty"
   fi
@@ -1148,8 +1162,10 @@ __xcind-compute-sha() {
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
-# Populate the cache directory with resolved config artifacts.
-# Runs docker compose config and writes config.json + resolved-config.yaml.
+# Populate the cache directory with resolved-config.yaml.
+# Runs docker compose config so hooks that need the resolved service
+# enumeration can read it. config.json is written separately, after hooks
+# run, by __xcind-write-cache-config-json.
 #
 # Usage:
 #   __xcind-populate-cache /path/to/app/root
@@ -1167,10 +1183,34 @@ __xcind-populate-cache() {
     rm -f -- "$_resolved_tmp"
     return 1
   fi
+}
 
-  # Write config.json (matching xcind-config format)
-  if command -v jq &>/dev/null; then
-    __xcind-resolve-json "$app_root" >"$XCIND_CACHE_DIR/config.json"
+# Write .xcind/cache/{sha}/config.json from the current resolved state.
+# Called after __xcind-run-hooks so post-hook updates (assigned-port state in
+# particular) are reflected in the cached JSON. No-op when jq is missing,
+# matching the prior behavior of __xcind-populate-cache.
+#
+# Usage:
+#   __xcind-write-cache-config-json /path/to/app/root
+__xcind-write-cache-config-json() {
+  local app_root="$1"
+
+  command -v jq &>/dev/null || return 0
+
+  mkdir -p "$XCIND_CACHE_DIR"
+
+  local _json_tmp
+  _json_tmp=$(mktemp "${XCIND_CACHE_DIR}/config.json.XXXXXX") || return 1
+  if __xcind-resolve-json "$app_root" >"$_json_tmp"; then
+    if mv -- "$_json_tmp" "$XCIND_CACHE_DIR/config.json"; then
+      :
+    else
+      rm -f -- "$_json_tmp"
+      return 1
+    fi
+  else
+    rm -f -- "$_json_tmp"
+    return 1
   fi
 }
 
@@ -1828,6 +1868,18 @@ __xcind-append-hook-output-to-opts() {
   done <<<"$output"
 }
 
+# Return 0 if `$1` is registered in `XCIND_HOOKS_ALWAYS`. Used by
+# `__xcind-run-hooks` to decide whether a hook should re-run on cache hit
+# rather than replay its persisted output.
+__xcind-hook-is-always() {
+  local needle="$1"
+  local h
+  for h in "${XCIND_HOOKS_ALWAYS[@]+"${XCIND_HOOKS_ALWAYS[@]}"}"; do
+    [[ $h == "$needle" ]] && return 0
+  done
+  return 1
+}
+
 # Run GENERATE hooks with cache hit/miss logic.
 # On cache miss: runs hooks, persists output, appends to XCIND_DOCKER_COMPOSE_OPTS.
 # On cache hit: replays persisted output, validates referenced files.
@@ -1843,13 +1895,61 @@ __xcind-run-hooks() {
 
   __xcind-debug "run-hooks: generated_dir=$XCIND_GENERATED_DIR exists=$([[ -d $XCIND_GENERATED_DIR ]] && echo yes || echo no)"
 
-  if [ -d "$XCIND_GENERATED_DIR" ]; then
-    # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order
+  # A generated directory is only a valid cache hit when:
+  #  1. it exists,
+  #  2. the `.complete` marker is present (only written after every hook
+  #     succeeded on a previous run), and
+  #  3. every hook in the current `XCIND_HOOKS_GENERATE` has a persisted
+  #     `.hook-output-{hook}` file.
+  # Anything else (partial dir from a failed/interrupted previous run, or a
+  # newly registered hook with no persisted output yet) forces a rebuild.
+  local marker_file="$XCIND_GENERATED_DIR/.complete"
+  local cache_valid=0
+  if [ -d "$XCIND_GENERATED_DIR" ] && [ -f "$marker_file" ]; then
+    cache_valid=1
+    local _check_hook
+    for _check_hook in "${XCIND_HOOKS_GENERATE[@]}"; do
+      if [ ! -f "$XCIND_GENERATED_DIR/.hook-output-$_check_hook" ]; then
+        __xcind-debug "run-hooks: cache incomplete (missing output for $_check_hook), rebuilding"
+        cache_valid=0
+        break
+      fi
+    done
+  fi
+
+  if [ "$cache_valid" -eq 1 ]; then
+    # Cache hit — replay persisted hook output in XCIND_HOOKS_GENERATE order.
+    # Hooks listed in XCIND_HOOKS_ALWAYS are re-run (their output depends on
+    # live state outside the SHA, so a stale replay would silently disagree
+    # with current state — see CORE-RUNTIME-002).
     local hook_name
     for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
       local hook_output_file="$XCIND_GENERATED_DIR/.hook-output-$hook_name"
-      __xcind-debug "run-hooks: cache HIT hook=$hook_name output_file_exists=$([[ -f $hook_output_file ]] && echo yes || echo no)"
-      [ -f "$hook_output_file" ] || continue
+
+      if __xcind-hook-is-always "$hook_name"; then
+        __xcind-debug "run-hooks: cache HIT but always-run hook=$hook_name re-running"
+        local output
+        output=$("$hook_name" "$app_root") || {
+          local rc=$?
+          echo "Error: Hook '$hook_name' failed with exit code $rc" >&2
+          return $rc
+        }
+        # Validate output: an always-run hook ran against live state, so a
+        # missing -f file is a hook error, not a stale-cache trigger.
+        if ! __xcind-validate-hook-output "$output"; then
+          echo "Error: Hook '$hook_name' output references a missing file" >&2
+          return 1
+        fi
+        # Refresh persisted output so a subsequent run sees current state
+        # if the hook is later moved out of XCIND_HOOKS_ALWAYS.
+        printf '%s\n' "$output" >"$hook_output_file"
+        if [ -n "$output" ]; then
+          __xcind-append-hook-output-to-opts "$output"
+        fi
+        continue
+      fi
+
+      __xcind-debug "run-hooks: cache HIT hook=$hook_name"
 
       # Read persisted output
       local output
@@ -1868,7 +1968,10 @@ __xcind-run-hooks() {
       __xcind-append-hook-output-to-opts "$output"
     done
   else
-    # Cache miss — run hooks and persist output
+    # Cache miss / incomplete — rebuild atomically.
+    # `rm -rf` first so a partial directory from a previously failed run
+    # cannot leak stale `.hook-output-*` files into the new build.
+    rm -rf "$XCIND_GENERATED_DIR"
     mkdir -p "$XCIND_GENERATED_DIR"
 
     local hook_name
@@ -1878,6 +1981,10 @@ __xcind-run-hooks() {
       output=$("$hook_name" "$app_root") || {
         local rc=$?
         echo "Error: Hook '$hook_name' failed with exit code $rc" >&2
+        # Remove the partial generated dir so the next run rebuilds from
+        # scratch instead of replaying the half-written output of earlier
+        # hooks (the marker is written below only on full success).
+        rm -rf "$XCIND_GENERATED_DIR"
         return $rc
       }
 
@@ -1890,6 +1997,11 @@ __xcind-run-hooks() {
         __xcind-append-hook-output-to-opts "$output"
       fi
     done
+
+    # Completion marker — written only after every registered hook
+    # succeeded. Lists the registered hooks so a future cache-hit check can
+    # detect newly added hooks (no persisted output for them yet) and rebuild.
+    printf '%s\n' "${XCIND_HOOKS_GENERATE[@]}" >"$marker_file"
   fi
 
   # Consolidated summary for hooks that soft-skipped due to missing yq.
