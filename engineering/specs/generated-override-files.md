@@ -30,14 +30,33 @@ These files are gitignored and regenerated on cache miss.
 
 ## Caching
 
-Hook output is cached using a SHA-256 hash computed from:
+Hook output is cached under `{app_root}/.xcind/generated/{sha}/`, keyed by a SHA-256 hash that `__xcind-compute-sha` builds from every input the GENERATE hooks treat as pure. The complete input set is:
 
-- Compose file paths and content
-- App `.xcind.sh` content
-- Workspace `.xcind.sh` content (if in workspace mode)
-- Global proxy config (if present)
+- **Compose files** — every `-f` path resolved into `XCIND_DOCKER_COMPOSE_OPTS`, sorted, plus the content hash of each path that exists.
+- **Compose env files** — every path resolved from `XCIND_COMPOSE_ENV_FILES`, plus the content hash of each that exists.
+- **App env files** — every path resolved from `XCIND_APP_ENV_FILES`, plus the content hash of each that exists.
+- **App `.xcind.sh`** — content hash when present.
+- **Workspace `.xcind.sh`** — content hash when in workspace mode (`XCIND_WORKSPACELESS=0` and `XCIND_WORKSPACE_ROOT` set).
+- **Additional config files and their overrides** — every path tracked in `__XCIND_SOURCED_CONFIG_FILES` (workspace and app `XCIND_ADDITIONAL_CONFIG_FILES` plus their `.override.sh` siblings, and the workspace/app `.xcind.override.sh` files), excluding the app and workspace `.xcind.sh` already hashed above.
+- **Global proxy config** — content hash of `${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy/config.sh` when present.
+- **`XCIND_TOOLS`** — the full declarations array, joined newline-separated, when non-empty.
+- **Naming inputs** — the literal values of `XCIND_APP`, `XCIND_WORKSPACE`, and `XCIND_WORKSPACELESS`, so naming overrides invalidate the cache even if no file changed.
+- **Host-gateway configuration** — the literal values of `XCIND_HOST_GATEWAY_ENABLED` and `XCIND_HOST_GATEWAY`.
+- **Detected host-gateway value** — when `XCIND_HOST_GATEWAY_ENABLED` is not `0`, the output of `__xcind-detect-host-gateway` is included so DHCP/VPN/WSL2-mode changes invalidate the cache even when configuration is stable.
 
-On subsequent runs with the same hash, xcind replays the cached hook output (the `-f` flags) instead of re-running hooks.
+A cache entry is treated as a hit only when both:
+
+1. A `.complete` marker file exists in `.xcind/generated/{sha}/` (written atomically after every GENERATE hook succeeds), and
+2. Every hook currently registered in `XCIND_HOOKS_GENERATE` has a persisted `.hook-output-{name}` file in that directory.
+
+A missing marker, a missing per-hook output, or a hook newly added to `XCIND_HOOKS_GENERATE` since the last run forces a full rebuild rather than a partial replay. On cache miss, the generated directory is rebuilt atomically: any prior contents are removed, the directory is recreated, hooks run in registration order, and the `.complete` marker (which records the registered hook list for diagnostics) is written only after every hook succeeds. If a hook fails mid-run, the partial generated directory is removed before the error propagates so the next invocation rebuilds from scratch.
+
+Hooks listed in `XCIND_HOOKS_ALWAYS` (currently `xcind-assigned-hook`) are exempt from the replay-only behavior: on a cache hit they are re-run against current live state, their persisted `.hook-output-{name}` is refreshed, and any deleted overlay file they own is regenerated. Pure GENERATE hooks (naming, app, app-env, host-gateway, proxy, workspace) continue to replay from `.hook-output-{name}` without re-execution. See [Hook Lifecycle: GENERATE](./hook-lifecycle.md#generate) for the full contract.
+
+The cache directory also stores two sibling artifacts that are not part of hook output:
+
+- `resolved-config.yaml` — `docker compose config` output, written **before** hooks run so hooks that need the resolved service list can read it.
+- `config.json` — `xcind-config --json` output, written **after** `__xcind-run-hooks` so the cached JSON reflects post-hook updates such as `assignedExports` populated by `xcind-assigned-hook`. Written via a `.tmp` sidecar and `mv` so a failed `jq` run never leaves a corrupt file; the write is a no-op when `jq` is unavailable.
 
 ---
 

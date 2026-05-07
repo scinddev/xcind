@@ -76,7 +76,7 @@ The core runtime resolves the application root, sources workspace/app/additional
 | ID | Layer | Document | Summary | Status |
 |----|-------|----------|---------|--------|
 | `CORE-RUNTIME-DOC-001` | Specifications | `engineering/specs/configuration-schemas.md` | Stateless configuration section says there are no state files or registries, but assigned-port and workspace registry files are current behavior. | Closed |
-| `CORE-RUNTIME-DOC-002` | Specifications | `engineering/specs/generated-override-files.md` | Cache-key summary omits several implemented inputs: env files, additional config files, `XCIND_TOOLS`, host-gateway settings, and detected host-gateway value. | Open |
+| `CORE-RUNTIME-DOC-002` | Specifications | `engineering/specs/generated-override-files.md` | Cache-key summary omits several implemented inputs: env files, additional config files, `XCIND_TOOLS`, host-gateway settings, and detected host-gateway value. | Closed |
 | `CORE-RUNTIME-DOC-003` | Specifications | `engineering/specs/configuration-schemas.md` | Source-order section omits `.xcind.override.sh` siblings and `XCIND_ADDITIONAL_CONFIG_FILES` for workspace and app configs. | Open |
 | `CORE-RUNTIME-DOC-004` | Implementation | `engineering/implementation/project-layout.md` | Runtime layout omits `xcind-bootstrap.bash` and newer installed libraries/hooks now sourced by `xcind-lib.bash`. | Open |
 
@@ -425,22 +425,31 @@ None.
 
 ## CORE-RUNTIME-DOC-002: Generated override cache-key documentation is incomplete
 
-**Status**: Open
+**Status**: Closed
 **Layer**: Specifications
-**Implementation Source**: `lib/xcind/xcind-lib.bash:1085`
-**Document Source**: `engineering/specs/generated-override-files.md`
+**Implementation Source**: `lib/xcind/xcind-lib.bash:1062` (`__xcind-compute-sha`)
+**Document Source**: `engineering/specs/generated-override-files.md`, `engineering/specs/hook-lifecycle.md`
 
 ### Current Document Claim
 
-The generated override spec says the cache SHA is computed from compose file paths/content, app `.xcind.sh`, workspace `.xcind.sh`, and global proxy config.
+The generated override spec said the cache SHA was computed from compose file paths/content, app `.xcind.sh`, workspace `.xcind.sh`, and global proxy config.
 
 ### Actual Implementation Behavior
 
-`__xcind-compute-sha` also includes compose env files, app env files, sourced additional config files and overrides, `XCIND_TOOLS`, app/workspace/workspaceless naming variables, host-gateway configuration variables, and the runtime-detected host-gateway value when enabled.
+`__xcind-compute-sha` also includes compose env files (`XCIND_COMPOSE_ENV_FILES`), app env files (`XCIND_APP_ENV_FILES`), sourced additional config files and `.override.sh` siblings tracked in `__XCIND_SOURCED_CONFIG_FILES`, `XCIND_TOOLS`, the literal naming inputs (`XCIND_APP`, `XCIND_WORKSPACE`, `XCIND_WORKSPACELESS`), host-gateway configuration variables (`XCIND_HOST_GATEWAY_ENABLED`, `XCIND_HOST_GATEWAY`), and — when host-gateway is enabled — the runtime-detected host-gateway value from `__xcind-detect-host-gateway`. Round 2 also added the `.complete` marker plus per-hook completeness check (CORE-RUNTIME-001), the `XCIND_HOOKS_ALWAYS` always-run replay path (CORE-RUNTIME-002), and the post-hook `__xcind-write-cache-config-json` step (CORE-RUNTIME-003), none of which were reflected in the spec.
 
 ### Authority Decision
 
 Code correct, docs stale.
+
+### Resolution
+
+Rewrote the **Caching** section of `engineering/specs/generated-override-files.md` to enumerate every cache-key input above, document the `.complete` marker + per-hook completeness check, the atomic rebuild on miss with cleanup on hook failure, the `XCIND_HOOKS_ALWAYS` always-run replay path, and the split between `resolved-config.yaml` (written before hooks) and `config.json` (written after hooks via `__xcind-write-cache-config-json`). Aligned `engineering/specs/hook-lifecycle.md` GENERATE phase **Cache behavior** bullets with the same contract: cache-miss atomicity, the `.complete` + per-hook completeness gate on cache hits, `XCIND_HOOKS_ALWAYS` semantics, the full cache-key input list (with a cross-reference to `generated-override-files.md`), and the sibling `resolved-config.yaml` / `config.json` write ordering.
+
+### Validation
+
+- `rtk make lint`: clean (shfmt + shellcheck on tracked SHELL_FILES).
+- No source files changed; tests not re-run for this doc-only drift item.
 
 ### Proposed Documentation Update
 
@@ -448,7 +457,7 @@ Expand the cache-key list in `engineering/specs/generated-override-files.md` or 
 
 ### Related Finding
 
-None.
+`CORE-RUNTIME-001`, `CORE-RUNTIME-002`, `CORE-RUNTIME-003` (Round 2 behavior changes now reflected in the spec).
 
 ## CORE-RUNTIME-DOC-003: Configuration source order omits override and additional config sourcing
 
