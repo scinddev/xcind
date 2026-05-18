@@ -623,6 +623,22 @@ assert_contains "--help: prints Usage" "Usage: xcind-workspace" "$help_out"
 assert_contains "--help: lists init subcommand" "init [DIR]" "$help_out"
 assert_contains "--help: lists status subcommand" "status [DIR]" "$help_out"
 
+# init --help / -h: prints usage, exits 0, no filesystem side effects
+for ws_init_help_flag in --help -h; do
+  ws_init_help_dir=$(mktemp_d)
+  ws_init_help_out=$("$XCIND_ROOT/bin/xcind-workspace" init "$ws_init_help_dir" "$ws_init_help_flag" 2>&1) &&
+    ws_init_help_rc=0 || ws_init_help_rc=$?
+  assert_eq "init ${ws_init_help_flag}: exits 0" "0" "$ws_init_help_rc"
+  assert_contains "init ${ws_init_help_flag}: prints Usage" \
+    "Usage: xcind-workspace init" "$ws_init_help_out"
+  assert_not_contains "init ${ws_init_help_flag}: not Unknown option" \
+    "Unknown option" "$ws_init_help_out"
+  assert_eq "init ${ws_init_help_flag}: creates no .xcind.sh" \
+    "0" "$(find "$ws_init_help_dir" -name .xcind.sh | wc -l | tr -d ' ')"
+  rm -rf "$ws_init_help_dir"
+done
+unset ws_init_help_flag ws_init_help_dir ws_init_help_out ws_init_help_rc
+
 # No arguments prints help and exits 0
 noargs_out=$("$XCIND_ROOT/bin/xcind-workspace")
 assert_contains "no args: prints help" "Usage: xcind-workspace" "$noargs_out"
@@ -665,6 +681,25 @@ export PATH="$WS_STATUS_HOME/bin:$_ws_status_orig_PATH"
 
 # Initialize the workspace via the real CLI
 "$XCIND_ROOT/bin/xcind-workspace" init "$WS_STATUS" --name "wsstatus" >/dev/null
+
+# status --help / -h: prints usage and exits 0 even outside a workspace
+# (run from a non-workspace dir so a regression would surface as the
+# "Not inside a workspace" discovery error instead of usage text)
+ws_status_help_cwd=$(mktemp_d)
+for ws_status_help_flag in --help -h; do
+  ws_status_help_out=$(cd "$ws_status_help_cwd" &&
+    "$XCIND_ROOT/bin/xcind-workspace" status "$ws_status_help_flag" 2>&1) &&
+    ws_status_help_rc=0 || ws_status_help_rc=$?
+  assert_eq "status ${ws_status_help_flag}: exits 0" "0" "$ws_status_help_rc"
+  assert_contains "status ${ws_status_help_flag}: prints Usage" \
+    "Usage: xcind-workspace status" "$ws_status_help_out"
+  assert_not_contains "status ${ws_status_help_flag}: not Unknown option" \
+    "Unknown option" "$ws_status_help_out"
+  assert_not_contains "status ${ws_status_help_flag}: no workspace lookup" \
+    "Not inside a workspace" "$ws_status_help_out"
+done
+rm -rf "$ws_status_help_cwd"
+unset ws_status_help_cwd ws_status_help_flag ws_status_help_out ws_status_help_rc
 
 # Status with an empty workspace (no apps) — text mode
 status_empty=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_STATUS" 2>&1)

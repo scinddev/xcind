@@ -136,6 +136,17 @@ __xcind-workspace-init() {
       _flag_name="$2"
       shift 2
       ;;
+    --help | -h)
+      echo "Usage: xcind-workspace init [DIR] [OPTIONS]"
+      echo ""
+      echo "Initialize DIR (default: current directory) as a workspace:"
+      echo "create .xcind.sh and register it so 'list'/'status' can find it."
+      echo ""
+      echo "Options:"
+      echo "  --name NAME            Set XCIND_WORKSPACE explicitly"
+      echo "  --proxy-domain DOMAIN  Set XCIND_PROXY_DOMAIN in workspace config"
+      return 0
+      ;;
     -*)
       echo "Error: Unknown option for init: $1" >&2
       exit 1
@@ -244,6 +255,16 @@ __xcind-workspace-status() {
     --json)
       json_mode=true
       shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-workspace status [DIR] [--json]"
+      echo ""
+      echo "Show workspace-wide status: apps, network, and proxy. Walks"
+      echo "up from DIR (default: current directory) to find the workspace."
+      echo ""
+      echo "Options:"
+      echo "  --json  Output structured JSON"
+      return 0
       ;;
     -*)
       echo "Error: Unknown option for status: $1" >&2
