@@ -192,8 +192,11 @@ __xcind-application-query-config() {
 
   (
     unset XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+    # Guarded expansion: extra_args is empty for callers that don't request a
+    # generated compose config (ports/urls/exports). Bash 3.2 errors on an
+    # unguarded empty-array expansion under `set -u`.
     PATH="$XCIND_ROOT/bin:$PATH" XCIND_APP_ROOT="$app_root" \
-      "$XCIND_ROOT/bin/xcind-config" --json "${extra_args[@]}"
+      "$XCIND_ROOT/bin/xcind-config" --json ${extra_args[@]+"${extra_args[@]}"}
   )
 }
 
@@ -584,9 +587,13 @@ __xcind-application-introspect() {
   # shellcheck disable=SC2064
   trap "rm -rf '$tmpdir'" EXIT
 
-  local resolved_compose="$tmpdir/resolved.yaml"
+  # Query config WITHOUT requesting a generated docker compose configuration.
+  # ports/urls/exports only read the assignedExports/proxiedExports maps (both
+  # present in plain `xcind-config --json`); skipping generation keeps this a
+  # read-only query that does not start the proxy or provision TLS certs as a
+  # side effect — important in constrained environments (CI containers).
   local xcind_json=""
-  if ! xcind_json=$(__xcind-application-query-config "$app_root" "$resolved_compose" 2>"$tmpdir/err"); then
+  if ! xcind_json=$(__xcind-application-query-config "$app_root" 2>"$tmpdir/err"); then
     local err_msg
     err_msg=$(cat "$tmpdir/err" 2>/dev/null || true)
     echo "Error: xcind-config failed for $app_root" >&2
