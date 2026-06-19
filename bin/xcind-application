@@ -482,6 +482,274 @@ __xcind-application-status() {
 }
 
 # --------------------------------------------------------------------------
+# Introspection: ports / urls / exports
+# --------------------------------------------------------------------------
+#
+# All three present the per-export data that xcind-config already computes:
+#   ports   → assigned exports keyed by name → host port
+#   urls    → proxied exports keyed by name → computed URL
+#   exports → every export, unified rich descriptor keyed by name
+#
+# Shared CLI shape: [SERVICE] [DIR] [--json]. The first positional filters to
+# one export (resolved by export name, falling back to compose service); the
+# second is the app directory (default: cwd). With a SERVICE the text output
+# is the bare value so it pipes cleanly.
+
+__xcind-application-introspect-help() {
+  local kind="$1"
+  case "$kind" in
+  ports)
+    echo "Usage: xcind-application ports [SERVICE] [DIR] [--json]"
+    echo ""
+    echo "Show the host port assigned to each assigned export (type=assigned)."
+    echo "With SERVICE, print just that export's port."
+    ;;
+  urls)
+    echo "Usage: xcind-application urls [SERVICE] [DIR] [--json]"
+    echo ""
+    echo "Show the proxied URL for each proxied export (type=proxied). URLs are"
+    echo "computed from the app's URL template, so they resolve even when no"
+    echo "container is running. With SERVICE, print just that export's URL."
+    ;;
+  exports)
+    echo "Usage: xcind-application exports [SERVICE] [DIR] [--json]"
+    echo ""
+    echo "Show every export (assigned and proxied) with its type, compose"
+    echo "service, container port, and host port or URL. With SERVICE, show"
+    echo "just that export."
+    ;;
+  esac
+  echo ""
+  echo "SERVICE resolves by export name, falling back to compose service name."
+  echo ""
+  echo "Options:"
+  echo "  --json   Output structured JSON"
+}
+
+# Shared worker for ports/urls/exports. $1 is the kind; the rest are CLI args.
+__xcind-application-introspect() {
+  local kind="$1"
+  shift
+
+  local service="" dir="" json_mode=false
+  local positional=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --json)
+      json_mode=true
+      shift
+      ;;
+    --help | -h)
+      __xcind-application-introspect-help "$kind"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for $kind: $1" >&2
+      exit 1
+      ;;
+    *)
+      if [[ $positional -eq 0 ]]; then
+        service="$1"
+        positional=1
+      elif [[ $positional -eq 1 ]]; then
+        dir="$1"
+        positional=2
+      else
+        echo "Error: Unexpected argument for $kind: $1" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    esac
+  done
+
+  local app_root
+  if [[ -n $dir ]]; then
+    app_root=$(__xcind-application-find-root "$dir") || exit 1
+  else
+    app_root=$(__xcind-application-find-root "$PWD") || exit 1
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for 'xcind-application $kind'." >&2
+    exit 1
+  fi
+  if ! command -v yq >/dev/null 2>&1; then
+    echo "Error: yq is required for 'xcind-application $kind'." >&2
+    exit 1
+  fi
+
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmpdir'" EXIT
+
+  local resolved_compose="$tmpdir/resolved.yaml"
+  local xcind_json=""
+  if ! xcind_json=$(__xcind-application-query-config "$app_root" "$resolved_compose" 2>"$tmpdir/err"); then
+    local err_msg
+    err_msg=$(cat "$tmpdir/err" 2>/dev/null || true)
+    echo "Error: xcind-config failed for $app_root" >&2
+    [[ -n $err_msg ]] && echo "$err_msg" >&2
+    exit 1
+  fi
+
+  if [[ $kind == "exports" ]]; then
+    __xcind-application-render-exports "$xcind_json" "$json_mode" "$service"
+  else
+    __xcind-application-render-scalar "$xcind_json" "$json_mode" "$service" "$kind"
+  fi
+}
+
+# Render ports/urls: a map keyed by export name whose value is a single
+# scalar (host port for ports, URL for urls).
+__xcind-application-render-scalar() {
+  local xcind_json="$1" json_mode="$2" service="$3" kind="$4"
+
+  local mk vf this_noun this_article other_mk other_noun other_article other_cmd
+  if [[ $kind == "ports" ]]; then
+    mk="assignedExports"
+    vf="host_port"
+    this_noun="assigned port"
+    this_article="an"
+    other_mk="proxiedExports"
+    other_noun="proxied export"
+    other_article="a"
+    other_cmd="urls"
+  else
+    mk="proxiedExports"
+    vf="url"
+    this_noun="proxied URL"
+    this_article="a"
+    other_mk="assignedExports"
+    other_noun="assigned export"
+    other_article="an"
+    other_cmd="ports"
+  fi
+
+  # No SERVICE: list every entry.
+  if [[ -z $service ]]; then
+    if [[ $json_mode == true ]]; then
+      printf '%s' "$xcind_json" | jq --arg mk "$mk" --arg vf "$vf" \
+        '.[$mk] | map_values(.[$vf])'
+      return 0
+    fi
+    local name value
+    while IFS=$'\t' read -r name value; do
+      [[ -z $name ]] && continue
+      printf '%-18s%s\n' "$name" "$value"
+    done < <(printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg vf "$vf" \
+      '.[$mk] | to_entries | sort_by(.key)[] | "\(.key)\t\(.value[$vf])"')
+    return 0
+  fi
+
+  # SERVICE given: resolve to a single export name.
+  local name=""
+  if [[ $(printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg s "$service" \
+    '.[$mk] | has($s)') == "true" ]]; then
+    name="$service"
+  elif [[ $(printf '%s' "$xcind_json" | jq -r --arg mk "$other_mk" --arg s "$service" \
+    '.[$mk] | has($s)') == "true" ]]; then
+    echo "Error: '$service' is $other_article $other_noun, not $this_article $this_noun. Try: xcind-application $other_cmd $service" >&2
+    exit 1
+  else
+    # Fall back to matching on compose service name within this kind.
+    local -a matches=()
+    local m
+    while IFS= read -r m; do
+      [[ -n $m ]] && matches+=("$m")
+    done < <(printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg s "$service" \
+      '.[$mk] | to_entries | map(select(.value.compose_service == $s)) | .[].key')
+    if [[ ${#matches[@]} -eq 1 ]]; then
+      name="${matches[0]}"
+    elif [[ ${#matches[@]} -gt 1 ]]; then
+      local joined
+      joined=$(
+        IFS=", "
+        echo "${matches[*]}"
+      )
+      echo "Error: '$service' matches multiple ${this_noun}s ($joined). Specify the export name." >&2
+      exit 1
+    else
+      local available
+      available=$(printf '%s' "$xcind_json" | jq -r --arg mk "$mk" \
+        '.[$mk] | keys | if length == 0 then "(none)" else join(", ") end')
+      echo "Error: No $this_noun named '$service'. Available: $available" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ $json_mode == true ]]; then
+    printf '%s' "$xcind_json" | jq --arg mk "$mk" --arg s "$name" --arg vf "$vf" \
+      '.[$mk][$s][$vf]'
+  else
+    printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg s "$name" --arg vf "$vf" \
+      '.[$mk][$s][$vf]'
+  fi
+}
+
+# Render exports: a unified rich descriptor per export, merging assigned and
+# proxied entries keyed by export name.
+__xcind-application-render-exports() {
+  local xcind_json="$1" json_mode="$2" service="$3"
+
+  local merged
+  merged=$(printf '%s' "$xcind_json" | jq '
+    ((.assignedExports // {}) | to_entries | map({
+      key: .key,
+      value: {
+        type: "assigned",
+        composeService: .value.compose_service,
+        containerPort: .value.container_port,
+        hostPort: .value.host_port
+      }
+    }))
+    + ((.proxiedExports // {}) | to_entries | map({
+      key: .key,
+      value: {
+        type: "proxied",
+        composeService: .value.compose_service,
+        containerPort: .value.container_port,
+        url: .value.url,
+        tls: .value.tls
+      }
+    }))
+    | from_entries')
+
+  # No SERVICE: show everything.
+  if [[ -z $service ]]; then
+    if [[ $json_mode == true ]]; then
+      printf '%s' "$merged"
+      echo ""
+      return 0
+    fi
+    local name type target
+    while IFS=$'\t' read -r name type target; do
+      [[ -z $name ]] && continue
+      printf '%-18s%-10s%s\n' "$name" "$type" "$target"
+    done < <(printf '%s' "$merged" | jq -r \
+      'to_entries | sort_by(.key)[] | "\(.key)\t\(.value.type)\t\(.value.hostPort // .value.url)"')
+    return 0
+  fi
+
+  # SERVICE given.
+  if [[ $(printf '%s' "$merged" | jq -r --arg s "$service" 'has($s)') != "true" ]]; then
+    local available
+    available=$(printf '%s' "$merged" | jq -r \
+      'keys | if length == 0 then "(none)" else join(", ") end')
+    echo "Error: No export named '$service'. Available: $available" >&2
+    exit 1
+  fi
+
+  if [[ $json_mode == true ]]; then
+    printf '%s' "$merged" | jq --arg s "$service" '.[$s]'
+  else
+    printf '%s' "$merged" | jq -r --arg s "$service" \
+      '.[$s] | to_entries[] | "\(.key): \(.value)"'
+  fi
+}
+
+# --------------------------------------------------------------------------
 # List
 # --------------------------------------------------------------------------
 
@@ -676,20 +944,21 @@ __xcind-application-help() {
   echo "Usage: xcind-application <subcommand>"
   echo ""
   echo "Subcommands:"
-  echo "  init [DIR] [OPTIONS]     Initialize an application directory"
-  echo "  status [DIR] [OPTIONS]   Show status for a single application"
-  echo "  list [DIR] [OPTIONS]     List applications in the enclosing workspace"
+  echo "  init [DIR] [OPTIONS]            Initialize an application directory"
+  echo "  status [DIR] [OPTIONS]         Show status for a single application"
+  echo "  list [DIR] [OPTIONS]           List applications in the enclosing workspace"
+  echo "  ports [SERVICE] [DIR] [OPTS]   Show assigned host ports"
+  echo "  urls [SERVICE] [DIR] [OPTS]    Show proxied URLs"
+  echo "  exports [SERVICE] [DIR] [OPTS] Show all exports (ports and URLs)"
   echo ""
   echo "Init options:"
   echo "  --name NAME              Set XCIND_APP explicitly (default: directory name)"
   echo ""
-  echo "Status options:"
+  echo "Status / list / ports / urls / exports options:"
   echo "  --json                   Output structured JSON"
   echo ""
-  echo "List options:"
-  echo "  --json                   Output structured JSON"
-  echo ""
-  echo "Note: 'status' and 'list' source the .xcind.sh of each application"
+  echo "Note: 'status', 'list', 'ports', 'urls', and 'exports' source the"
+  echo ".xcind.sh of each application"
   echo "they inspect. Those files may execute arbitrary shell code. Only run"
   echo "against applications and workspaces you control."
   echo ""
@@ -721,6 +990,18 @@ status)
 list)
   shift
   __xcind-application-list "$@"
+  ;;
+ports)
+  shift
+  __xcind-application-introspect ports "$@"
+  ;;
+urls)
+  shift
+  __xcind-application-introspect urls "$@"
+  ;;
+exports)
+  shift
+  __xcind-application-introspect exports "$@"
   ;;
 --help | -h)
   __xcind-application-help
