@@ -75,6 +75,7 @@ Manage workspace-level operations. See `xcind-workspace --help` for subcommands;
 |----------|--------|
 | `XCIND_APP_ROOT` | Skip the upward walk for `.xcind.sh`; treat this as the app root |
 | `XCIND_DEBUG=1` | Verbose tracing of file resolution and hook execution |
+| `XCIND_ASSIGNED_LISTENERS_OVERRIDE` | Treat this whitespace-separated port list as the in-use set instead of probing the host when allocating `type=assigned` ports (empty = none). Pins allocation deterministically; primarily for tests and reserving ports |
 
 ---
 

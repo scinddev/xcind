@@ -227,6 +227,23 @@ __xcind-assigned-prime-listener-cache() {
   __xcind_assigned_listener_cache=""
   __xcind_assigned_listener_cache_source=""
 
+  # Test/advanced seam: when XCIND_ASSIGNED_LISTENERS_OVERRIDE is set, treat
+  # its whitespace-separated value as the authoritative set of in-use ports
+  # instead of probing the host (an empty value means "nothing is listening").
+  # Lets callers pin allocation deterministically regardless of what happens
+  # to be bound locally — used by the test suite, and a handy way to reserve
+  # ports. Unset (the default) probes via ss/netstat/dev-tcp as before.
+  if [[ -n ${XCIND_ASSIGNED_LISTENERS_OVERRIDE+set} ]]; then
+    local _ovr_port
+    __xcind_assigned_listener_cache=" "
+    for _ovr_port in $XCIND_ASSIGNED_LISTENERS_OVERRIDE; do
+      [[ $_ovr_port =~ ^[0-9]+$ ]] && __xcind_assigned_listener_cache+="$_ovr_port "
+    done
+    __xcind_assigned_listener_cache_source="override"
+    __xcind-debug "prime-listener-cache: source=override ports=[${XCIND_ASSIGNED_LISTENERS_OVERRIDE}]"
+    return 0
+  fi
+
   local out
   if command -v ss >/dev/null 2>&1; then
     if out=$(ss -H -tln 2>/dev/null); then
@@ -312,7 +329,8 @@ __xcind-assigned-port-available() {
   # listener list — "none" means priming failed and the cache is empty,
   # which would otherwise falsely report every port as free.
   if [[ $__xcind_assigned_listener_cache_source == "ss" ||
-    $__xcind_assigned_listener_cache_source == "netstat" ]]; then
+    $__xcind_assigned_listener_cache_source == "netstat" ||
+    $__xcind_assigned_listener_cache_source == "override" ]]; then
     if [[ $__xcind_assigned_listener_cache == *" $port "* ]]; then
       return 1
     fi

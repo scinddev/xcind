@@ -2986,6 +2986,12 @@ services:
       - target: 3000
 YAML
 
+  # Pin port availability so the scratch assigned-hook allocates the declared
+  # ports (e.g. 3306:3306) regardless of what is bound on the host running the
+  # suite — the doctor runs in a subprocess, so an in-shell function stub
+  # would not reach it. Empty value = nothing is listening.
+  export XCIND_ASSIGNED_LISTENERS_OVERRIDE=""
+
   # Run text-mode doctor via the real CLI. Capture stdout + stderr separately.
   doc_out=$(XCIND_APP_ROOT="$DOC_APP" XCIND_SUPPRESS_DEP_WARNING=1 \
     "$XCIND_ROOT/bin/xcind-config" doctor 2>/dev/null) && doc_rc=0 || doc_rc=$?
@@ -3043,6 +3049,7 @@ EOF
   rm -f "$DOC_APP/.xcind.override.sh"
 
   rm -rf "$DOC_APP" "$DOC_STATE"
+  unset XCIND_ASSIGNED_LISTENERS_OVERRIDE
   if [[ -n $_orig_doc_xdg ]]; then
     export XDG_STATE_HOME="$_orig_doc_xdg"
   else
