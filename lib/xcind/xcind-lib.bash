@@ -785,6 +785,10 @@ __xcind-resolve-json() {
   local assigned_json
   assigned_json=$(__xcind-assigned-json-for-app "$app_root")
 
+  # Resolve proxied exports with computed URLs (empty object when none)
+  local proxied_json
+  proxied_json=$(__xcind-proxy-json-for-app "$app_root")
+
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
@@ -795,6 +799,7 @@ __xcind-resolve-json() {
     --argjson bake_files "$(__xcind-to-json-array ${bake_files[@]+"${bake_files[@]}"})" \
     --argjson tools "$tools_json" \
     --argjson assigned_exports "$assigned_json" \
+    --argjson proxied_exports "$proxied_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
     --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
@@ -811,7 +816,8 @@ __xcind-resolve-json() {
             appEnvFiles: $app_env_files,
             bakeFiles: $bake_files,
             tools: $tools,
-            assignedExports: $assigned_exports
+            assignedExports: $assigned_exports,
+            proxiedExports: $proxied_exports
         }'
 }
 

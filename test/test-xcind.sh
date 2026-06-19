@@ -3452,6 +3452,154 @@ rm -rf "$APP_STATUS_WS" "$APP_STATUS_HOME" "$APP_STATUS_OUTSIDE"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-application ports / urls / exports CLI ==="
+
+APP_PUE_WS=$(mktemp_d)
+APP_PUE_HOME=$(mktemp_d)
+_app_pue_orig_HOME="$HOME"
+_app_pue_orig_PATH="$PATH"
+export HOME="$APP_PUE_HOME"
+mkdir -p "$APP_PUE_HOME/bin"
+cat >"$APP_PUE_HOME/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker: nothing running; synthesize `docker compose config` so the
+# pipeline can resolve services referenced by the proxy/assigned hooks.
+case "$1" in
+ps) echo "" ;;
+inspect) exit 1 ;;
+compose)
+  shift
+  for _arg in "$@"; do
+    if [ "$_arg" = "config" ]; then
+      echo 'services:'
+      echo '  nginx:'
+      echo '    image: nginx'
+      echo '    ports:'
+      echo '      - "80:80"'
+      echo '  postgres:'
+      echo '    image: postgres'
+      echo '    ports:'
+      echo '      - "5432:5432"'
+      exit 0
+    fi
+  done
+  exit 0
+  ;;
+*) exit 0 ;;
+esac
+MOCKEOF
+chmod +x "$APP_PUE_HOME/bin/docker"
+export PATH="$APP_PUE_HOME/bin:$_app_pue_orig_PATH"
+
+"$XCIND_ROOT/bin/xcind-workspace" init "$APP_PUE_WS" --name "puews" >/dev/null 2>&1
+mkdir -p "$APP_PUE_WS/webapp"
+cat >"$APP_PUE_WS/webapp/.xcind.sh" <<'CFGEOF'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_APP="webapp"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=(
+  "web=nginx:80"
+  "db=postgres:5432;type=assigned"
+)
+CFGEOF
+cat >"$APP_PUE_WS/webapp/compose.yaml" <<'COMPOSEEOF'
+services:
+  nginx:
+    image: nginx
+    ports:
+      - "80:80"
+  postgres:
+    image: postgres
+    ports:
+      - "5432:5432"
+COMPOSEEOF
+PUE_APP="$APP_PUE_WS/webapp"
+
+# ports --json: keyed by export name, assigned only, numeric value
+pue_ports_json=$(cd "$PUE_APP" && "$XCIND_ROOT/bin/xcind-application" ports --json 2>&1)
+printf '%s' "$pue_ports_json" | jq . >/dev/null && pue_ports_rc=0 || pue_ports_rc=$?
+assert_eq "ports --json: parseable" "0" "$pue_ports_rc"
+pue_db_port=$(printf '%s' "$pue_ports_json" | jq -r '.db')
+assert_eq "ports --json: db port is numeric" "1" "$([[ $pue_db_port =~ ^[0-9]+$ ]] && echo 1 || echo 0)"
+pue_ports_has_web=$(printf '%s' "$pue_ports_json" | jq -r 'has("web")')
+assert_eq "ports --json: proxied 'web' excluded" "false" "$pue_ports_has_web"
+
+# ports SERVICE (text): bare value, matches the JSON value
+pue_db_bare=$("$XCIND_ROOT/bin/xcind-application" ports "db" "$PUE_APP" 2>&1)
+assert_eq "ports db: bare value matches --json" "$pue_db_port" "$pue_db_bare"
+
+# ports SERVICE resolves by compose service name (postgres -> db)
+pue_pg_bare=$("$XCIND_ROOT/bin/xcind-application" ports "postgres" "$PUE_APP" 2>&1)
+assert_eq "ports postgres: compose-service fallback" "$pue_db_port" "$pue_pg_bare"
+
+# urls --json: keyed by export name, proxied only, https URL
+pue_urls_json=$(cd "$PUE_APP" && "$XCIND_ROOT/bin/xcind-application" urls --json 2>&1)
+printf '%s' "$pue_urls_json" | jq . >/dev/null && pue_urls_rc=0 || pue_urls_rc=$?
+assert_eq "urls --json: parseable" "0" "$pue_urls_rc"
+pue_web_url=$(printf '%s' "$pue_urls_json" | jq -r '.web')
+assert_contains "urls --json: web url is https" "https://" "$pue_web_url"
+assert_contains "urls --json: web url contains export name" "web" "$pue_web_url"
+pue_urls_has_db=$(printf '%s' "$pue_urls_json" | jq -r 'has("db")')
+assert_eq "urls --json: assigned 'db' excluded" "false" "$pue_urls_has_db"
+
+# urls SERVICE (text): bare URL
+pue_web_bare=$("$XCIND_ROOT/bin/xcind-application" urls "web" "$PUE_APP" 2>&1)
+assert_eq "urls web: bare value matches --json" "$pue_web_url" "$pue_web_bare"
+
+# exports --json: unified, both entries with type discriminator
+pue_exports_json=$(cd "$PUE_APP" && "$XCIND_ROOT/bin/xcind-application" exports --json 2>&1)
+printf '%s' "$pue_exports_json" | jq . >/dev/null && pue_exports_rc=0 || pue_exports_rc=$?
+assert_eq "exports --json: parseable" "0" "$pue_exports_rc"
+pue_db_type=$(printf '%s' "$pue_exports_json" | jq -r '.db.type')
+assert_eq "exports --json: db is assigned" "assigned" "$pue_db_type"
+pue_web_type=$(printf '%s' "$pue_exports_json" | jq -r '.web.type')
+assert_eq "exports --json: web is proxied" "proxied" "$pue_web_type"
+pue_db_hostport=$(printf '%s' "$pue_exports_json" | jq -r '.db.hostPort')
+assert_eq "exports --json: db hostPort matches ports" "$pue_db_port" "$pue_db_hostport"
+
+# Wrong-type lookups are helpful errors, not "not found"
+pue_ports_web_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" ports "web" "$PUE_APP")
+assert_eq "ports web: wrong type exits 1" "1" "$pue_ports_web_status"
+pue_ports_web_err=$("$XCIND_ROOT/bin/xcind-application" ports "web" "$PUE_APP" 2>&1 || true)
+assert_contains "ports web: suggests urls command" "xcind-application urls web" "$pue_ports_web_err"
+pue_urls_db_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" urls "db" "$PUE_APP")
+assert_eq "urls db: wrong type exits 1" "1" "$pue_urls_db_status"
+
+# Unknown export name errors with available names
+pue_ports_nope_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" ports "nope" "$PUE_APP")
+assert_eq "ports nope: unknown exits 1" "1" "$pue_ports_nope_status"
+pue_ports_nope_err=$("$XCIND_ROOT/bin/xcind-application" ports "nope" "$PUE_APP" 2>&1 || true)
+assert_contains "ports nope: lists available" "Available:" "$pue_ports_nope_err"
+
+# App with no exports: empty object (json) / empty (text), exit 0
+mkdir -p "$APP_PUE_WS/bare"
+cat >"$APP_PUE_WS/bare/.xcind.sh" <<'BARECFG'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_APP="bare"
+XCIND_COMPOSE_FILES=("compose.yaml")
+BARECFG
+cat >"$APP_PUE_WS/bare/compose.yaml" <<'BARECOMPOSE'
+services:
+  nginx:
+    image: nginx
+BARECOMPOSE
+pue_bare_json=$(cd "$APP_PUE_WS/bare" && "$XCIND_ROOT/bin/xcind-application" ports --json 2>&1)
+assert_eq "ports --json: no exports yields {}" "{}" "$(printf '%s' "$pue_bare_json" | jq -c .)"
+pue_bare_text=$(cd "$APP_PUE_WS/bare" && "$XCIND_ROOT/bin/xcind-application" ports 2>&1)
+assert_eq "ports text: no exports prints nothing" "" "$pue_bare_text"
+pue_bare_status=0
+(cd "$APP_PUE_WS/bare" && "$XCIND_ROOT/bin/xcind-application" ports >/dev/null 2>&1) || pue_bare_status=$?
+assert_eq "ports: no exports exits 0" "0" "$pue_bare_status"
+
+export HOME="$_app_pue_orig_HOME"
+export PATH="$_app_pue_orig_PATH"
+unset _app_pue_orig_HOME _app_pue_orig_PATH
+rm -rf "$APP_PUE_WS" "$APP_PUE_HOME"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-debug helper ==="
 
 # Default (XCIND_DEBUG unset) — must emit nothing

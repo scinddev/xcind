@@ -255,8 +255,10 @@ _xcind_application_completions() {
     return
   fi
 
-  # After "status" or "list", offer --json plus directory completion
-  if [[ $prev == "status" || $prev == "list" ]]; then
+  # After "status", "list", "ports", "urls", or "exports", offer --json plus
+  # directory completion. (ports/urls/exports also take a SERVICE positional,
+  # but the completion script stays self-contained and cannot enumerate it.)
+  if [[ $prev == "status" || $prev == "list" || $prev == "ports" || $prev == "urls" || $prev == "exports" ]]; then
     if [[ $cur == -* ]]; then
       COMPREPLY=($(compgen -W "--json" -- "$cur"))
     else
@@ -265,7 +267,7 @@ _xcind_application_completions() {
     return
   fi
 
-  local opts="init status list --help -h --version -V"
+  local opts="init status list ports urls exports --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

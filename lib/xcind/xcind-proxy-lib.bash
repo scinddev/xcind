@@ -712,6 +712,111 @@ __xcind-proxy-resolve-export-tls() {
   esac
 }
 
+# Render the proxied hostname for an export. Single source of truth shared by
+# the GENERATE hook (which feeds it into router rules + labels) and the
+# introspection path (__xcind-proxy-json-for-app) so the two never drift.
+#
+# App name and domain default to XCIND_APP / XCIND_PROXY_DOMAIN but may be
+# passed explicitly ($2, $3) so callers need not mutate those globals.
+# Requires XCIND_APP_URL_TEMPLATE (and optional XCIND_WORKSPACE) in scope.
+#
+# Usage:
+#   hostname=$(__xcind-proxy-export-hostname "web")
+#   hostname=$(__xcind-proxy-export-hostname "web" "$app_name" "$domain")
+__xcind-proxy-export-hostname() {
+  local export_name="$1"
+  local app_name="${2:-$XCIND_APP}"
+  local domain="${3:-$XCIND_PROXY_DOMAIN}"
+  __xcind-render-template "$XCIND_APP_URL_TEMPLATE" \
+    workspace "${XCIND_WORKSPACE:-}" app "$app_name" \
+    export "$export_name" domain "$domain"
+}
+
+# Echo the preferred URL scheme (http|https) for a resolved effective TLS
+# mode. https whenever HTTPS is reachable (both/https), http otherwise.
+# Mirrors the canonical-URL rule in the GENERATE hook.
+__xcind-proxy-preferred-scheme() {
+  case "$1" in
+  both | https) echo "https" ;;
+  *) echo "http" ;;
+  esac
+}
+
+# Build a JSON object of proxied exports for an app, keyed by export name:
+#   { "<name>": { compose_service, container_port, url, tls } }
+#
+# URLs are computed from XCIND_APP_URL_TEMPLATE (not read off running
+# containers) so they resolve even when nothing is up — the proxied-export
+# analogue of __xcind-assigned-json-for-app. container_port is inferred from
+# resolved-config.yaml when not declared, and is null when it cannot be
+# determined (introspection never fails on a missing port). `tls` is the
+# declared per-export mode (auto|require|disable).
+#
+# Returns "{}" when there are no proxied exports or jq is unavailable. Always
+# invoked via command substitution, so sourcing the global proxy config and
+# defaulting the domain stay contained to that subshell (mirrors the hook,
+# which runs the same way) — app name and domain are passed explicitly into
+# the hostname helper rather than mutating the globals here.
+__xcind-proxy-json-for-app() {
+  local app_root="$1"
+  if ! command -v jq &>/dev/null; then
+    echo "{}"
+    return 0
+  fi
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    echo "{}"
+    return 0
+  fi
+
+  # Establish domain + TLS mode exactly as the GENERATE hook does.
+  local domain="${XCIND_PROXY_DOMAIN:-localhost}"
+  local global_config="${XCIND_PROXY_CONFIG_DIR}/config.sh"
+  if [ -f "$global_config" ]; then
+    # shellcheck disable=SC1090
+    source "$global_config"
+    domain="${XCIND_PROXY_DOMAIN:-$domain}"
+  fi
+  local proxy_tls_mode="${XCIND_PROXY_TLS_MODE:-auto}"
+
+  # App name fallback mirrors __xcind-build-config-json's metadata.
+  local app_name="${XCIND_APP:-$(basename "$app_root")}"
+
+  # XCIND_CACHE_DIR may be unset when the config JSON is built outside the
+  # full prepare pipeline; the -f check below then simply skips inference.
+  local resolved_config="${XCIND_CACHE_DIR:-}/resolved-config.yaml"
+
+  local result="{}"
+  local entry
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    local _export_name _compose_service _port _type _tls _effective_tls
+    __xcind-proxy-parse-entry "$entry" 2>/dev/null || continue
+    [[ $_type == "proxied" ]] || continue
+
+    # Best-effort container port: declared value, else inferred, else null.
+    local cport="$_port"
+    if [[ -z $cport && -f $resolved_config ]]; then
+      cport=$(__xcind-proxy-infer-port "$_compose_service" "$resolved_config" 2>/dev/null) || cport=""
+    fi
+    local cport_json="null"
+    [[ -n $cport && $cport != "null" ]] && cport_json="$cport"
+
+    __xcind-proxy-resolve-export-tls "$proxy_tls_mode"
+    local hostname scheme url
+    hostname=$(__xcind-proxy-export-hostname "$_export_name" "$app_name" "$domain")
+    scheme=$(__xcind-proxy-preferred-scheme "$_effective_tls")
+    url="$scheme://$hostname"
+
+    result=$(printf '%s' "$result" | jq \
+      --arg name "$_export_name" \
+      --arg svc "$_compose_service" \
+      --argjson cport "$cport_json" \
+      --arg url "$url" \
+      --arg tls "$_tls" \
+      '. + {($name): {compose_service: $svc, container_port: $cport, url: $url, tls: $tls}}')
+  done
+  printf '%s' "$result"
+}
+
 # Main hook function called by the xcind pipeline on cache miss.
 # Reads pipeline env vars and generates compose.proxy.yaml.
 xcind-proxy-hook() {
@@ -788,11 +893,9 @@ xcind-proxy-hook() {
     # Resolve effective TLS for this export
     __xcind-proxy-resolve-export-tls "$proxy_tls_mode"
 
-    # Generate hostname
+    # Generate hostname (shared with the introspection path)
     local hostname
-    hostname=$(__xcind-render-template "$XCIND_APP_URL_TEMPLATE" \
-      workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
-      export "$_export_name" domain "$XCIND_PROXY_DOMAIN")
+    hostname=$(__xcind-proxy-export-hostname "$_export_name")
 
     # Generate router names (http + https — the literal suffix is part of
     # the name, not the entrypoint; see ADR-0008 router naming convention).
@@ -954,8 +1057,8 @@ xcind-proxy-hook() {
         # see a stable HTTP entry point. `.https.url` is emitted only when
         # an HTTPS router actually exists. `.url` is the preferred-scheme
         # canonical (https when TLS is reachable, otherwise http).
-        local preferred_scheme="http"
-        [[ $e_tls == "both" || $e_tls == "https" ]] && preferred_scheme="https"
+        local preferred_scheme
+        preferred_scheme=$(__xcind-proxy-preferred-scheme "$e_tls")
         fragment=$(__xcind-render-template "$XCIND_PROXY_EXPORT_HOST_LABEL" \
           export "$e_export" hostname "$e_hostname")
         service_block+=$'\n'"$fragment"

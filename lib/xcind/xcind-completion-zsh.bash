@@ -294,6 +294,9 @@ _xcind-application() {
     'init:Initialize an application directory'
     'status:Show status for a single application'
     'list:List applications in the enclosing workspace'
+    'ports:Show assigned host ports'
+    'urls:Show proxied URLs'
+    'exports:Show all exports (ports and URLs)'
     '--help:Show help'
     '-h:Show help'
     '--version:Show version'
@@ -310,7 +313,7 @@ _xcind-application() {
     _files -/
     return
     ;;
-  status | list)
+  status | list | ports | urls | exports)
     local -a status_opts=('--json:Output structured JSON')
     _describe 'option' status_opts
     _files -/
