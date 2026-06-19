@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-06-19
+
+### Added
+
+- Split docs into user (Diátaxis) and engineering (LDS) tracks (#63) by @simensen in [#63](https://github.com/scinddev/xcind/pull/63)
+- Source review: workspace app identity round 4 (#66) by @simensen in [#66](https://github.com/scinddev/xcind/pull/66)
+- feat(workspace): add --help to init and status sub-commands (#68) by @simensen in [#68](https://github.com/scinddev/xcind/pull/68)
+- feat(application): add ports, urls, and exports introspection subcommands (#69) by @simensen in [#69](https://github.com/scinddev/xcind/pull/69)
+
+### Maintenance
+
+- Harden CLI entrypoint parsing (#64) by @simensen in [#64](https://github.com/scinddev/xcind/pull/64)
+- Source review: core runtime and proxy hardening (rounds 2–3) (#65) by @simensen in [#65](https://github.com/scinddev/xcind/pull/65)
+- Source review: cross-document drift sweep (round 5) (#67) by @simensen in [#67](https://github.com/scinddev/xcind/pull/67)
+
+### Other
+
+- Mark Round 4 complete in source review plan by @simensen
 ## [0.6.0] - 2026-04-30
 
 ### Added
