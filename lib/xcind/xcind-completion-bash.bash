@@ -123,14 +123,15 @@ _xcind_config_completions() {
   # --generate-docker-compose-configuration, complete files (optional output path)
   if [[ $prev == "--generate-docker-wrapper" ]] ||
     [[ $prev == "--generate-docker-compose-wrapper" ]] ||
-    [[ $prev == "--generate-docker-compose-configuration" ]]; then
+    [[ $prev == "--generate-docker-compose-configuration" ]] ||
+    [[ $prev == "--generate-starship" ]]; then
     COMPREPLY=($(compgen -f -- "$cur"))
     return
   fi
 
   local opts="--help -h --version -V --check --json --preview
     --generate-docker-wrapper --generate-docker-compose-wrapper
-    --generate-docker-compose-configuration completion doctor"
+    --generate-docker-compose-configuration --generate-starship completion doctor"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

@@ -133,6 +133,7 @@ _xcind-config() {
     '--generate-docker-wrapper:Generate docker wrapper script'
     '--generate-docker-compose-wrapper:Generate docker-compose wrapper script'
     '--generate-docker-compose-configuration:Generate resolved compose config'
+    '--generate-starship:Generate Starship [custom.xcind] prompt block'
     'completion:Output shell completion script'
   )
 
@@ -148,7 +149,7 @@ _xcind-config() {
     _describe 'doctor option' doctor_opts
     return
     ;;
-  --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration)
+  --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration | --generate-starship)
     _files
     return
     ;;
