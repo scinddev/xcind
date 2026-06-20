@@ -789,6 +789,20 @@ __xcind-resolve-json() {
   local proxied_json
   proxied_json=$(__xcind-proxy-json-for-app "$app_root")
 
+  # Resolve apex (present-but-null when disabled or no proxied export).
+  # Subshell command-subst mirrors assigned_json above; helper side effects
+  # (optional config.sh source) stay confined here.
+  local apex_json
+  local _apex_tsv _apex_url _apex_host _apex_scheme
+  if _apex_tsv=$(__xcind-proxy-apex-for-app 2>/dev/null); then
+    IFS=$'\t' read -r _apex_url _apex_host _apex_scheme <<<"$_apex_tsv"
+    apex_json=$(jq -n \
+      --arg url "$_apex_url" --arg host "$_apex_host" --arg scheme "$_apex_scheme" \
+      '{enabled: true, hostname: $host, url: $url, scheme: $scheme}')
+  else
+    apex_json='{"enabled":false,"hostname":null,"url":null,"scheme":null}'
+  fi
+
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
@@ -800,6 +814,7 @@ __xcind-resolve-json() {
     --argjson tools "$tools_json" \
     --argjson assigned_exports "$assigned_json" \
     --argjson proxied_exports "$proxied_json" \
+    --argjson apex "$apex_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
     --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
@@ -817,7 +832,8 @@ __xcind-resolve-json() {
             bakeFiles: $bake_files,
             tools: $tools,
             assignedExports: $assigned_exports,
-            proxiedExports: $proxied_exports
+            proxiedExports: $proxied_exports,
+            apex: $apex
         }'
 }
 
