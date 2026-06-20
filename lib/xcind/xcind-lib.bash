@@ -980,9 +980,13 @@ __xcind-discover-workspace() {
       __XCIND_SOURCED_CONFIG_FILES+=("$_ws_override")
     fi
 
-    # Auto-register discovered workspaces. Silent on failure — never
-    # break a compose/config run because the registry is unwritable.
-    { __xcind-with-registry-lock __xcind-registry-add "$parent" >/dev/null 2>&1 || true; }
+    # Auto-register discovered workspaces unless registry writes are
+    # suppressed via XCIND_NO_REGISTRY (read-only callers, e.g. the prompt
+    # helper). Silent on failure — never break a compose/config run because
+    # the registry is unwritable.
+    if [[ -z ${XCIND_NO_REGISTRY:-} ]]; then
+      { __xcind-with-registry-lock __xcind-registry-add "$parent" >/dev/null 2>&1 || true; }
+    fi
   else
     XCIND_WORKSPACELESS=1
     XCIND_WORKSPACE_ROOT=""

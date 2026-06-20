@@ -3205,7 +3205,10 @@ echo '# app config' >"$disc_app/.xcind.sh"
 
 # Run discovery in a subshell so XCIND_* global mutations don't bleed
 # into later tests. Rebind registry constants to the per-test state dir
-# (read by the registry lib; exports silence SC2034).
+# (read by the registry lib; exports silence SC2034). The XCIND_NO_REGISTRY
+# test below rebinds the same names in its own subshell, so shellcheck pairs
+# these modifications (SC2030/SC2031) — benign; each subshell is isolated.
+# shellcheck disable=SC2030,SC2031
 (
   export XDG_STATE_HOME="$disc_state"
   export XCIND_REGISTRY_DIR="$disc_state/xcind"
@@ -3218,6 +3221,55 @@ echo '# app config' >"$disc_app/.xcind.sh"
 disc_tsv="$disc_state/xcind/workspaces.tsv"
 assert_file_exists "discovery created registry file" "$disc_tsv"
 assert_contains "discovery registered workspace root" "$disc_ws" "$(cat "$disc_tsv")"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-discover-workspace honors XCIND_NO_REGISTRY ==="
+
+# Mirror of the auto-registers test above, but with XCIND_NO_REGISTRY=1
+# exported: discovery must still resolve workspace identity vars while
+# writing NO registry file (read-only callers, e.g. the prompt helper).
+guard_tmp=$(mktemp_d)
+guard_state="$guard_tmp/state"
+guard_ws="$guard_tmp/myws"
+guard_app="$guard_ws/api"
+mkdir -p "$guard_app"
+echo 'XCIND_IS_WORKSPACE=1' >"$guard_ws/.xcind.sh"
+echo '# app config' >"$guard_app/.xcind.sh"
+
+# Capture the resolved XCIND_* vars to a temp file since they don't
+# survive the subshell boundary. Wrapped in a function so the registry-env
+# exports stay in their own scope and don't cross-pair with the
+# auto-registers subshell above (shellcheck SC2030/SC2031).
+guard_vars="$guard_tmp/vars"
+run_no_registry_discovery() {
+  # Registry constants are read by the registry lib inside this subshell.
+  # The same-named exports in the auto-registers subshell above trip the
+  # SC2030/SC2031 subshell-modification pair — benign and intentional here.
+  # shellcheck disable=SC2030,SC2031
+  (
+    export XDG_STATE_HOME="$guard_state"
+    export XCIND_REGISTRY_DIR="$guard_state/xcind"
+    export XCIND_REGISTRY_FILE="$guard_state/xcind/workspaces.tsv"
+    export XCIND_REGISTRY_LOCK="$guard_state/xcind/workspaces.lock"
+    export XCIND_NO_REGISTRY=1
+    reset_xcind_state
+    __xcind-discover-workspace "$guard_app"
+    {
+      echo "XCIND_WORKSPACE=$XCIND_WORKSPACE"
+      echo "XCIND_WORKSPACE_ROOT=$XCIND_WORKSPACE_ROOT"
+      echo "XCIND_WORKSPACELESS=$XCIND_WORKSPACELESS"
+    } >"$guard_vars"
+  )
+}
+run_no_registry_discovery
+
+guard_tsv="$guard_state/xcind/workspaces.tsv"
+guard_out=$(<"$guard_vars")
+assert_file_missing "XCIND_NO_REGISTRY: no registry file written" "$guard_tsv"
+assert_contains "XCIND_NO_REGISTRY: workspace resolved" "XCIND_WORKSPACE=myws" "$guard_out"
+assert_contains "XCIND_NO_REGISTRY: workspace root resolved" "XCIND_WORKSPACE_ROOT=$guard_ws" "$guard_out"
+assert_contains "XCIND_NO_REGISTRY: workspace mode active" "XCIND_WORKSPACELESS=0" "$guard_out"
 
 # ======================================================================
 echo ""

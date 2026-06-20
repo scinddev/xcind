@@ -76,6 +76,7 @@ Walkthrough: [IDE and tool integration](../guides/tools-ide-integration.md).
 | Variable | Purpose |
 |----------|---------|
 | `XCIND_BAKE_FILES` | Docker Bake file patterns; tracked in `xcind-config --json`, not yet passed to `docker compose` |
+| `XCIND_NO_REGISTRY` | When set (non-empty), skip the automatic workspace-registry write during discovery — for read-only callers that must not mutate shared state. Discovery and all `XCIND_*` resolution are unaffected. |
 | URL / router templates (`XCIND_*_TEMPLATE`) | Customize generated hostnames and Traefik router names |
 
 For the full list of templates and their placeholders, see [`engineering/reference/configuration.md`](../../engineering/reference/configuration.md).
