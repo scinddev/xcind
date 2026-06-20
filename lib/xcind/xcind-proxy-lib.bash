@@ -817,6 +817,72 @@ __xcind-proxy-json-for-app() {
   printf '%s' "$result"
 }
 
+# --------------------------------------------------------------------------
+# __xcind-proxy-apex-for-app — resolve the app's apex URL/hostname/scheme.
+#
+# A reusable, side-effect-free apex anchor: NO jq, Docker, yq, hooks, or cache
+# writes (load-bearing for the prompt helper's sub-500ms budget). It is the
+# single source of truth for the apex hostname + preferred scheme — the
+# GENERATE hook calls it instead of recomputing them, so the generated
+# xcind.apex.host / xcind.apex.url labels stay byte-identical.
+#
+# Echoes "<url>\t<hostname>\t<scheme>" (tab-separated, NO trailing newline) for
+# the app's apex, or returns 1 when there is no apex (template empty, or no
+# proxied export). Split with: IFS=$'\t' read -r url host scheme <<<"$out".
+#
+# The apex is anchored to the FIRST type=proxied export (an assigned entry
+# placed earlier does not consume the apex slot). The scheme is 2-way
+# (http|https) — it deliberately does NOT reproduce the hook's 3-way apex_tls,
+# which selects WHICH apex routers render and remains computed in the hook.
+__xcind-proxy-apex-for-app() {
+  # Guard 1 — apex disabled when the template is empty. ${VAR:-} keeps this
+  # set -u safe; an explicit "" is a real disable (see __xcind-resolve-url-templates).
+  [[ -n ${XCIND_APP_APEX_URL_TEMPLATE:-} ]] || return 1
+
+  # Guard 2 — no exports at all (set -u safe via the +set probe).
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    return 1
+  fi
+
+  # Domain: default, then let global config.sh override (mirrors the GENERATE
+  # hook). Harmless if the caller already sourced it — identical result.
+  local domain="${XCIND_PROXY_DOMAIN:-localhost}"
+  local global_config="${XCIND_PROXY_CONFIG_DIR:-}/config.sh"
+  if [ -f "$global_config" ]; then
+    # shellcheck disable=SC1090
+    source "$global_config"
+    domain="${XCIND_PROXY_DOMAIN:-localhost}"
+  fi
+
+  local proxy_tls_mode="${XCIND_PROXY_TLS_MODE:-auto}"
+
+  # Find the first proxied export — that entry is the apex anchor.
+  local entry found=false
+  # shellcheck disable=SC2034 # _export_name/_compose_service/_port set by parse-entry
+  local _export_name _compose_service _port _type _tls _effective_tls
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    __xcind-proxy-parse-entry "$entry" 2>/dev/null || continue
+    [[ $_type == "proxied" ]] || continue
+    found=true
+    break
+  done
+  [[ $found == true ]] || return 1
+
+  # Effective TLS of the anchor → 2-way preferred scheme. Derived inline; there
+  # is no __xcind-proxy-preferred-scheme helper (the hook inlines this too).
+  __xcind-proxy-resolve-export-tls "$proxy_tls_mode"
+  local scheme="http"
+  [[ $_effective_tls == "both" || $_effective_tls == "https" ]] && scheme="https"
+
+  # Apex hostname — same template + render args as the hook (no {export} key).
+  local hostname
+  hostname=$(__xcind-render-template "$XCIND_APP_APEX_URL_TEMPLATE" \
+    workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
+    domain "$domain")
+
+  printf '%s\t%s\t%s' "$scheme://$hostname" "$hostname" "$scheme"
+}
+
 # Main hook function called by the xcind pipeline on cache miss.
 # Reads pipeline env vars and generates compose.proxy.yaml.
 xcind-proxy-hook() {
