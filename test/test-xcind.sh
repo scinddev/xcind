@@ -2356,6 +2356,70 @@ assert_contains "generate-docker-compose-configuration stdout + json: error mess
 
 # ======================================================================
 echo ""
+echo "=== Test: --generate-starship ==="
+
+# The block is static (no resolved app config) and runs before
+# __xcind-prepare-app, so it needs no Docker and no app context.
+
+# (a) stdout block
+gs_stdout_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship) && gs_stdout_rc=0 || gs_stdout_rc=$?
+assert_eq "generate-starship stdout: exit code 0" "0" "$gs_stdout_rc"
+assert_contains "generate-starship stdout: has [custom.xcind]" \
+  "[custom.xcind]" "$gs_stdout_result"
+assert_contains "generate-starship stdout: has description" \
+  "description =" "$gs_stdout_result"
+assert_contains "generate-starship stdout: has format" \
+  "format" "$gs_stdout_result"
+assert_contains "generate-starship stdout: has symbol" \
+  "symbol" "$gs_stdout_result"
+
+# (b) names-only default: active command is xcind-prompt (no active --apex).
+# The commented hint "# command   = ..." is allowed; the assertion keys on the
+# un-commented "command     =" prefix so the comment does not trip it.
+assert_contains "generate-starship: names-only active command" \
+  'command     = "xcind-prompt"' "$gs_stdout_result"
+assert_not_contains "generate-starship: no active --apex command" \
+  'command     = "xcind-prompt --apex"' "$gs_stdout_result"
+
+# (c) file form == stdout. Run from a fresh cwd outside any app to prove no
+# app context is needed; both = and space forms write the same bytes as stdout.
+GS_CWD=$(mktemp_d)
+GS_EQ_FILE=$(mktemp_d)/starship-eq.toml
+(cd "$GS_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship="$GS_EQ_FILE") && gs_eq_rc=0 || gs_eq_rc=$?
+assert_eq "generate-starship=FILE: exit code 0" "0" "$gs_eq_rc"
+assert_file_exists "generate-starship=FILE: file exists" "$GS_EQ_FILE"
+gs_eq_diff=$(diff <(printf '%s\n' "$gs_stdout_result") "$GS_EQ_FILE" 2>&1 || true)
+assert_eq "generate-starship=FILE: content matches stdout" "" "$gs_eq_diff"
+
+GS_SP_FILE=$(mktemp_d)/starship-sp.toml
+(cd "$GS_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship "$GS_SP_FILE") && gs_sp_rc=0 || gs_sp_rc=$?
+assert_eq "generate-starship FILE (space form): exit code 0" "0" "$gs_sp_rc"
+assert_file_exists "generate-starship FILE (space form): file exists" "$GS_SP_FILE"
+gs_sp_diff=$(diff <(printf '%s\n' "$gs_stdout_result") "$GS_SP_FILE" 2>&1 || true)
+assert_eq "generate-starship FILE (space form): content matches stdout" "" "$gs_sp_diff"
+rm -rf "$GS_CWD" "$(dirname "$GS_EQ_FILE")" "$(dirname "$GS_SP_FILE")"
+
+# (d) empty = rejected
+gs_empty_rc=0
+gs_empty_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship= 2>&1) || gs_empty_rc=$?
+assert_eq "empty --generate-starship=: non-zero exit" "1" "$gs_empty_rc"
+assert_contains "empty --generate-starship=: error message" \
+  "requires a file path" "$gs_empty_result"
+
+# (e) cannot combine with other actions
+gs_combine_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --json 2>&1) && gs_combine_rc=0 || gs_combine_rc=$?
+assert_eq "generate-starship + json: non-zero exit" "true" \
+  "$([ "$gs_combine_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "generate-starship + json: error message" \
+  "cannot be combined" "$gs_combine_result"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-config argument validation ==="
 
 # 5. Unknown flag is rejected
@@ -2450,6 +2514,8 @@ assert_contains "completion bash: registers xcind-workspace" \
   "complete -F _xcind_workspace_completions xcind-workspace" "$comp_bash_result"
 assert_contains "completion bash: has proxy init flags" \
   "--proxy-domain" "$comp_bash_result"
+assert_contains "completion bash: lists --generate-starship" \
+  "--generate-starship" "$comp_bash_result"
 
 # 2. completion zsh produces output
 comp_zsh_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -2465,6 +2531,8 @@ assert_contains "completion zsh: registers xcind-workspace" \
   "compdef _xcind-workspace xcind-workspace" "$comp_zsh_result"
 assert_contains "completion zsh: has workspace init command" \
   "init:Initialize a workspace directory" "$comp_zsh_result"
+assert_contains "completion zsh: lists --generate-starship" \
+  "--generate-starship" "$comp_zsh_result"
 
 # 3. completion with no arg fails
 comp_noarg_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
