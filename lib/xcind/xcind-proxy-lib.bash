@@ -916,6 +916,20 @@ xcind-proxy-hook() {
     apex_enabled=true
   fi
 
+  # Apex anchor — compute the apex hostname + preferred scheme ONCE via the
+  # shared helper (the single source of truth also serving the prompt helper
+  # and the JSON contract). apex_hostname/apex_scheme stay empty when apex is
+  # disabled or no proxied export exists. The helper's scheme is 2-way
+  # (http|https); the 3-way apex_tls derived in the loop below — which selects
+  # WHICH apex routers render — is intentionally NOT replaced by it. The URL
+  # field of the helper output is discarded; the apex.url label is rebuilt
+  # byte-for-byte from apex_hostname + apex_scheme via its existing template.
+  local apex_hostname="" apex_scheme=""
+  local _apex_anchor
+  if _apex_anchor=$(__xcind-proxy-apex-for-app); then
+    IFS=$'\t' read -r _ apex_hostname apex_scheme <<<"$_apex_anchor"
+  fi
+
   # Parse all export entries and group by compose service
   local -a export_names=()
   local -a compose_services=()
@@ -924,7 +938,6 @@ xcind-proxy-hook() {
   local -a routers_http=()
   local -a routers_https=()
   local -a export_tls=() # one of: both | https | http
-  local apex_hostname=""
   local apex_router_http=""
   local apex_router_https=""
   local apex_tls="" # both | https | http — derived from primary export
@@ -977,9 +990,8 @@ xcind-proxy-hook() {
     # Order within the unified array still selects the apex anchor, but an
     # assigned entry placed earlier does not consume the apex slot.
     if [[ $is_first_proxied == true && $apex_enabled == true ]]; then
-      apex_hostname=$(__xcind-render-template "$XCIND_APP_APEX_URL_TEMPLATE" \
-        workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
-        domain "$XCIND_PROXY_DOMAIN")
+      # apex_hostname is captured once before the loop (single source of truth);
+      # only the router names + 3-way apex_tls are still derived per anchor here.
       apex_router_http=$(__xcind-render-template "$XCIND_APEX_ROUTER_TEMPLATE" \
         workspace "${XCIND_WORKSPACE:-}" app "$XCIND_APP" \
         protocol "http")
@@ -1145,8 +1157,8 @@ xcind-proxy-hook() {
         # emitted (an HTTP apex router always exists, even as a redirect),
         # `.https.url` only when an HTTPS apex router exists.
         if [[ $j -eq 0 && $apex_enabled == true ]]; then
-          local apex_preferred_scheme="http"
-          [[ $apex_tls == "both" || $apex_tls == "https" ]] && apex_preferred_scheme="https"
+          # apex_scheme is the captured 2-way preferred scheme (single source of
+          # truth); apex_tls above still gates which apex routers exist.
           fragment=$(__xcind-render-template "$XCIND_PROXY_APEX_HOST_LABEL" \
             apex_hostname "$apex_hostname")
           service_block+=$'\n'"$fragment"
@@ -1159,7 +1171,7 @@ xcind-proxy-hook() {
             service_block+=$'\n'"$fragment"
           fi
           fragment=$(__xcind-render-template "$XCIND_PROXY_APEX_URL_LABEL" \
-            apex_hostname "$apex_hostname" scheme "$apex_preferred_scheme")
+            apex_hostname "$apex_hostname" scheme "$apex_scheme")
           service_block+=$'\n'"$fragment"
         fi
       fi
