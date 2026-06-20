@@ -2034,6 +2034,117 @@ rm -rf "$JSON_WS"
 
 # ======================================================================
 echo ""
+echo "=== Test: JSON output includes apex object ==="
+
+# Determinism guard: reset_xcind_state does NOT clear XCIND_PROXY_EXPORTS or
+# XCIND_APP_APEX_URL_TEMPLATE, so every block below sets/unsets BOTH explicitly
+# (plus XCIND_PROXY_DOMAIN/TLS_MODE/CONFIG_DIR for the enabled cases) so apex
+# state from earlier tests cannot leak in.
+
+# --- apex enabled (workspace) ---
+APEX_WS=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="dev"
+XCIND_APP="xesapps"
+XCIND_PROXY_DOMAIN="example.test"
+unset XCIND_PROXY_CONFIG_DIR
+XCIND_APP_APEX_URL_TEMPLATE='{workspace}-{app}.{domain}'
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex=$(__xcind-resolve-json "$APEX_WS")
+
+assert_eq "JSON apex.enabled (workspace)" \
+  "true" "$(echo "$json_apex" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname (workspace)" \
+  "dev-xesapps.example.test" "$(echo "$json_apex" | jq -r '.apex.hostname')"
+# scheme derives from __xcind-proxy-resolve-export-tls — assert membership,
+# not a hardcoded value, so the test doesn't couple to the TLS-mode default.
+assert_eq "JSON apex.scheme in {http,https} (workspace)" \
+  "true" "$(echo "$json_apex" | jq -r '.apex.scheme == "http" or .apex.scheme == "https"')"
+assert_eq "JSON apex.url == scheme://hostname (workspace)" \
+  "true" "$(echo "$json_apex" | jq -r '.apex.url == (.apex.scheme + "://" + .apex.hostname)')"
+
+rm -rf "$APEX_WS"
+
+# --- apex enabled (workspaceless) ---
+APEX_WL=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+unset XCIND_PROXY_CONFIG_DIR
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex_wl=$(__xcind-resolve-json "$APEX_WL")
+
+assert_eq "JSON apex.enabled (workspaceless)" \
+  "true" "$(echo "$json_apex_wl" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname (workspaceless)" \
+  "acmeapps.example.test" "$(echo "$json_apex_wl" | jq -r '.apex.hostname')"
+assert_eq "JSON apex.url == scheme://hostname (workspaceless)" \
+  "true" "$(echo "$json_apex_wl" | jq -r '.apex.url == (.apex.scheme + "://" + .apex.hostname)')"
+
+rm -rf "$APEX_WL"
+
+# --- apex disabled: empty template, proxied export present ---
+APEX_OFF_TMPL=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+unset XCIND_APP_APEX_URL_TEMPLATE
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex_off=$(__xcind-resolve-json "$APEX_OFF_TMPL")
+
+assert_eq "JSON apex.enabled (empty template)" \
+  "false" "$(echo "$json_apex_off" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname null (empty template)" \
+  "null" "$(echo "$json_apex_off" | jq -r '.apex.hostname')"
+assert_eq "JSON apex.url null (empty template)" \
+  "null" "$(echo "$json_apex_off" | jq -r '.apex.url')"
+assert_eq "JSON apex.scheme null (empty template)" \
+  "null" "$(echo "$json_apex_off" | jq -r '.apex.scheme')"
+
+rm -rf "$APEX_OFF_TMPL"
+
+# --- apex disabled: non-empty template, no proxied export (assigned only) ---
+APEX_OFF_EXP=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+XCIND_PROXY_EXPORTS=("worker:9000;type=assigned")
+
+json_apex_noexp=$(__xcind-resolve-json "$APEX_OFF_EXP")
+
+assert_eq "JSON apex.enabled (no proxied export)" \
+  "false" "$(echo "$json_apex_noexp" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname null (no proxied export)" \
+  "null" "$(echo "$json_apex_noexp" | jq -r '.apex.hostname')"
+assert_eq "JSON apex.url null (no proxied export)" \
+  "null" "$(echo "$json_apex_noexp" | jq -r '.apex.url')"
+assert_eq "JSON apex.scheme null (no proxied export)" \
+  "null" "$(echo "$json_apex_noexp" | jq -r '.apex.scheme')"
+
+rm -rf "$APEX_OFF_EXP"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-naming-hook (workspaceless mode) ==="
 
 NAMING_WL=$(mktemp_d)
