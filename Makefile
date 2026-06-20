@@ -19,6 +19,7 @@ SHELL_FILES = \
 	lib/xcind/xcind-workspace-lib.bash \
 	test/test-xcind.sh \
 	test/test-xcind-proxy.sh \
+	test/test-xcind-prompt.sh \
 	test/lib/assert.sh \
 	test/lib/setup.sh \
 	install.sh \
@@ -29,6 +30,7 @@ SHELL_FILES = \
 test:
 	bash test/test-xcind.sh
 	bash test/test-xcind-proxy.sh
+	bash test/test-xcind-prompt.sh
 
 format:
 	shfmt --write .

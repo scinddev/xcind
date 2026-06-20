@@ -1,0 +1,390 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# test-xcind-prompt.sh — Verify the bin/xcind-prompt executable's output contract.
+set -euo pipefail
+
+# yq and jq are required runtime dependencies across the xcind test suites. The
+# prompt helper's trimmed prepare is itself jq/yq-free, but this preflight is
+# kept for harness consistency with test-xcind.sh / test-xcind-proxy.sh.
+for _xcind_required in yq jq; do
+  if ! command -v "$_xcind_required" >/dev/null 2>&1; then
+    echo "ERROR: $_xcind_required is required to run the xcind test suite." >&2
+    echo "  Install it (e.g. 'apt-get install $_xcind_required' or 'nix-shell -p $_xcind_required-go')." >&2
+    exit 1
+  fi
+done
+unset _xcind_required
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+XCIND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# NOTE: unlike test-xcind.sh, this suite does NOT source xcind-lib.bash. The
+# prompt output contract is a binary-level contract, so every case exercises
+# bin/xcind-prompt as a black-box subprocess. Sourcing the lib here would risk
+# env bleed into those subprocesses.
+
+PASS=0
+FAIL=0
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/assert.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/setup.sh"
+
+# ======================================================================
+# Harness for the prompt subprocess
+# ======================================================================
+
+# Real "anchor" fixtures (user-facing examples/ docs); everything else is built
+# per-test under mktemp_d.
+PROMPT_WS_APP="$XCIND_ROOT/examples/workspaces/dev/frontend"
+PROMPT_WS_SUB="$PROMPT_WS_APP/src"
+PROMPT_WSLESS_APP="$XCIND_ROOT/examples/workspaceless/acmeapps"
+
+# OSC 8 needles, built with printf so the terminal never interprets them and
+# matched as RAW BYTES against captured stdout. The hyperlink intro is
+# ESC ] 8 ; ; and the terminator is ST (ESC \, bytes 1b 5c) — NOT BEL (07).
+PROMPT_OSC8=$(printf '\033]8;;')
+# SC1003 misreads the literal-backslash escape; the format string is correct
+# (ESC + backslash = the OSC 8 ST terminator), matching bin/xcind-prompt:138.
+# shellcheck disable=SC1003
+PROMPT_ST=$(printf '\033\\')
+
+# Shared hermetic home: an empty mktemp_d so no machine-global proxy config.sh
+# ($XDG_CONFIG_HOME/xcind/proxy/config.sh) can override a fixture's domain and
+# no real workspace registry ($XDG_STATE_HOME/xcind/workspaces.tsv) leaks in.
+PROMPT_HOME=$(mktemp_d)
+PROMPT_ERR_FILE="$(mktemp_d)/stderr"
+
+# Extra "VAR=value" assignments exported into the next subprocess only. The
+# caller sets this before run_prompt; run_prompt resets it after each call so it
+# never leaks to the following invocation.
+PROMPT_EXTRA_ENV=()
+
+# Drop identity vars a leaked environment may carry, so the prompt subprocess
+# re-resolves them from its cwd. __xcind-app-root trusts a pre-set
+# XCIND_APP_ROOT and __xcind-resolve-app trusts a pre-set XCIND_APP, so a leaked
+# value would defeat directory-based detection and the override cases.
+prompt_clear_env() {
+  unset XCIND_APP_ROOT XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+}
+
+# run_prompt <cwd> [args...] — sets prompt_out (stdout), prompt_rc (exit),
+# prompt_err (stderr text). `|| prompt_rc=$?` keeps set -e from aborting on the
+# expected non-zero exits (e.g. --detect outside an app, unknown option).
+run_prompt() {
+  local dir="$1"
+  shift
+  prompt_rc=0
+  prompt_out=$(
+    cd "$dir" || exit 99
+    prompt_clear_env
+    if [[ ${#PROMPT_EXTRA_ENV[@]} -gt 0 ]]; then
+      export "${PROMPT_EXTRA_ENV[@]}"
+    fi
+    HOME="$PROMPT_HOME" XDG_STATE_HOME="$PROMPT_HOME/state" \
+      XDG_CONFIG_HOME="$PROMPT_HOME/config" \
+      "$XCIND_ROOT/bin/xcind-prompt" "$@" 2>"$PROMPT_ERR_FILE"
+  ) || prompt_rc=$?
+  prompt_err=$(<"$PROMPT_ERR_FILE")
+  PROMPT_EXTRA_ENV=()
+}
+
+# run_prompt_sentinel <cwd> [args...] — like run_prompt but appends an '@'
+# sentinel inside the subshell so a trailing newline survives $()'s strip: a
+# trailing newline would leave "display\n@" (≠ "display@"). Sets prompt_sentinel.
+# Only used on exit-0 display rows.
+run_prompt_sentinel() {
+  local dir="$1"
+  shift
+  prompt_sentinel=$(
+    cd "$dir" || exit 99
+    prompt_clear_env
+    HOME="$PROMPT_HOME" XDG_STATE_HOME="$PROMPT_HOME/state" \
+      XDG_CONFIG_HOME="$PROMPT_HOME/config" \
+      "$XCIND_ROOT/bin/xcind-prompt" "$@"
+    printf '@'
+  )
+}
+
+# --- Fixture builders (Bash-3.2-safe; mirror the real examples/ layout) ------
+
+# make_ws_app <wsdir> <appdir> <ws_extra> <app_body> — build a workspace app
+# under a fresh mktemp_d. The workspace marker gets XCIND_IS_WORKSPACE=1 plus
+# <ws_extra> (domain, optional XCIND_WORKSPACE override, optional apex template
+# disable). The app .xcind.sh gets <app_body> (exports, optional XCIND_APP
+# override). Echoes the app directory path (cwd to run from).
+make_ws_app() {
+  local wsdir="$1" appdir="$2" ws_extra="$3" app_body="$4"
+  local root
+  root=$(mktemp_d)
+  mkdir -p "$root/$wsdir/$appdir"
+  {
+    printf '%s\n' 'XCIND_IS_WORKSPACE=1'
+    printf '%s\n' "$ws_extra"
+  } >"$root/$wsdir/.xcind.sh"
+  printf '%s\n' "$app_body" >"$root/$wsdir/$appdir/.xcind.sh"
+  printf '%s' "$root/$wsdir/$appdir"
+}
+
+# make_wsless_app <appdir> <app_body> — build a workspaceless app under a fresh
+# mktemp_d (parent has no workspace marker). Echoes the app directory path.
+make_wsless_app() {
+  local appdir="$1" app_body="$2"
+  local root
+  root=$(mktemp_d)
+  mkdir -p "$root/$appdir"
+  printf '%s\n' "$app_body" >"$root/$appdir/.xcind.sh"
+  printf '%s' "$root/$appdir"
+}
+
+# assert_scheme <label> <http|https> <host> <stdout> — assert the apex URL uses
+# the expected scheme. Clean discriminator (D5): "http://<host>" is NOT a
+# substring of "https://<host>" (the 's' sits before '://'), so each row both
+# asserts its own scheme present AND the other absent.
+assert_scheme() {
+  local label="$1" want="$2" host="$3" out="$4"
+  if [[ $want == https ]]; then
+    assert_contains "$label: https://$host present" "https://$host" "$out"
+    assert_not_contains "$label: http://$host absent" "http://$host" "$out"
+  else
+    assert_contains "$label: http://$host present" "http://$host" "$out"
+    assert_not_contains "$label: https://$host absent" "https://$host" "$out"
+  fi
+}
+
+# ======================================================================
+echo "=== Test: xcind-prompt — A. Display contract ==="
+
+# A1 — workspace app: "<workspace>/<app>", exit 0, stderr empty, no trailing \n.
+run_prompt_sentinel "$PROMPT_WS_APP"
+assert_eq "A1 workspace display + no trailing newline" "dev/frontend@" "$prompt_sentinel"
+run_prompt "$PROMPT_WS_APP"
+assert_eq "A1 workspace display stdout" "dev/frontend" "$prompt_out"
+assert_eq "A1 workspace display exit 0" "0" "$prompt_rc"
+assert_eq "A1 workspace display stderr empty" "" "$prompt_err"
+
+# A2 — workspaceless app: "<app>", exit 0, stderr empty, no trailing \n.
+run_prompt_sentinel "$PROMPT_WSLESS_APP"
+assert_eq "A2 workspaceless display + no trailing newline" "acmeapps@" "$prompt_sentinel"
+run_prompt "$PROMPT_WSLESS_APP"
+assert_eq "A2 workspaceless display stdout" "acmeapps" "$prompt_out"
+assert_eq "A2 workspaceless display exit 0" "0" "$prompt_rc"
+assert_eq "A2 workspaceless display stderr empty" "" "$prompt_err"
+
+# A3 — outside any app: empty stdout, exit 0, stderr empty.
+prompt_a3_dir=$(mktemp_d)
+run_prompt "$prompt_a3_dir"
+assert_eq "A3 outside stdout empty" "" "$prompt_out"
+assert_eq "A3 outside exit 0" "0" "$prompt_rc"
+assert_eq "A3 outside stderr empty" "" "$prompt_err"
+
+# A4 — override (workspace): .xcind.sh sets XCIND_WORKSPACE/XCIND_APP that differ
+# from the directory basenames. Display must reflect the overrides, and the
+# override must flow into the apex hostname.
+prompt_a4_app=$(make_ws_app "realws" "realapp" \
+  'XCIND_PROXY_DOMAIN="ovr.localhost"
+XCIND_WORKSPACE="ovrws"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")
+XCIND_APP="ovrapp"')
+run_prompt_sentinel "$prompt_a4_app"
+assert_eq "A4 override display (not dir basenames) + no trailing newline" "ovrws/ovrapp@" "$prompt_sentinel"
+run_prompt "$prompt_a4_app"
+assert_eq "A4 override display stdout" "ovrws/ovrapp" "$prompt_out"
+assert_eq "A4 override display exit 0" "0" "$prompt_rc"
+assert_eq "A4 override display stderr empty" "" "$prompt_err"
+run_prompt "$prompt_a4_app" --apex
+assert_contains "A4 override flows into apex host" "ovrws-ovrapp.ovr.localhost" "$prompt_out"
+
+# A5 — override (workspaceless): app .xcind.sh sets XCIND_APP ≠ dir basename.
+prompt_a5_app=$(make_wsless_app "realsolo" \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")
+XCIND_APP="ovrsolo"')
+run_prompt_sentinel "$prompt_a5_app"
+assert_eq "A5 override display (not dir basename) + no trailing newline" "ovrsolo@" "$prompt_sentinel"
+run_prompt "$prompt_a5_app"
+assert_eq "A5 override display stdout" "ovrsolo" "$prompt_out"
+assert_eq "A5 override display exit 0" "0" "$prompt_rc"
+assert_eq "A5 override display stderr empty" "" "$prompt_err"
+
+# ======================================================================
+echo "=== Test: xcind-prompt — B. --detect ==="
+
+# B1 — in app: empty stdout, exit 0, stderr empty.
+run_prompt "$PROMPT_WS_APP" --detect
+assert_eq "B1 --detect in-app stdout empty" "" "$prompt_out"
+assert_eq "B1 --detect in-app exit 0" "0" "$prompt_rc"
+assert_eq "B1 --detect in-app stderr empty" "" "$prompt_err"
+
+# B2 — from a subdirectory: empty stdout, exit 0, stderr empty.
+run_prompt "$PROMPT_WS_SUB" --detect
+assert_eq "B2 --detect subdir stdout empty" "" "$prompt_out"
+assert_eq "B2 --detect subdir exit 0" "0" "$prompt_rc"
+assert_eq "B2 --detect subdir stderr empty" "" "$prompt_err"
+
+# B3 — outside: empty stdout, NON-ZERO exit, stderr empty.
+prompt_b3_dir=$(mktemp_d)
+run_prompt "$prompt_b3_dir" --detect
+assert_eq "B3 --detect outside stdout empty" "" "$prompt_out"
+assert_not_contains "B3 --detect outside non-zero exit" "0" "$prompt_rc"
+assert_eq "B3 --detect outside stderr empty" "" "$prompt_err"
+
+# B4 — minimal detection, no trimmed-prepare (behavioral proof via SOURCE COUNT,
+# D7). --detect does NOT source zero config: __xcind-app-root classifies every
+# candidate .xcind.sh by sourcing it in a throwaway subshell (via
+# __xcind-is-workspace-dir, xcind-lib.bash:161-166) to read XCIND_IS_WORKSPACE —
+# that single workspace-probe source is the ONLY sourcing --detect performs. A
+# plain run sources TWICE: the same probe PLUS the full __xcind-load-config
+# trimmed-prepare. The fixture's .xcind.sh appends one byte per source, so the
+# counts are observable: --detect → 1, plain → 2. This proves --detect skips the
+# expensive config-load / apex stage (the real budget intent), not that it
+# sources nothing.
+prompt_b4_marker="$(mktemp_d)/sources"
+prompt_b4_app=$(make_wsless_app "b4app" \
+  "XCIND_PROXY_EXPORTS=(\"web=nginx:80\")
+printf x >>\"$prompt_b4_marker\"")
+rm -f "$prompt_b4_marker"
+run_prompt "$prompt_b4_app" --detect
+assert_eq "B4 --detect exit 0" "0" "$prompt_rc"
+prompt_b4_detect_count=$(wc -c <"$prompt_b4_marker" | tr -d '[:space:]')
+assert_eq "B4 --detect does only the 1 workspace-probe source (no config-load)" "1" "$prompt_b4_detect_count"
+rm -f "$prompt_b4_marker"
+run_prompt "$prompt_b4_app"
+prompt_b4_plain_count=$(wc -c <"$prompt_b4_marker" | tr -d '[:space:]')
+assert_eq "B4 plain run sources twice: probe + full config-load (control)" "2" "$prompt_b4_plain_count"
+
+# ======================================================================
+echo "=== Test: xcind-prompt — C. Apex presence / absence + permutations ==="
+
+# C1 — --apex apex available: hostname substring + OSC 8 intro bytes + ST
+# terminator (raw bytes), NOT BEL.
+run_prompt "$PROMPT_WS_APP" --apex
+assert_contains "C1 --apex contains apex hostname" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_contains "C1 --apex emits OSC 8 intro bytes (ESC ] 8 ; ;)" "$PROMPT_OSC8" "$prompt_out"
+assert_contains 'C1 --apex emits ST terminator (ESC \)' "$PROMPT_ST" "$prompt_out"
+assert_eq "C1 --apex exit 0" "0" "$prompt_rc"
+assert_eq "C1 --apex stderr empty" "" "$prompt_err"
+
+# C2 — --apex with no proxied export: display only, no escape bytes.
+run_prompt "$PROMPT_WSLESS_APP" --apex
+assert_eq "C2 --apex no export yields display only" "acmeapps" "$prompt_out"
+assert_not_contains "C2 --apex no export emits no OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# C3 — --apex with explicit-disable apex template (D6): a proxied export is
+# present, but XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE="" disables apex.
+prompt_c3_app=$(make_ws_app "c3ws" "c3app" \
+  'XCIND_PROXY_DOMAIN="c3.localhost"
+XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE=""' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_c3_app" --apex
+assert_eq "C3 explicit-disable template yields display only" "c3ws/c3app" "$prompt_out"
+assert_not_contains "C3 explicit-disable emits no OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+assert_not_contains "C3 explicit-disable emits no apex host" "c3.localhost" "$prompt_out"
+
+# C4 — --apex with an assigned-only export (D6): no proxied export to anchor the
+# apex → no apex, even though the apex template is non-empty.
+prompt_c4_app=$(make_wsless_app "c4app" \
+  'XCIND_PROXY_DOMAIN="c4.localhost"
+XCIND_PROXY_EXPORTS=("web=nginx:80;type=assigned")')
+run_prompt "$prompt_c4_app" --apex
+assert_eq "C4 assigned-only export yields display only" "c4app" "$prompt_out"
+assert_not_contains "C4 assigned-only emits no OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+assert_not_contains "C4 assigned-only emits no apex host" "c4.localhost" "$prompt_out"
+
+# C5 — --apex --no-hyperlink: bare hostname, no OSC 8 bytes, no ST.
+run_prompt "$PROMPT_WS_APP" --apex --no-hyperlink
+assert_contains "C5 --no-hyperlink contains bare hostname" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_not_contains "C5 --no-hyperlink omits OSC 8 intro bytes" "$PROMPT_OSC8" "$prompt_out"
+assert_not_contains "C5 --no-hyperlink omits ST terminator" "$PROMPT_ST" "$prompt_out"
+
+# C6 — XCIND_PROMPT_HYPERLINKS=0 --apex: equivalent to --no-hyperlink.
+PROMPT_EXTRA_ENV=("XCIND_PROMPT_HYPERLINKS=0")
+run_prompt "$PROMPT_WS_APP" --apex
+assert_contains "C6 XCIND_PROMPT_HYPERLINKS=0 contains bare hostname" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_not_contains "C6 XCIND_PROMPT_HYPERLINKS=0 omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# Scheme / TLS matrix (D5). Host is deterministic so http/https needles are
+# unambiguous. All under the shared hermetic home (no machine TLS mode leaks in).
+prompt_scheme_host="schemews-schemeapp.scheme.localhost"
+
+# C7 — export tls=auto (default), proxy mode auto (default) → https.
+prompt_c7_app=$(make_ws_app "schemews" "schemeapp" \
+  'XCIND_PROXY_DOMAIN="scheme.localhost"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_c7_app" --apex
+assert_scheme "C7 tls=auto/mode=auto" "https" "$prompt_scheme_host" "$prompt_out"
+
+# C8 — export tls=require → https.
+prompt_c8_app=$(make_ws_app "schemews" "schemeapp" \
+  'XCIND_PROXY_DOMAIN="scheme.localhost"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80;tls=require")')
+run_prompt "$prompt_c8_app" --apex
+assert_scheme "C8 tls=require" "https" "$prompt_scheme_host" "$prompt_out"
+
+# C9 — export tls=disable → http.
+prompt_c9_app=$(make_ws_app "schemews" "schemeapp" \
+  'XCIND_PROXY_DOMAIN="scheme.localhost"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80;tls=disable")')
+run_prompt "$prompt_c9_app" --apex
+assert_scheme "C9 tls=disable" "http" "$prompt_scheme_host" "$prompt_out"
+
+# C10 — proxy XCIND_PROXY_TLS_MODE=disabled overrides the export → http.
+prompt_c10_app=$(make_ws_app "schemews" "schemeapp" \
+  'XCIND_PROXY_DOMAIN="scheme.localhost"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+PROMPT_EXTRA_ENV=("XCIND_PROXY_TLS_MODE=disabled")
+run_prompt "$prompt_c10_app" --apex
+assert_scheme "C10 proxy mode=disabled overrides export" "http" "$prompt_scheme_host" "$prompt_out"
+
+# ======================================================================
+echo "=== Test: xcind-prompt — D. Registry guard (hermetic) ==="
+
+# D1 — a fresh hermetic home must contain no registry file after a workspace run
+# (XCIND_NO_REGISTRY=1 is set before discovery).
+prompt_d1_home=$(mktemp_d)
+(
+  cd "$PROMPT_WS_APP" || exit 99
+  prompt_clear_env
+  HOME="$prompt_d1_home" XDG_STATE_HOME="$prompt_d1_home/state" \
+    XDG_CONFIG_HOME="$prompt_d1_home/config" \
+    "$XCIND_ROOT/bin/xcind-prompt" >/dev/null 2>&1
+) || true
+assert_file_missing "D1 no workspace registry file created" "$prompt_d1_home/state/xcind/workspaces.tsv"
+
+# D2 — a pre-seeded registry is byte-identical after the run (no in-place mutation).
+prompt_d2_home=$(mktemp_d)
+prompt_d2_reg="$prompt_d2_home/state/xcind/workspaces.tsv"
+mkdir -p "$(dirname "$prompt_d2_reg")"
+printf 'sentinel\tdo-not-touch\n' >"$prompt_d2_reg"
+prompt_d2_before=$(cat "$prompt_d2_reg")
+(
+  cd "$PROMPT_WS_APP" || exit 99
+  prompt_clear_env
+  HOME="$prompt_d2_home" XDG_STATE_HOME="$prompt_d2_home/state" \
+    XDG_CONFIG_HOME="$prompt_d2_home/config" \
+    "$XCIND_ROOT/bin/xcind-prompt" >/dev/null 2>&1
+) || true
+prompt_d2_after=$(cat "$prompt_d2_reg")
+assert_eq "D2 pre-seeded registry is byte-identical after run" "$prompt_d2_before" "$prompt_d2_after"
+
+# ======================================================================
+echo "=== Test: xcind-prompt — usage / unknown option (stderr path) ==="
+
+# --help: exit 0, usage on stdout, stderr empty.
+run_prompt "$PROMPT_WS_APP" --help
+assert_eq "--help exit 0" "0" "$prompt_rc"
+assert_contains "--help prints usage to stdout" "Usage: xcind-prompt" "$prompt_out"
+assert_eq "--help stderr empty" "" "$prompt_err"
+
+# unknown option: exit 2, message on stderr, stdout empty.
+prompt_unknown_dir=$(mktemp_d)
+run_prompt "$prompt_unknown_dir" --bogus
+assert_eq "unknown option exit 2" "2" "$prompt_rc"
+assert_eq "unknown option stdout empty" "" "$prompt_out"
+assert_contains "unknown option writes message to stderr" "unknown option" "$prompt_err"
+
+# ======================================================================
+echo ""
+echo "=== Results: $PASS passed, $FAIL failed ==="
+
+if [ "$FAIL" -gt 0 ]; then
+  exit 1
+fi
