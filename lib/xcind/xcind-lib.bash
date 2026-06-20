@@ -883,6 +883,28 @@ __xcind-dump-docker-compose-configuration() {
   xcind-compose config
 }
 
+# Dump the canonical Starship [custom.xcind] prompt block to stdout.
+# Static text (no resolved app config), so this runs from any directory.
+# The active command is names-only (xcind-prompt); the --apex opt-in is
+# shown as a commented hint line, per Brief Q1.
+#
+# Usage:
+#   __xcind-dump-starship-snippet
+__xcind-dump-starship-snippet() {
+  cat <<'EOF'
+# ~/.config/starship.toml
+[custom.xcind]
+description = "Xcind workspace/app context"
+command     = "xcind-prompt"
+# command   = "xcind-prompt --apex"   # opt-in: append the apex hostname as a clickable OSC 8 link
+when        = "xcind-prompt --detect"
+shell       = ["bash", "--noprofile", "--norc"]   # skip user rc for speed
+symbol      = "⬡ "
+style       = "bold cyan"
+format      = "[$symbol$output]($style) "
+EOF
+}
+
 # --------------------------------------------------------------------------
 # Debug / Dry-Run
 # --------------------------------------------------------------------------

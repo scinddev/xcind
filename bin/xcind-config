@@ -9,6 +9,7 @@
 #   xcind-config --generate-docker-wrapper[=FILE]          Generate a POSIX docker wrapper
 #   xcind-config --generate-docker-compose-wrapper[=FILE]  Generate a POSIX docker-compose wrapper
 #   xcind-config --generate-docker-compose-configuration[=FILE]  Generate resolved compose config
+#   xcind-config --generate-starship[=FILE]                Generate Starship [custom.xcind] block
 
 set -euo pipefail
 
@@ -45,6 +46,7 @@ Options:
   --generate-docker-wrapper[=FILE]             Generate docker wrapper script
   --generate-docker-compose-wrapper[=FILE]     Generate docker-compose wrapper script
   --generate-docker-compose-configuration[=FILE]  Generate resolved compose config
+  --generate-starship[=FILE]                   Generate Starship [custom.xcind] prompt block
 
   completion {bash|zsh}                        Output shell completion script
 
@@ -84,6 +86,8 @@ _do_gen_compose_wrapper=false
 _gen_compose_wrapper_file=""
 _do_gen_compose_config=false
 _gen_compose_config_file=""
+_do_gen_starship=false
+_gen_starship_file=""
 _do_completion=""
 _stdout_claim=""
 _action_count=0
@@ -170,6 +174,23 @@ while [[ $# -gt 0 ]]; do
     fi
     _action_count=$((_action_count + 1))
     ;;
+  --generate-starship=*)
+    _do_gen_starship=true
+    _gen_starship_file="${1#*=}"
+    if [[ -z $_gen_starship_file ]]; then
+      __xcind_config_die "--generate-starship= requires a file path (use --generate-starship without = for stdout)"
+    fi
+    _action_count=$((_action_count + 1))
+    ;;
+  --generate-starship)
+    _do_gen_starship=true
+    # Check if next arg is a value (not a flag)
+    if [[ $# -ge 2 && ${2:0:1} != "-" ]]; then
+      shift
+      _gen_starship_file="$1"
+    fi
+    _action_count=$((_action_count + 1))
+    ;;
   completion)
     shift
     case "${1:-}" in
@@ -229,6 +250,9 @@ fi
 if [[ -n $_do_completion && $_action_count -gt 1 ]]; then
   __xcind_config_die "completion cannot be combined with other options"
 fi
+if [[ $_do_gen_starship == true && $_action_count -gt 1 ]]; then
+  __xcind_config_die "--generate-starship cannot be combined with other options"
+fi
 
 # -- args only valid with --preview
 if [[ ${#PREVIEW_EXTRA_ARGS[@]} -gt 0 && $_do_preview != true ]]; then
@@ -258,6 +282,17 @@ if [[ -n $_do_completion ]]; then
     __xcind_config_die "completion script not found: $_completion_file"
   fi
   cat "$_completion_file"
+  exit 0
+fi
+
+# The Starship snippet is static (no resolved app config), so emit it here —
+# before __xcind-prepare-app — so it works from any directory.
+if [[ $_do_gen_starship == true ]]; then
+  if [[ -n $_gen_starship_file ]]; then
+    __xcind-dump-starship-snippet >"$_gen_starship_file"
+  else
+    __xcind-dump-starship-snippet
+  fi
   exit 0
 fi
 
