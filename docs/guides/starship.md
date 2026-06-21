@@ -92,9 +92,11 @@ style   = "dimmed white"
 format  = "[$output]($style) "
 ```
 
-`--print` selects a single field — `workspace`, `app`, or `apex` (the default `both` is what the single-module recipe prints). Each module auto-hides via its own `when` gate: the workspace module vanishes in a workspaceless app (where `--print workspace` is empty), and the apex module vanishes when the app declares no apex. The app module shows whenever you're inside any Xcind app.
+`--print` selects a single field — `workspace`, `app`, `apex`, or `apex-url` (the default `both` is what the single-module recipe prints). Each module auto-hides via its own `when` gate: the workspace module vanishes in a workspaceless app (where `--print workspace` is empty), and the apex module vanishes when the app declares no apex. The app module shows whenever you're inside any Xcind app.
 
 The apex field here is the same OSC 8-linked hostname as `--apex` above, so the [terminal-support / plain-text fallback](#terminal-support-and-plain-text-fallback) (`--no-hyperlink`, `XCIND_PROMPT_HYPERLINKS=0`) and the [declared-not-live caveat](#showing-the-apex-hostname) apply unchanged — add `--no-hyperlink` to the `xcind_apex` `command` if your terminal can't render OSC 8.
+
+`--print apex-url` prints the apex **URL** (`<scheme>://<hostname>`) as **plain text** — no OSC 8 hyperlink, so `--no-hyperlink` / `XCIND_PROMPT_HYPERLINKS=0` have no effect on it. Use it when you want the full clickable-by-your-terminal URL (or to feed another tool) rather than the linked hostname `--print apex` emits.
 
 **Performance note (the honest cost).** Field-aware detection is not free. Plain `--detect` is a fast stat-walk; `--detect --print workspace|apex` sources config to know availability (no jq/Docker/hooks; within Starship's 500ms budget) — it must, because whether a workspace or apex exists is only knowable after resolving the config. The single-module recipe draws with one cheap `--detect`; this three-module recipe runs up to three `--detect` plus three `--print` invocations per prompt draw. That's still well under the budget and still jq/Docker/hook-free, but it is heavier than the one-module recipe — choose it deliberately when you want the per-field styling, and stay with the single module otherwise. As with the single-module setup, do **not** raise Starship's `command_timeout` to accommodate it (see [A note on prompt width](#a-note-on-prompt-width)).
 
