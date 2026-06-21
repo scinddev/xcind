@@ -2484,6 +2484,8 @@ assert_contains "generate-starship stdout: has format" \
   "format" "$gs_stdout_result"
 assert_contains "generate-starship stdout: has symbol" \
   "symbol" "$gs_stdout_result"
+assert_contains "generate-starship stdout: bash shell executes command strings" \
+  'shell       = ["bash", "--noprofile", "--norc", "-c"]' "$gs_stdout_result"
 
 # (b) names-only default: active command is xcind-prompt (no active --apex).
 # The commented hint "# command   = ..." is allowed; the assertion keys on the
