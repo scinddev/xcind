@@ -2729,6 +2729,10 @@ assert_contains "completion bash: has proxy init flags" \
   "--proxy-domain" "$comp_bash_result"
 assert_contains "completion bash: lists --generate-starship" \
   "--generate-starship" "$comp_bash_result"
+assert_contains "completion bash: lists --format" \
+  "--format" "$comp_bash_result"
+assert_contains "completion bash: --format offers toml nix" \
+  'compgen -W "toml nix"' "$comp_bash_result"
 
 # 2. completion zsh produces output
 comp_zsh_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -2746,6 +2750,10 @@ assert_contains "completion zsh: has workspace init command" \
   "init:Initialize a workspace directory" "$comp_zsh_result"
 assert_contains "completion zsh: lists --generate-starship" \
   "--generate-starship" "$comp_zsh_result"
+assert_contains "completion zsh: lists --format" \
+  "--format:Output format" "$comp_zsh_result"
+assert_contains "completion zsh: --format offers nix value" \
+  "nix:Nix Home Manager attrset" "$comp_zsh_result"
 
 # 3. completion with no arg fails
 comp_noarg_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
