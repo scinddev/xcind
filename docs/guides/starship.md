@@ -33,6 +33,24 @@ format      = "[$symbol$output]($style) "
 
 Starship config is a single file with no `include` directive, so paste the block directly into `~/.config/starship.toml` — or, if you manage your dotfiles elsewhere, point `STARSHIP_CONFIG` at your managed file and add the block there. Starship auto-renders every `[custom.*]` module, so the segment appears without further wiring; to pin its position, reference `$custom.xcind` in your top-level `format`. The `when = "xcind-prompt --detect"` line is what makes the segment vanish outside an app — `--detect` exits non-zero when there's no Xcind context, so Starship skips the module.
 
+### Home Manager (Nix)
+
+If you manage Starship through [Home Manager](https://nix-community.github.io/home-manager/), pass `--format nix` to get the same module as a Nix attrset instead of TOML:
+
+```bash
+xcind-config --generate-starship --format nix
+```
+
+That prints a bare `{ … }` attrset (preceded by a one-line splice hint). Assign it under your starship settings:
+
+```nix
+programs.starship.settings.custom.xcind = {
+  # …the emitted attrset…
+};
+```
+
+The default (`--format toml`, or no `--format`) is unchanged. A file path still works in either argument order: `xcind-config --generate-starship --format nix ~/starship-xcind.nix`.
+
 ## Showing the apex hostname
 
 The apex hostname is **opt-in**. To enable it, swap the active `command` line for the commented variant the generator ships:
