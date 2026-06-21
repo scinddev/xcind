@@ -519,6 +519,119 @@ run_prompt "$PROMPT_WS_APP" --print both --apex
 assert_eq "E22 --print both --apex byte-identical to --apex" "$prompt_e22_legacy" "$prompt_out"
 
 # ======================================================================
+echo "=== Test: xcind-prompt — F. Field-aware --detect ==="
+
+# F1 — --detect in-app: exit 0, stdout+stderr empty (regression of B1).
+run_prompt "$PROMPT_WS_APP" --detect
+assert_eq "F1 --detect in-app exit 0" "0" "$prompt_rc"
+assert_eq "F1 --detect in-app stdout empty" "" "$prompt_out"
+assert_eq "F1 --detect in-app stderr empty" "" "$prompt_err"
+
+# F2 — --detect --print both in-app: exit 0 (cheap path).
+run_prompt "$PROMPT_WS_APP" --detect --print both
+assert_eq "F2 --detect --print both exit 0" "0" "$prompt_rc"
+assert_eq "F2 --detect --print both stderr empty" "" "$prompt_err"
+
+# F3 — --detect --print app in-app + from subdir: exit 0 both.
+run_prompt "$PROMPT_WS_APP" --detect --print app
+assert_eq "F3 --detect --print app in-app exit 0" "0" "$prompt_rc"
+run_prompt "$PROMPT_WS_SUB" --detect --print app
+assert_eq "F3 --detect --print app subdir exit 0" "0" "$prompt_rc"
+
+# F4 — --detect --print app outside: non-zero, stderr empty.
+prompt_f4_dir=$(mktemp_d)
+run_prompt "$prompt_f4_dir" --detect --print app
+assert_not_contains "F4 --detect --print app outside non-zero" "0" "$prompt_rc"
+assert_eq "F4 --detect --print app outside stderr empty" "" "$prompt_err"
+
+# F5 — --detect --print workspace (workspace mode): exit 0.
+run_prompt "$PROMPT_WS_APP" --detect --print workspace
+assert_eq "F5 --detect --print workspace (workspace) exit 0" "0" "$prompt_rc"
+assert_eq "F5 --detect --print workspace (workspace) stderr empty" "" "$prompt_err"
+
+# F6 — --detect --print workspace (workspaceless): non-zero, stderr empty.
+run_prompt "$PROMPT_WSLESS_APP" --detect --print workspace
+assert_not_contains "F6 --detect --print workspace (workspaceless) non-zero" "0" "$prompt_rc"
+assert_eq "F6 --detect --print workspace (workspaceless) stderr empty" "" "$prompt_err"
+
+# F7 — --detect --print workspace outside: non-zero, stderr empty.
+prompt_f7_dir=$(mktemp_d)
+run_prompt "$prompt_f7_dir" --detect --print workspace
+assert_not_contains "F7 --detect --print workspace outside non-zero" "0" "$prompt_rc"
+assert_eq "F7 --detect --print workspace outside stderr empty" "" "$prompt_err"
+
+# F8 — --detect --print apex with apex present: exit 0.
+run_prompt "$PROMPT_WS_APP" --detect --print apex
+assert_eq "F8 --detect --print apex (apex present) exit 0" "0" "$prompt_rc"
+assert_eq "F8 --detect --print apex (apex present) stderr empty" "" "$prompt_err"
+
+# F9 — --detect --print apex no proxied export: non-zero, stderr empty.
+run_prompt "$PROMPT_WSLESS_APP" --detect --print apex
+assert_not_contains "F9 --detect --print apex (no export) non-zero" "0" "$prompt_rc"
+assert_eq "F9 --detect --print apex (no export) stderr empty" "" "$prompt_err"
+
+# F10 — --detect --print apex explicit-disable template (mirror C3): non-zero.
+prompt_f10_app=$(make_ws_app "f10ws" "f10app" \
+  'XCIND_PROXY_DOMAIN="f10.localhost"
+XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE=""' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_f10_app" --detect --print apex
+assert_not_contains "F10 --detect --print apex (explicit-disable) non-zero" "0" "$prompt_rc"
+assert_eq "F10 --detect --print apex (explicit-disable) stderr empty" "" "$prompt_err"
+
+# F11 — --detect --print apex assigned-only export (mirror C4): non-zero.
+prompt_f11_app=$(make_wsless_app "f11app" \
+  'XCIND_PROXY_DOMAIN="f11.localhost"
+XCIND_PROXY_EXPORTS=("web=nginx:80;type=assigned")')
+run_prompt "$prompt_f11_app" --detect --print apex
+assert_not_contains "F11 --detect --print apex (assigned-only) non-zero" "0" "$prompt_rc"
+assert_eq "F11 --detect --print apex (assigned-only) stderr empty" "" "$prompt_err"
+
+# F12 — --detect --print apex outside: non-zero, stderr empty.
+prompt_f12_dir=$(mktemp_d)
+run_prompt "$prompt_f12_dir" --detect --print apex
+assert_not_contains "F12 --detect --print apex outside non-zero" "0" "$prompt_rc"
+assert_eq "F12 --detect --print apex outside stderr empty" "" "$prompt_err"
+
+# F13 — cost asymmetry via SOURCE COUNT (load-bearing; extends B4). A workspace
+# fixture (so workspace-mode detect is exercisable) with a proxied export (so
+# apex resolves). The app .xcind.sh appends one byte per source. The cheap
+# arms (--detect, --detect --print app) do ONLY the 1 workspace-probe source;
+# the field arms (--detect --print workspace|apex) run the trimmed prepare =
+# 2 sources, matching a plain run. This proves the cheap path is preserved for
+# both|app and that workspace|apex must source config to know availability.
+prompt_f13_marker="$(mktemp_d)/sources"
+prompt_f13_app=$(make_ws_app "f13ws" "f13app" \
+  'XCIND_PROXY_DOMAIN="f13.localhost"' \
+  "XCIND_PROXY_EXPORTS=(\"web=nginx:80\")
+printf x >>\"$prompt_f13_marker\"")
+
+rm -f "$prompt_f13_marker"
+run_prompt "$prompt_f13_app" --detect
+prompt_f13_detect=$(wc -c <"$prompt_f13_marker" | tr -d '[:space:]')
+assert_eq "F13 --detect = 1 probe source (cheap path)" "1" "$prompt_f13_detect"
+
+rm -f "$prompt_f13_marker"
+run_prompt "$prompt_f13_app" --detect --print app
+prompt_f13_app_cnt=$(wc -c <"$prompt_f13_marker" | tr -d '[:space:]')
+assert_eq "F13 --detect --print app = 1 probe source (cheap path)" "1" "$prompt_f13_app_cnt"
+
+rm -f "$prompt_f13_marker"
+run_prompt "$prompt_f13_app" --detect --print workspace
+prompt_f13_ws_cnt=$(wc -c <"$prompt_f13_marker" | tr -d '[:space:]')
+assert_eq "F13 --detect --print workspace = 2 sources (trimmed prepare)" "2" "$prompt_f13_ws_cnt"
+
+rm -f "$prompt_f13_marker"
+run_prompt "$prompt_f13_app" --detect --print apex
+prompt_f13_apex_cnt=$(wc -c <"$prompt_f13_marker" | tr -d '[:space:]')
+assert_eq "F13 --detect --print apex = 2 sources (trimmed prepare)" "2" "$prompt_f13_apex_cnt"
+
+rm -f "$prompt_f13_marker"
+run_prompt "$prompt_f13_app"
+prompt_f13_plain_cnt=$(wc -c <"$prompt_f13_marker" | tr -d '[:space:]')
+assert_eq "F13 plain run = 2 sources (control: probe + config load)" "2" "$prompt_f13_plain_cnt"
+
+# ======================================================================
 echo "=== Test: xcind-prompt — usage / unknown option (stderr path) ==="
 
 # --help: exit 0, usage on stdout, stderr empty.

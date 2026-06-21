@@ -15,7 +15,11 @@
 #   xcind-prompt --apex          Append the apex hostname as an OSC 8 hyperlink.
 #   xcind-prompt --no-hyperlink  Emit plain text (apex hostname, no escapes).
 #   xcind-prompt --detect        Exit 0 inside an app, non-zero outside; no
-#                                output. Short-circuits before any config work.
+#                                output. Field-aware with --print: plain
+#                                --detect is a fast stat-walk; --detect --print
+#                                workspace|apex sources config to know
+#                                availability (no jq/Docker/hooks; within
+#                                Starship's 500ms budget).
 #   xcind-prompt -h | --help     Show this help.
 #
 # Environment:
@@ -50,11 +54,18 @@ Options:
   --print FIELD     Print a specific field: both (default), workspace, app, apex
   --apex            Append the apex hostname as an OSC 8 clickable hyperlink
   --no-hyperlink    Emit plain text (apex hostname, no escape sequences)
-  --detect          Exit 0 inside an app, non-zero outside; no output
+  --detect          Exit 0 inside an app, non-zero outside; no output.
+                    With --print it probes that field's availability:
+                    --detect --print workspace exits 0 only in workspace mode,
+                    --detect --print apex exits 0 only when an apex resolves.
   -h, --help        Show this help
 
 Environment:
   XCIND_PROMPT_HYPERLINKS=0   Disable OSC 8 hyperlinks (same as --no-hyperlink)
+
+Cost note: plain --detect is a fast stat-walk; --detect --print workspace|apex
+sources config to know availability (no jq/Docker/hooks; within Starship's
+500ms budget).
 
 Default output is "<workspace>/<app>" (or "<app>" when workspaceless), and
 empty when run outside any app. There is no trailing newline.
@@ -140,15 +151,31 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# --- --detect: short-circuit before any config sourcing ---
-# Only the upward .xcind.sh stat-walk runs (no discovery, no registry, no
-# config). Suppress stderr and use the exit code alone.
+# --- --detect: field-aware availability probe ---
+# Cost asymmetry (be honest): plain --detect is a fast stat-walk;
+# --detect --print workspace|apex sources config to know availability (no
+# jq/Docker/hooks; within Starship's 500ms budget). The both|app arms keep the
+# cheap path — only the upward .xcind.sh stat-walk runs (one workspace-probe
+# source inside __xcind-app-root; no config load, no apex). The workspace|apex
+# arms must run the trimmed prepare because availability is unknowable without
+# resolving the config exports / URL templates. stderr stays empty on every
+# exit; the exit code alone is the signal.
 if [[ $_detect == true ]]; then
-  if __xcind-app-root >/dev/null 2>&1; then
-    exit 0
-  else
-    exit 1
-  fi
+  case "$_print" in
+  both | app)
+    if __xcind-app-root >/dev/null 2>&1; then exit 0; else exit 1; fi
+    ;;
+  workspace | apex)
+    _xcind_prompt_prepare >/dev/null 2>&1 || exit 1
+    if [[ $_print == workspace ]]; then
+      [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE:-} ]] && exit 0
+      exit 1
+    else
+      __xcind-proxy-apex-for-app >/dev/null 2>&1 && exit 0
+      exit 1
+    fi
+    ;;
+  esac
 fi
 
 # --- Trimmed prepare ---
