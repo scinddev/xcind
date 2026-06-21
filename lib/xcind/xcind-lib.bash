@@ -921,6 +921,34 @@ format      = "[$symbol$output]($style) "
 EOF
 }
 
+# Dump the canonical Starship [custom.xcind] block as a Nix Home Manager
+# attrset to stdout. Mirrors __xcind-dump-starship-snippet: static text (no
+# resolved app config), so this runs from any directory. Emits a BARE attrset
+# `{ … }` (no LHS attr-path, no trailing `;`) preceded by a short splice-hint
+# comment — the user splices it under their own starship settings attr-path.
+# Under the quoted heredoc the Starship $symbol/$output/$style placeholders
+# stay literal (Nix only antiquotes ${...}, never $letter or $(), so no
+# escaping is required). The shell list carries -c and the --apex opt-in is a
+# Nix # comment line, mirroring the TOML sibling.
+#
+# Usage:
+#   __xcind-dump-starship-snippet-nix
+__xcind-dump-starship-snippet-nix() {
+  cat <<'EOF'
+# Splice into Home Manager: programs.starship.settings.custom.xcind = { ... };
+{
+  description = "Xcind workspace/app context";
+  command = "xcind-prompt";
+  # command = "xcind-prompt --apex";   # opt-in: append the apex hostname as a clickable OSC 8 link
+  when = "xcind-prompt --detect";
+  shell = [ "bash" "--noprofile" "--norc" "-c" ];
+  symbol = "⬡ ";
+  style = "bold cyan";
+  format = "[$symbol$output]($style) ";
+}
+EOF
+}
+
 # --------------------------------------------------------------------------
 # Debug / Dry-Run
 # --------------------------------------------------------------------------

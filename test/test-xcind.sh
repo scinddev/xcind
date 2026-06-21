@@ -2531,6 +2531,106 @@ assert_eq "generate-starship + json: non-zero exit" "true" \
 assert_contains "generate-starship + json: error message" \
   "cannot be combined" "$gs_combine_result"
 
+# ------------------------------------------------------------------
+# --format toml|nix modifier (step-10)
+# ------------------------------------------------------------------
+
+# (f) --format toml is byte-identical to no --format (default path unchanged).
+gs_toml_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format toml) && gs_toml_rc=0 || gs_toml_rc=$?
+assert_eq "generate-starship --format toml: exit code 0" "0" "$gs_toml_rc"
+gs_toml_diff=$(diff <(printf '%s\n' "$gs_stdout_result") \
+  <(printf '%s\n' "$gs_toml_result") 2>&1 || true)
+assert_eq "generate-starship --format toml == no --format (byte-identical)" \
+  "" "$gs_toml_diff"
+assert_contains "generate-starship default: shell list carries -c" \
+  'shell       = ["bash", "--noprofile", "--norc", "-c"]' "$gs_stdout_result"
+
+# (g) --format nix: present + well-formed bare attrset.
+gs_nix_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format nix) && gs_nix_rc=0 || gs_nix_rc=$?
+assert_eq "generate-starship --format nix: exit code 0" "0" "$gs_nix_rc"
+assert_contains "generate-starship nix: splice-hint comment" \
+  "# Splice into Home Manager: programs.starship.settings.custom.xcind" \
+  "$gs_nix_result"
+assert_contains "generate-starship nix: description" \
+  'description = "Xcind workspace/app context"' "$gs_nix_result"
+assert_contains "generate-starship nix: command" \
+  'command = "xcind-prompt"' "$gs_nix_result"
+assert_contains "generate-starship nix: when" \
+  'when = "xcind-prompt --detect"' "$gs_nix_result"
+assert_contains "generate-starship nix: shell list with -c" \
+  'shell = [ "bash" "--noprofile" "--norc" "-c" ]' "$gs_nix_result"
+assert_contains "generate-starship nix: style" \
+  'style = "bold cyan"' "$gs_nix_result"
+assert_contains "generate-starship nix: format placeholders literal" \
+  'format = "[$symbol$output]($style) "' "$gs_nix_result"
+
+# (h) nix opens as a BARE attrset: a standalone `{` immediately followed by the
+# description line. This is the collision-free discriminator — do NOT
+# assert_not_contains on `programs.starship.settings.custom.xcind = {`, which
+# legitimately appears inside the splice-hint comment.
+assert_contains "generate-starship nix: opens as bare attrset" \
+  "$(printf '{\n  description = "Xcind workspace/app context";')" \
+  "$gs_nix_result"
+
+# (i) nix is NOT toml: no [custom.xcind] table header.
+assert_not_contains "generate-starship nix: not a TOML table" \
+  "[custom.xcind]" "$gs_nix_result"
+
+# (j) nix file form, both arg orders, written from a fresh cwd (no app context).
+GS_NIX_CWD=$(mktemp_d)
+GS_NIX_AFTER=$(mktemp_d)/starship-after.nix
+(cd "$GS_NIX_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format nix "$GS_NIX_AFTER") &&
+  gs_nix_after_rc=0 || gs_nix_after_rc=$?
+assert_eq "generate-starship --format nix FILE (--format before file): exit 0" \
+  "0" "$gs_nix_after_rc"
+assert_file_exists "generate-starship --format nix FILE: file exists" \
+  "$GS_NIX_AFTER"
+gs_nix_after_diff=$(diff <(printf '%s\n' "$gs_nix_result") "$GS_NIX_AFTER" 2>&1 || true)
+assert_eq "generate-starship --format nix FILE: content matches stdout" \
+  "" "$gs_nix_after_diff"
+
+GS_NIX_EQ=$(mktemp_d)/starship-eq.nix
+(cd "$GS_NIX_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship="$GS_NIX_EQ" --format nix) &&
+  gs_nix_eq_rc=0 || gs_nix_eq_rc=$?
+assert_eq "generate-starship=FILE --format nix: exit 0" "0" "$gs_nix_eq_rc"
+assert_file_exists "generate-starship=FILE --format nix: file exists" "$GS_NIX_EQ"
+gs_nix_eq_diff=$(diff <(printf '%s\n' "$gs_nix_result") "$GS_NIX_EQ" 2>&1 || true)
+assert_eq "generate-starship=FILE --format nix: content matches stdout" \
+  "" "$gs_nix_eq_diff"
+rm -rf "$GS_NIX_CWD" "$(dirname "$GS_NIX_AFTER")" "$(dirname "$GS_NIX_EQ")"
+
+# (k) unknown --format value → exit 2 + stderr names expected values.
+gs_badfmt_rc=0
+gs_badfmt_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format yaml 2>&1) || gs_badfmt_rc=$?
+assert_eq "unknown --format value: exit code 2" "2" "$gs_badfmt_rc"
+assert_contains "unknown --format value: stderr names toml" \
+  "toml" "$gs_badfmt_result"
+assert_contains "unknown --format value: stderr names nix" \
+  "nix" "$gs_badfmt_result"
+
+# (l) --format without --generate-starship → exit 2 (D6).
+gs_orphan_rc=0
+gs_orphan_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --format nix 2>&1) || gs_orphan_rc=$?
+assert_eq "--format without --generate-starship: exit code 2" "2" "$gs_orphan_rc"
+assert_contains "--format without --generate-starship: error message" \
+  "only valid with --generate-starship" "$gs_orphan_result"
+
+# (m) combine still rejected: --format does not bump _action_count.
+gs_nix_combine_rc=0
+gs_nix_combine_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format nix --json 2>&1) && gs_nix_combine_rc=0 ||
+  gs_nix_combine_rc=$?
+assert_eq "generate-starship --format nix + json: non-zero exit" "true" \
+  "$([ "$gs_nix_combine_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "generate-starship --format nix + json: error message" \
+  "cannot be combined" "$gs_nix_combine_result"
+
 # ======================================================================
 echo ""
 echo "=== Test: xcind-config argument validation ==="

@@ -9,7 +9,7 @@
 #   xcind-config --generate-docker-wrapper[=FILE]          Generate a POSIX docker wrapper
 #   xcind-config --generate-docker-compose-wrapper[=FILE]  Generate a POSIX docker-compose wrapper
 #   xcind-config --generate-docker-compose-configuration[=FILE]  Generate resolved compose config
-#   xcind-config --generate-starship[=FILE]                Generate Starship [custom.xcind] block
+#   xcind-config --generate-starship[=FILE] [--format toml|nix]  Generate Starship [custom.xcind] block (TOML default, or Nix Home Manager attrset)
 
 set -euo pipefail
 
@@ -46,7 +46,7 @@ Options:
   --generate-docker-wrapper[=FILE]             Generate docker wrapper script
   --generate-docker-compose-wrapper[=FILE]     Generate docker-compose wrapper script
   --generate-docker-compose-configuration[=FILE]  Generate resolved compose config
-  --generate-starship[=FILE]                   Generate Starship [custom.xcind] prompt block
+  --generate-starship[=FILE] [--format toml|nix]  Generate Starship [custom.xcind] block (TOML default, or Nix Home Manager attrset)
 
   completion {bash|zsh}                        Output shell completion script
 
@@ -88,6 +88,8 @@ _do_gen_compose_config=false
 _gen_compose_config_file=""
 _do_gen_starship=false
 _gen_starship_file=""
+_gen_format="toml"
+_format_set=false
 _do_completion=""
 _stdout_claim=""
 _action_count=0
@@ -191,6 +193,25 @@ while [[ $# -gt 0 ]]; do
     fi
     _action_count=$((_action_count + 1))
     ;;
+  --format=*)
+    # Modifier for --generate-starship; deliberately does NOT bump
+    # _action_count so the "--generate-starship cannot be combined" check
+    # (keyed on _action_count) is preserved.
+    _gen_format="${1#*=}"
+    _format_set=true
+    ;;
+  --format)
+    # Space form: require a following value (mirror xcind-prompt: exit 2).
+    if [[ $# -ge 2 ]]; then
+      shift
+      _gen_format="$1"
+      _format_set=true
+    else
+      echo "Error: --format requires a value (toml or nix)." >&2
+      echo "Run 'xcind-config --help' for usage." >&2
+      exit 2
+    fi
+    ;;
   completion)
     shift
     case "${1:-}" in
@@ -218,7 +239,16 @@ while [[ $# -gt 0 ]]; do
     __xcind_config_die "unknown option: $1"
     ;;
   *)
-    __xcind_config_die "unexpected argument: $1"
+    # When --generate-starship is active and no file has been captured yet,
+    # treat a trailing positional as the output file. This supports the
+    # `--generate-starship --format nix outfile.nix` order, where --format
+    # intervenes and the bare arm's adjacency check cannot grab the file.
+    # A second positional still errors (the file is then non-empty).
+    if [[ $_do_gen_starship == true && -z $_gen_starship_file ]]; then
+      _gen_starship_file="$1"
+    else
+      __xcind_config_die "unexpected argument: $1"
+    fi
     ;;
   esac
   shift
@@ -252,6 +282,21 @@ if [[ -n $_do_completion && $_action_count -gt 1 ]]; then
 fi
 if [[ $_do_gen_starship == true && $_action_count -gt 1 ]]; then
   __xcind_config_die "--generate-starship cannot be combined with other options"
+fi
+
+# --format is only meaningful as a modifier of --generate-starship (D6).
+# Use exit 2 to match the sibling xcind-prompt validator (D5/D6).
+if [[ $_format_set == true && $_do_gen_starship != true ]]; then
+  echo "Error: --format is only valid with --generate-starship." >&2
+  echo "Run 'xcind-config --help' for usage." >&2
+  exit 2
+fi
+
+# Validate the --format value (D5): only toml and nix are supported.
+if [[ $_gen_format != "toml" && $_gen_format != "nix" ]]; then
+  echo "Error: unknown --format value: $_gen_format (expected toml or nix)." >&2
+  echo "Run 'xcind-config --help' for usage." >&2
+  exit 2
 fi
 
 # -- args only valid with --preview
@@ -288,10 +333,16 @@ fi
 # The Starship snippet is static (no resolved app config), so emit it here —
 # before __xcind-prepare-app — so it works from any directory.
 if [[ $_do_gen_starship == true ]]; then
+  # Select the emitter by --format: nix emits the bare Nix attrset, anything
+  # else (default toml) keeps the byte-identical TOML block.
+  _starship_emitter="__xcind-dump-starship-snippet"
+  if [[ $_gen_format == "nix" ]]; then
+    _starship_emitter="__xcind-dump-starship-snippet-nix"
+  fi
   if [[ -n $_gen_starship_file ]]; then
-    __xcind-dump-starship-snippet >"$_gen_starship_file"
+    "$_starship_emitter" >"$_gen_starship_file"
   else
-    __xcind-dump-starship-snippet
+    "$_starship_emitter"
   fi
   exit 0
 fi
