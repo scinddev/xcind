@@ -366,6 +366,159 @@ prompt_d2_after=$(cat "$prompt_d2_reg")
 assert_eq "D2 pre-seeded registry is byte-identical after run" "$prompt_d2_before" "$prompt_d2_after"
 
 # ======================================================================
+echo "=== Test: xcind-prompt — E. --print field selectors ==="
+
+# E1 — --print both == default (workspace mode), byte-identical to A1.
+run_prompt "$PROMPT_WS_APP" --print both
+assert_eq "E1 --print both (workspace) stdout" "dev/frontend" "$prompt_out"
+assert_eq "E1 --print both (workspace) exit 0" "0" "$prompt_rc"
+assert_eq "E1 --print both (workspace) stderr empty" "" "$prompt_err"
+
+# E2 — --print both == default (workspaceless).
+run_prompt "$PROMPT_WSLESS_APP" --print both
+assert_eq "E2 --print both (workspaceless) stdout" "acmeapps" "$prompt_out"
+assert_eq "E2 --print both (workspaceless) exit 0" "0" "$prompt_rc"
+
+# E3 — --print app (workspace): the app field only.
+run_prompt "$PROMPT_WS_APP" --print app
+assert_eq "E3 --print app (workspace) stdout" "frontend" "$prompt_out"
+assert_eq "E3 --print app (workspace) stderr empty" "" "$prompt_err"
+
+# E4 — --print app (workspaceless): the app field equals the display.
+run_prompt "$PROMPT_WSLESS_APP" --print app
+assert_eq "E4 --print app (workspaceless) stdout" "acmeapps" "$prompt_out"
+
+# E5 — --print workspace (workspace): the workspace field only.
+run_prompt "$PROMPT_WS_APP" --print workspace
+assert_eq "E5 --print workspace (workspace) stdout" "dev" "$prompt_out"
+assert_eq "E5 --print workspace (workspace) stderr empty" "" "$prompt_err"
+
+# E6 — --print workspace (workspaceless): empty, exit 0.
+run_prompt "$PROMPT_WSLESS_APP" --print workspace
+assert_eq "E6 --print workspace (workspaceless) stdout empty" "" "$prompt_out"
+assert_eq "E6 --print workspace (workspaceless) exit 0" "0" "$prompt_rc"
+assert_eq "E6 --print workspace (workspaceless) stderr empty" "" "$prompt_err"
+
+# E7 — --print workspace honors XCIND_WORKSPACE override (mirror A4).
+prompt_e7_app=$(make_ws_app "realws" "realapp" \
+  'XCIND_PROXY_DOMAIN="ovr.localhost"
+XCIND_WORKSPACE="ovrws"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")
+XCIND_APP="ovrapp"')
+run_prompt "$prompt_e7_app" --print workspace
+assert_eq "E7 --print workspace honors override" "ovrws" "$prompt_out"
+
+# E8 — --print app honors XCIND_APP override (mirror A5).
+prompt_e8_app=$(make_wsless_app "realsolo" \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")
+XCIND_APP="ovrsolo"')
+run_prompt "$prompt_e8_app" --print app
+assert_eq "E8 --print app honors override" "ovrsolo" "$prompt_out"
+
+# E9 — --print apex linked: apex host + OSC 8 intro + ST terminator, exit 0.
+run_prompt "$PROMPT_WS_APP" --print apex
+assert_contains "E9 --print apex contains apex hostname" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_contains "E9 --print apex emits OSC 8 intro bytes" "$PROMPT_OSC8" "$prompt_out"
+assert_contains 'E9 --print apex emits ST terminator (ESC \)' "$PROMPT_ST" "$prompt_out"
+assert_eq "E9 --print apex exit 0" "0" "$prompt_rc"
+assert_eq "E9 --print apex stderr empty" "" "$prompt_err"
+prompt_e9_out="$prompt_out"
+
+# E10 — --print apex --no-hyperlink: bare hostname, no OSC 8 bytes.
+run_prompt "$PROMPT_WS_APP" --print apex --no-hyperlink
+assert_contains "E10 --print apex --no-hyperlink bare hostname" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_not_contains "E10 --print apex --no-hyperlink omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+assert_not_contains "E10 --print apex --no-hyperlink omits ST terminator" "$PROMPT_ST" "$prompt_out"
+
+# E11 — --print apex with XCIND_PROMPT_HYPERLINKS=0: bare hostname, no OSC 8.
+PROMPT_EXTRA_ENV=("XCIND_PROMPT_HYPERLINKS=0")
+run_prompt "$PROMPT_WS_APP" --print apex
+assert_contains "E11 XCIND_PROMPT_HYPERLINKS=0 bare hostname" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_not_contains "E11 XCIND_PROMPT_HYPERLINKS=0 omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# E12 — --print apex no proxied export: empty, exit 0, no OSC 8.
+run_prompt "$PROMPT_WSLESS_APP" --print apex
+assert_eq "E12 --print apex no export stdout empty" "" "$prompt_out"
+assert_eq "E12 --print apex no export exit 0" "0" "$prompt_rc"
+assert_not_contains "E12 --print apex no export omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# E13 — --print apex with explicit-disable template (mirror C3): empty.
+prompt_e13_app=$(make_ws_app "e13ws" "e13app" \
+  'XCIND_PROXY_DOMAIN="e13.localhost"
+XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE=""' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_e13_app" --print apex
+assert_eq "E13 --print apex explicit-disable template empty" "" "$prompt_out"
+assert_not_contains "E13 --print apex explicit-disable omits apex host" "e13.localhost" "$prompt_out"
+
+# E14 — --print apex with assigned-only export (mirror C4): empty.
+prompt_e14_app=$(make_wsless_app "e14app" \
+  'XCIND_PROXY_DOMAIN="e14.localhost"
+XCIND_PROXY_EXPORTS=("web=nginx:80;type=assigned")')
+run_prompt "$prompt_e14_app" --print apex
+assert_eq "E14 --print apex assigned-only empty" "" "$prompt_out"
+assert_not_contains "E14 --print apex assigned-only omits apex host" "e14.localhost" "$prompt_out"
+
+# E15 — --print app --apex: "<app> <linked apex>".
+run_prompt "$PROMPT_WS_APP" --print app --apex
+assert_eq "E15 --print app --apex starts with app + space" "frontend " "${prompt_out:0:9}"
+assert_contains "E15 --print app --apex contains apex host" "dev-frontend.xcind.localhost" "$prompt_out"
+assert_contains "E15 --print app --apex emits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# E16 — --print workspace --apex (workspace mode): "<workspace> <linked apex>".
+run_prompt "$PROMPT_WS_APP" --print workspace --apex
+assert_eq "E16 --print workspace --apex starts with workspace + space" "dev " "${prompt_out:0:4}"
+assert_contains "E16 --print workspace --apex contains apex host" "dev-frontend.xcind.localhost" "$prompt_out"
+
+# E17 — --print workspace --apex (workspaceless, apex present): apex link ONLY,
+# NO leading space (HUMAN-1). The base workspace field is empty, so the first
+# emitted byte must be the OSC 8 intro's ESC, never a space.
+prompt_e17_app=$(make_wsless_app "e17app" \
+  'XCIND_PROXY_DOMAIN="e17.localhost"
+XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_e17_app" --print workspace --apex
+assert_eq "E17 --print workspace --apex (workspaceless) no leading space" "$(printf '\033')" "${prompt_out:0:1}"
+assert_contains "E17 --print workspace --apex (workspaceless) contains apex host" "e17.localhost" "$prompt_out"
+assert_contains "E17 --print workspace --apex (workspaceless) emits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# E18 — --print apex --apex == --print apex (--apex ignored, no dup, no error).
+run_prompt "$PROMPT_WS_APP" --print apex --apex
+assert_eq "E18 --print apex --apex equals --print apex" "$prompt_e9_out" "$prompt_out"
+assert_eq "E18 --print apex --apex exit 0" "0" "$prompt_rc"
+
+# E19 — no trailing newline on every selector (sentinel '@' must abut the value).
+run_prompt_sentinel "$PROMPT_WS_APP" --print app
+assert_eq "E19 --print app no trailing newline" "frontend@" "$prompt_sentinel"
+run_prompt_sentinel "$PROMPT_WS_APP" --print workspace
+assert_eq "E19 --print workspace no trailing newline" "dev@" "$prompt_sentinel"
+run_prompt_sentinel "$PROMPT_WS_APP" --print both
+assert_eq "E19 --print both no trailing newline" "dev/frontend@" "$prompt_sentinel"
+prompt_e19_nl_at=$(printf '\n@')
+run_prompt_sentinel "$PROMPT_WS_APP" --print apex
+assert_not_contains "E19 --print apex no trailing newline (no LF before @)" "$prompt_e19_nl_at" "$prompt_sentinel"
+assert_eq "E19 --print apex sentinel ends with @" "@" "${prompt_sentinel: -1}"
+
+# E20 — invalid --print value: exit 2, stdout empty, stderr names the error.
+prompt_e20_dir=$(mktemp_d)
+run_prompt "$prompt_e20_dir" --print bogus
+assert_eq "E20 invalid --print value exit 2" "2" "$prompt_rc"
+assert_eq "E20 invalid --print value stdout empty" "" "$prompt_out"
+assert_contains "E20 invalid --print value stderr message" "invalid --print value" "$prompt_err"
+
+# E21 — --print with no value: exit 2, stdout empty, stderr non-empty.
+prompt_e21_dir=$(mktemp_d)
+run_prompt "$prompt_e21_dir" --print
+assert_eq "E21 --print missing value exit 2" "2" "$prompt_rc"
+assert_eq "E21 --print missing value stdout empty" "" "$prompt_out"
+assert_contains "E21 --print missing value stderr message" "--print requires a value" "$prompt_err"
+
+# E22 — backward-compat: --print both --apex is byte-identical to today's --apex.
+run_prompt "$PROMPT_WS_APP" --apex
+prompt_e22_legacy="$prompt_out"
+run_prompt "$PROMPT_WS_APP" --print both --apex
+assert_eq "E22 --print both --apex byte-identical to --apex" "$prompt_e22_legacy" "$prompt_out"
+
+# ======================================================================
 echo "=== Test: xcind-prompt — usage / unknown option (stderr path) ==="
 
 # --help: exit 0, usage on stdout, stderr empty.
