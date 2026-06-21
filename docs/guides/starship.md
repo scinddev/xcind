@@ -45,6 +45,41 @@ With `--apex`, the output becomes `<display> <linked hostname>`: the names-only 
 
 One caveat worth understanding: the link is **declared, not live**. It points where the app *would* serve, read straight from your config — Xcind does not check whether anything is actually listening. Clicking the link while the app is down yields an ordinary connection error, and there is no up/down indication in the prompt (that's out of scope for this helper).
 
+## Splitting the segment into per-field modules
+
+The single `[custom.xcind]` module above prints the whole segment in one style. If you want each field styled independently — say the workspace in magenta, the app in cyan, and the apex dimmed — print one field per module with `--print` and gate each with its own field-aware `--detect`:
+
+```toml
+# Three independently-styled modules off one helper.
+[custom.xcind_workspace]
+command = "xcind-prompt --print workspace"
+when    = "xcind-prompt --detect --print workspace"
+shell   = ["bash", "--noprofile", "--norc", "-c"]
+symbol  = "⬡ "
+style   = "bold magenta"
+format  = "[$symbol$output]($style) "
+
+[custom.xcind_app]
+command = "xcind-prompt --print app"
+when    = "xcind-prompt --detect --print app"
+shell   = ["bash", "--noprofile", "--norc", "-c"]
+style   = "bold cyan"
+format  = "[$output]($style) "
+
+[custom.xcind_apex]
+command = "xcind-prompt --print apex"
+when    = "xcind-prompt --detect --print apex"
+shell   = ["bash", "--noprofile", "--norc", "-c"]
+style   = "dimmed white"
+format  = "[$output]($style) "
+```
+
+`--print` selects a single field — `workspace`, `app`, or `apex` (the default `both` is what the single-module recipe prints). Each module auto-hides via its own `when` gate: the workspace module vanishes in a workspaceless app (where `--print workspace` is empty), and the apex module vanishes when the app declares no apex. The app module shows whenever you're inside any Xcind app.
+
+The apex field here is the same OSC 8-linked hostname as `--apex` above, so the [terminal-support / plain-text fallback](#terminal-support-and-plain-text-fallback) (`--no-hyperlink`, `XCIND_PROMPT_HYPERLINKS=0`) and the [declared-not-live caveat](#showing-the-apex-hostname) apply unchanged — add `--no-hyperlink` to the `xcind_apex` `command` if your terminal can't render OSC 8.
+
+**Performance note (the honest cost).** Field-aware detection is not free. Plain `--detect` is a fast stat-walk; `--detect --print workspace|apex` sources config to know availability (no jq/Docker/hooks; within Starship's 500ms budget) — it must, because whether a workspace or apex exists is only knowable after resolving the config. The single-module recipe draws with one cheap `--detect`; this three-module recipe runs up to three `--detect` plus three `--print` invocations per prompt draw. That's still well under the budget and still jq/Docker/hook-free, but it is heavier than the one-module recipe — choose it deliberately when you want the per-field styling, and stay with the single module otherwise. As with the single-module setup, do **not** raise Starship's `command_timeout` to accommodate it (see [A note on prompt width](#a-note-on-prompt-width)).
+
 ## Terminal support and plain-text fallback
 
 OSC 8 hyperlinks render as clickable text in terminals that support them — Windows Terminal and recent JetBrains terminals among them. Older terminal emulators don't recognize the escape sequence and will show the raw escape bytes around the hostname instead.
