@@ -632,6 +632,147 @@ prompt_f13_plain_cnt=$(wc -c <"$prompt_f13_marker" | tr -d '[:space:]')
 assert_eq "F13 plain run = 2 sources (control: probe + config load)" "2" "$prompt_f13_plain_cnt"
 
 # ======================================================================
+echo "=== Test: xcind-prompt — G. --print apex-url (plain URL, no OSC 8) ==="
+
+# apex-url emits field 1 of the apex TSV (the URL, "<scheme>://<hostname>"),
+# always as PLAIN TEXT — no OSC 8 hyperlink, independent of --no-hyperlink /
+# XCIND_PROMPT_HYPERLINKS. That no-escape-ever behavior is the differentiator
+# from --print apex (which emits the OSC 8-linked hostname), proven by G4/G10.
+
+# G1 — apex present, EXACT URL (mirror C7's https fixture: tls=auto/mode=auto).
+# assert_eq on the full URL proves apex-url reads field 1 (the URL), not field 2
+# (the bare host) — and that the scheme is rendered as plain text.
+prompt_g1_app=$(make_ws_app "schemews" "schemeapp" \
+  'XCIND_PROXY_DOMAIN="scheme.localhost"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_g1_app" --print apex-url
+assert_eq "G1 --print apex-url exact URL (https)" "https://schemews-schemeapp.scheme.localhost" "$prompt_out"
+assert_eq "G1 --print apex-url exit 0" "0" "$prompt_rc"
+assert_eq "G1 --print apex-url stderr empty" "" "$prompt_err"
+
+# G2 — http variant (mirror C9's tls=disable fixture): proves both schemes render
+# as plain text.
+prompt_g2_app=$(make_ws_app "schemews" "schemeapp" \
+  'XCIND_PROXY_DOMAIN="scheme.localhost"' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80;tls=disable")')
+run_prompt "$prompt_g2_app" --print apex-url
+assert_eq "G2 --print apex-url exact URL (http)" "http://schemews-schemeapp.scheme.localhost" "$prompt_out"
+
+# G3 — apex present on the real anchor fixture (mirror E9): the URL contains the
+# apex host preceded by "://"; exit 0, stderr empty.
+run_prompt "$PROMPT_WS_APP" --print apex-url
+assert_contains "G3 --print apex-url contains ://apex-host" "://dev-frontend.xcind.localhost" "$prompt_out"
+assert_eq "G3 --print apex-url exit 0" "0" "$prompt_rc"
+assert_eq "G3 --print apex-url stderr empty" "" "$prompt_err"
+prompt_g3_out="$prompt_out"
+
+# G4 — NO OSC 8 bytes EVEN WITHOUT --no-hyperlink (the differentiator vs apex,
+# whose plain --print apex DOES emit OSC 8 per E9). apex-url never escapes.
+assert_not_contains "G4 --print apex-url omits OSC 8 intro bytes (no flag)" "$PROMPT_OSC8" "$prompt_g3_out"
+assert_not_contains "G4 --print apex-url omits ST terminator (no flag)" "$PROMPT_ST" "$prompt_g3_out"
+
+# G5 — --no-hyperlink is a no-op: byte-identical to G3, still no OSC 8 (mirror E10).
+run_prompt "$PROMPT_WS_APP" --print apex-url --no-hyperlink
+assert_eq "G5 --print apex-url --no-hyperlink byte-identical to plain" "$prompt_g3_out" "$prompt_out"
+assert_not_contains "G5 --print apex-url --no-hyperlink omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# G6 — XCIND_PROMPT_HYPERLINKS=0 is a no-op: same URL, no OSC 8 (mirror E11).
+PROMPT_EXTRA_ENV=("XCIND_PROMPT_HYPERLINKS=0")
+run_prompt "$PROMPT_WS_APP" --print apex-url
+assert_eq "G6 XCIND_PROMPT_HYPERLINKS=0 byte-identical to plain" "$prompt_g3_out" "$prompt_out"
+assert_not_contains "G6 XCIND_PROMPT_HYPERLINKS=0 omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# G7 — no proxied export: empty, exit 0, no OSC 8 (mirror E12).
+run_prompt "$PROMPT_WSLESS_APP" --print apex-url
+assert_eq "G7 --print apex-url no export stdout empty" "" "$prompt_out"
+assert_eq "G7 --print apex-url no export exit 0" "0" "$prompt_rc"
+assert_not_contains "G7 --print apex-url no export omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# G8 — explicit-disable apex template: empty (mirror E13/C3).
+prompt_g8_app=$(make_ws_app "g8ws" "g8app" \
+  'XCIND_PROXY_DOMAIN="g8.localhost"
+XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE=""' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_g8_app" --print apex-url
+assert_eq "G8 --print apex-url explicit-disable template empty" "" "$prompt_out"
+assert_not_contains "G8 --print apex-url explicit-disable omits apex host" "g8.localhost" "$prompt_out"
+
+# G9 — assigned-only export: empty (mirror E14/C4).
+prompt_g9_app=$(make_wsless_app "g9app" \
+  'XCIND_PROXY_DOMAIN="g9.localhost"
+XCIND_PROXY_EXPORTS=("web=nginx:80;type=assigned")')
+run_prompt "$prompt_g9_app" --print apex-url
+assert_eq "G9 --print apex-url assigned-only empty" "" "$prompt_out"
+assert_not_contains "G9 --print apex-url assigned-only omits apex host" "g9.localhost" "$prompt_out"
+
+# G10 — --print apex-url --apex == --print apex-url (--apex ignored, no dup, no
+# error, no OSC 8 appended) (mirror E18).
+run_prompt "$PROMPT_WS_APP" --print apex-url --apex
+assert_eq "G10 --print apex-url --apex equals --print apex-url" "$prompt_g3_out" "$prompt_out"
+assert_eq "G10 --print apex-url --apex exit 0" "0" "$prompt_rc"
+assert_not_contains "G10 --print apex-url --apex omits OSC 8 bytes" "$PROMPT_OSC8" "$prompt_out"
+
+# G11 — no trailing newline (mirror E19): the sentinel '@' must abut the URL.
+prompt_g11_nl_at=$(printf '\n@')
+run_prompt_sentinel "$PROMPT_WS_APP" --print apex-url
+assert_not_contains "G11 --print apex-url no trailing newline (no LF before @)" "$prompt_g11_nl_at" "$prompt_sentinel"
+assert_eq "G11 --print apex-url sentinel ends with @" "@" "${prompt_sentinel: -1}"
+
+# G12 — invalid --print value still exit 2; the new error string enumerates
+# apex-url (regression guard + positive coverage of the updated validator).
+prompt_g12_dir=$(mktemp_d)
+run_prompt "$prompt_g12_dir" --print bogus
+assert_eq "G12 invalid --print value exit 2" "2" "$prompt_rc"
+assert_eq "G12 invalid --print value stdout empty" "" "$prompt_out"
+assert_contains "G12 invalid --print value stderr lists apex-url" "apex-url" "$prompt_err"
+
+# G13 — --detect --print apex-url with apex present: exit 0, stderr empty (F8).
+run_prompt "$PROMPT_WS_APP" --detect --print apex-url
+assert_eq "G13 --detect --print apex-url (apex present) exit 0" "0" "$prompt_rc"
+assert_eq "G13 --detect --print apex-url (apex present) stderr empty" "" "$prompt_err"
+
+# G14 — --detect --print apex-url no proxied export: non-zero, stderr empty (F9).
+run_prompt "$PROMPT_WSLESS_APP" --detect --print apex-url
+assert_not_contains "G14 --detect --print apex-url (no export) non-zero" "0" "$prompt_rc"
+assert_eq "G14 --detect --print apex-url (no export) stderr empty" "" "$prompt_err"
+
+# G15 — --detect --print apex-url explicit-disable template: non-zero (F10).
+prompt_g15_app=$(make_ws_app "g15ws" "g15app" \
+  'XCIND_PROXY_DOMAIN="g15.localhost"
+XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE=""' \
+  'XCIND_PROXY_EXPORTS=("web=nginx:80")')
+run_prompt "$prompt_g15_app" --detect --print apex-url
+assert_not_contains "G15 --detect --print apex-url (explicit-disable) non-zero" "0" "$prompt_rc"
+assert_eq "G15 --detect --print apex-url (explicit-disable) stderr empty" "" "$prompt_err"
+
+# G16 — --detect --print apex-url assigned-only export: non-zero (F11).
+prompt_g16_app=$(make_wsless_app "g16app" \
+  'XCIND_PROXY_DOMAIN="g16.localhost"
+XCIND_PROXY_EXPORTS=("web=nginx:80;type=assigned")')
+run_prompt "$prompt_g16_app" --detect --print apex-url
+assert_not_contains "G16 --detect --print apex-url (assigned-only) non-zero" "0" "$prompt_rc"
+assert_eq "G16 --detect --print apex-url (assigned-only) stderr empty" "" "$prompt_err"
+
+# G17 — --detect --print apex-url outside an app: non-zero, stderr empty (F12).
+prompt_g17_dir=$(mktemp_d)
+run_prompt "$prompt_g17_dir" --detect --print apex-url
+assert_not_contains "G17 --detect --print apex-url outside non-zero" "0" "$prompt_rc"
+assert_eq "G17 --detect --print apex-url outside stderr empty" "" "$prompt_err"
+
+# G18 — detect cost: --detect --print apex-url runs the SAME trimmed prepare as
+# apex = 2 sources (mirror F13's apex line). Proves apex-url wires into the
+# trimmed-prepare arm, not a cheap stat-walk arm.
+prompt_g18_marker="$(mktemp_d)/sources"
+prompt_g18_app=$(make_ws_app "g18ws" "g18app" \
+  'XCIND_PROXY_DOMAIN="g18.localhost"' \
+  "XCIND_PROXY_EXPORTS=(\"web=nginx:80\")
+printf x >>\"$prompt_g18_marker\"")
+rm -f "$prompt_g18_marker"
+run_prompt "$prompt_g18_app" --detect --print apex-url
+prompt_g18_cnt=$(wc -c <"$prompt_g18_marker" | tr -d '[:space:]')
+assert_eq "G18 --detect --print apex-url = 2 sources (trimmed prepare)" "2" "$prompt_g18_cnt"
+
+# ======================================================================
 echo "=== Test: xcind-prompt — usage / unknown option (stderr path) ==="
 
 # --help: exit 0, usage on stdout, stderr empty.

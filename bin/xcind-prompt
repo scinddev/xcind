@@ -11,7 +11,10 @@
 #   xcind-prompt                 Print "<workspace>/<app>" (or "<app>" when
 #                                workspaceless); empty when outside an app.
 #   xcind-prompt --print FIELD   Select which field to print: both (default,
-#                                "<workspace>/<app>"), workspace, app, or apex.
+#                                "<workspace>/<app>"), workspace, app, apex, or
+#                                apex-url. apex-url emits the apex URL
+#                                ("<scheme>://<hostname>") as plain text — no
+#                                OSC 8, so the hyperlink flags are a no-op for it.
 #   xcind-prompt --apex          Append the apex hostname as an OSC 8 hyperlink.
 #   xcind-prompt --no-hyperlink  Emit plain text (apex hostname, no escapes).
 #   xcind-prompt --detect        Exit 0 inside an app, non-zero outside; no
@@ -51,7 +54,8 @@ Usage: xcind-prompt [OPTIONS]
 Emit a compact Xcind context segment for a shell prompt (e.g. Starship).
 
 Options:
-  --print FIELD     Print a specific field: both (default), workspace, app, apex
+  --print FIELD     Print a specific field: both (default), workspace, app,
+                    apex, apex-url
   --apex            Append the apex hostname as an OSC 8 clickable hyperlink
   --no-hyperlink    Emit plain text (apex hostname, no escape sequences)
   --detect          Exit 0 inside an app, non-zero outside; no output.
@@ -71,9 +75,12 @@ Default output is "<workspace>/<app>" (or "<app>" when workspaceless), and
 empty when run outside any app. There is no trailing newline.
 
 --print selects one field: both (default, byte-identical to no --print),
-workspace (empty when workspaceless), app, or apex (the OSC 8-linked apex
-hostname, or empty when no apex). --apex appends the apex link to the name
-selectors (both/app/workspace); it is redundant and ignored for --print apex.
+workspace (empty when workspaceless), app, apex (the OSC 8-linked apex
+hostname, or empty when no apex), or apex-url (the apex URL as plain text —
+"<scheme>://<hostname>"; no OSC 8, so --no-hyperlink / XCIND_PROMPT_HYPERLINKS=0
+have no effect on it). --apex appends the apex link to the name selectors
+(both/app/workspace); it is redundant and ignored for --print apex and
+--print apex-url.
 HELPEOF
 }
 
@@ -132,9 +139,9 @@ while [[ $# -gt 0 ]]; do
       exit 2
     }
     case "$1" in
-    both | workspace | app | apex) _print="$1" ;;
+    both | workspace | app | apex | apex-url) _print="$1" ;;
     *)
-      echo "xcind-prompt: invalid --print value: $1 (expected: both, workspace, app, apex)" >&2
+      echo "xcind-prompt: invalid --print value: $1 (expected: both, workspace, app, apex, apex-url)" >&2
       exit 2
       ;;
     esac
@@ -165,7 +172,7 @@ if [[ $_detect == true ]]; then
   both | app)
     if __xcind-app-root >/dev/null 2>&1; then exit 0; else exit 1; fi
     ;;
-  workspace | apex)
+  workspace | apex | apex-url)
     _xcind_prompt_prepare >/dev/null 2>&1 || exit 1
     if [[ $_print == workspace ]]; then
       [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE:-} ]] && exit 0
@@ -189,8 +196,9 @@ _xcind_prompt_prepare || exit 0
 # no jq/Docker/hooks/cache. apex_link is empty when no apex resolves (disabled
 # template or no proxied export); the append/dispatch below treat that as "none".
 apex_link=""
+apex_url=""
 need_apex=false
-if [[ $_print == apex ]] || [[ $_apex == true ]]; then
+if [[ $_print == apex ]] || [[ $_print == apex-url ]] || [[ $_apex == true ]]; then
   need_apex=true
 fi
 if [[ $need_apex == true ]]; then
@@ -217,13 +225,14 @@ both)
   ;;
 app) display="$XCIND_APP" ;;
 workspace) display="${XCIND_WORKSPACE:-}" ;;
-apex) display="$apex_link" ;; # already linked/plain, or empty when no apex
+apex) display="$apex_link" ;;    # already linked/plain, or empty when no apex
+apex-url) display="$apex_url" ;; # plain URL (scheme://host), no OSC 8; empty when no apex
 esac
 
 # Append the apex link to the NAME selectors (both/app/workspace) only, and only
 # when one resolved. When the base field is empty (e.g. workspaceless
 # `--print workspace --apex`) emit the apex link alone with NO leading space.
-if [[ $_print != apex ]] && [[ $_apex == true ]] && [[ -n $apex_link ]]; then
+if [[ $_print != apex ]] && [[ $_print != apex-url ]] && [[ $_apex == true ]] && [[ -n $apex_link ]]; then
   if [[ -n $display ]]; then
     display="$display $apex_link"
   else
