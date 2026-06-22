@@ -72,6 +72,9 @@ assert_eq "no docker-compose.yaml in state dir" "false" "$([ -f "$PROXY_STATE_DI
 # Verify config.sh contents
 config_content=$(<"$PROXY_CONFIG_DIR/config.sh")
 assert_contains "config has XCIND_PROXY_DOMAIN" "XCIND_PROXY_DOMAIN" "$config_content"
+# Default domain must be >=2 labels so *.{domain} is a valid wildcard on strict
+# TLS stacks (ADR-0016). A single-label default (localhost) breaks macOS/Safari/Go.
+assert_contains "config domain defaults to localhost.scind.io" 'XCIND_PROXY_DOMAIN="localhost.scind.io"' "$config_content"
 assert_contains "config has XCIND_PROXY_IMAGE" "XCIND_PROXY_IMAGE" "$config_content"
 assert_contains "config has XCIND_PROXY_HTTP_PORT" "XCIND_PROXY_HTTP_PORT" "$config_content"
 # TLS config vars (ADR-0009)
@@ -1538,6 +1541,40 @@ MKCERT_STUB
 else
   echo "  (skipped — openssl not on PATH)"
 fi
+
+# ======================================================================
+echo ""
+echo "=== Test: ensure-certs single-label domain warning (ADR-0016) ==="
+# A single-label proxy domain yields a *.singlelabel wildcard that strict TLS
+# stacks reject; ensure-certs must warn (not fail). Dotted domains stay silent,
+# and disabled mode warns about nothing (it returns before the check).
+WARN_HOME=$(mktemp_d)
+_warn_orig_HOME="$HOME"
+export HOME="$WARN_HOME"
+XCIND_PROXY_STATE_DIR="$HOME/.local/state/xcind/proxy"
+XCIND_PROXY_CONFIG_DIR="$HOME/.config/xcind/proxy"
+mkdir -p "$XCIND_PROXY_STATE_DIR" "$XCIND_PROXY_CONFIG_DIR"
+
+XCIND_PROXY_TLS_MODE="auto"
+XCIND_PROXY_DOMAIN="localhost"
+warn_single=$(__xcind-proxy-ensure-certs 2>&1 1>/dev/null) || true
+assert_contains "ensure-certs: single-label domain warns" "has no dot" "$warn_single"
+
+XCIND_PROXY_DOMAIN="localhost.scind.io"
+warn_dotted=$(__xcind-proxy-ensure-certs 2>&1 1>/dev/null) || true
+assert_not_contains "ensure-certs: dotted domain does not warn" "has no dot" "$warn_dotted"
+
+XCIND_PROXY_TLS_MODE="disabled"
+XCIND_PROXY_DOMAIN="localhost"
+warn_disabled=$(__xcind-proxy-ensure-certs 2>&1 1>/dev/null) || true
+assert_not_contains "ensure-certs: disabled mode never warns" "has no dot" "$warn_disabled"
+
+export HOME="$_warn_orig_HOME"
+rm -rf "$WARN_HOME"
+XCIND_PROXY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy"
+XCIND_PROXY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy"
+unset XCIND_PROXY_TLS_MODE XCIND_PROXY_DOMAIN
+unset _warn_orig_HOME
 
 # ======================================================================
 echo ""

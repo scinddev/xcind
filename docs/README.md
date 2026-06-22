@@ -17,6 +17,7 @@ Recipes for specific tasks.
 
 - [Add Xcind to an existing Compose project](./guides/add-to-existing-project.md)
 - [Set up the Traefik proxy](./guides/proxy-setup.md)
+- [Local HTTPS: certificates, trust, and domains](./guides/https-tls.md)
 - [Workspaces vs single apps](./guides/workspaces-vs-apps.md)
 - [Author custom hooks](./guides/custom-hooks.md)
 - [`host.docker.internal` and host-gateway](./guides/host-gateway.md)

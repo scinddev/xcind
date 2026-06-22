@@ -296,7 +296,7 @@ __xcind-workspace-status() {
   # shellcheck disable=SC1091
   source "$ws_root/.xcind.sh"
   local ws_name="${XCIND_WORKSPACE:-$(basename "$ws_root")}"
-  local ws_domain="${XCIND_PROXY_DOMAIN:-localhost}"
+  local ws_domain="${XCIND_PROXY_DOMAIN:-localhost.scind.io}"
 
   # Source global proxy config if available
   local proxy_config="${XCIND_PROXY_CONFIG_DIR}/config.sh"

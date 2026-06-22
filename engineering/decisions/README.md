@@ -23,6 +23,7 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0013](./0013-host-docker-internal-normalization.md) | Automatic `host.docker.internal` Normalization | Accepted |
 | [0014](./0014-two-track-documentation.md) | Two-Track Documentation: User (Diátaxis) + Engineering (LDS) | Accepted |
 | [0015](./0015-application-export-introspection.md) | Application Export Introspection and Command Placement | Proposed |
+| [0016](./0016-proxy-domain-wildcard-constraint.md) | Proxy Domain Must Be Multi-Label; Default `localhost.scind.io` | Accepted |
 
 ## ADR Format
 

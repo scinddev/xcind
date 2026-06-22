@@ -18,4 +18,4 @@ User-facing glossary. For maintainer-level terminology, see [`engineering/produc
 | **Compose env file** | Env file passed via `--env-file` for `${VAR}` substitution in compose YAML. Listed in `XCIND_COMPOSE_ENV_FILES`. |
 | **App env file** | Env file injected into running containers via `env_file:`. Listed in `XCIND_APP_ENV_FILES`. |
 | **Tool** | A binary inside a service container exposed to IDE integrations via `XCIND_TOOLS`. |
-| **Apex template** | A URL template that omits `{export}` (e.g. `myapp.localhost`). Used when an app has a single, headlining export. |
+| **Apex template** | A URL template that omits `{export}` (e.g. `myapp.localhost.scind.io`). Used when an app has a single, headlining export. |

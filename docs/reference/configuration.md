@@ -37,7 +37,7 @@ Walkthrough: [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `XCIND_PROXY_EXPORTS` | `()` | Service exports (proxied or assigned ports) |
-| `XCIND_PROXY_DOMAIN` | `localhost` | Domain suffix for generated hostnames |
+| `XCIND_PROXY_DOMAIN` | `localhost.scind.io` | Domain suffix for generated hostnames (must be ≥2 labels — see [Local HTTPS](../guides/https-tls.md)) |
 
 `XCIND_PROXY_EXPORTS` entry format: `export[=service][:port][;type=proxied\|assigned[;…]]`
 

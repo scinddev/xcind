@@ -37,7 +37,7 @@ xcind-compose down
 
 ## 3. (Optional) Reach it by hostname
 
-If you want to hit your app at `https://my-app.localhost` instead of `localhost:PORT`, set up the shared Traefik proxy once:
+If you want to hit your app at `https://my-app.localhost.scind.io` instead of `localhost:PORT`, set up the shared Traefik proxy once:
 
 ```bash
 xcind-proxy init
@@ -54,7 +54,7 @@ Recreate the app and visit the generated URL:
 
 ```bash
 xcind-compose up -d
-# https://my-app-web.localhost
+# https://my-app-web.localhost.scind.io
 ```
 
 Full walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
