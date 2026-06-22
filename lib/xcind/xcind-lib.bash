@@ -777,6 +777,18 @@ __xcind-resolve-json() {
   local _app_name="${XCIND_APP:-$(basename "$app_root")}"
   local _workspaceless="${XCIND_WORKSPACELESS:-1}"
 
+  local _had_app_url_template="${XCIND_APP_URL_TEMPLATE+set}"
+  local _had_app_apex_url_template="${XCIND_APP_APEX_URL_TEMPLATE+set}"
+  local _app_url_template="${XCIND_APP_URL_TEMPLATE:-}"
+  local _app_apex_url_template="${XCIND_APP_APEX_URL_TEMPLATE:-}"
+  __xcind-resolve-url-templates
+  if [ "$_had_app_url_template" = "set" ]; then
+    XCIND_APP_URL_TEMPLATE="$_app_url_template"
+  fi
+  if [ "$_had_app_apex_url_template" = "set" ]; then
+    XCIND_APP_APEX_URL_TEMPLATE="$_app_apex_url_template"
+  fi
+
   # Resolve tools
   local tools_json
   tools_json=$(__xcind-resolve-tools)

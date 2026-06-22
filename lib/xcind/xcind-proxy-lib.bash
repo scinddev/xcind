@@ -770,7 +770,7 @@ __xcind-proxy-json-for-app() {
 
   # Establish domain + TLS mode exactly as the GENERATE hook does.
   local domain="${XCIND_PROXY_DOMAIN:-localhost}"
-  local global_config="${XCIND_PROXY_CONFIG_DIR}/config.sh"
+  local global_config="${XCIND_PROXY_CONFIG_DIR:-}/config.sh"
   if [ -f "$global_config" ]; then
     # shellcheck disable=SC1090
     source "$global_config"
