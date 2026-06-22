@@ -1,6 +1,6 @@
 # Set up the Traefik proxy
 
-Xcind ships a shared Traefik reverse proxy so you can reach apps at `https://myapp.localhost` instead of `localhost:PORT`. One Traefik instance runs across all your Xcind apps.
+Xcind ships a shared Traefik reverse proxy so you can reach apps at `https://myapp.localhost.scind.io` instead of `localhost:PORT`. One Traefik instance runs across all your Xcind apps. For certificate trust and the domain rules behind that hostname, see [Local HTTPS](./https-tls.md).
 
 ## Initialize once
 
@@ -33,8 +33,8 @@ Generated hostnames:
 
 | Mode | Template | Example |
 |------|----------|---------|
-| Workspaceless | `{app}-{export}.{domain}` | `myapp-api.localhost` |
-| Workspace | `{workspace}-{app}-{export}.{domain}` | `dev-backend-api.xcind.localhost` |
+| Workspaceless | `{app}-{export}.{domain}` | `myapp-api.localhost.scind.io` |
+| Workspace | `{workspace}-{app}-{export}.{domain}` | `dev-backend-api.localhost.scind.io` |
 
 After editing exports, recreate the app:
 
@@ -60,7 +60,7 @@ Bindings persist across restarts under `~/.local/state/xcind/proxy/assigned-port
 `xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` with the current values. The file is yours to edit:
 
 ```bash
-XCIND_PROXY_DOMAIN="localhost"        # domain suffix for hostnames
+XCIND_PROXY_DOMAIN="localhost.scind.io"   # domain suffix for hostnames (use ≥2 labels)
 XCIND_PROXY_IMAGE="traefik:v3"
 XCIND_PROXY_HTTP_PORT="80"
 XCIND_PROXY_DASHBOARD="false"

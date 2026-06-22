@@ -12,9 +12,11 @@ A bash script (not YAML/TOML) means:
 
 Trade-off: sourcing arbitrary shell from another developer's repo is dangerous. Xcind only walks upward from your current directory and only sources files you can already see and review. Workflows that auto-discover external apps (`xcind-application list`, `status`) say so up-front in their `--help` output.
 
-## Why is the proxy domain `localhost`?
+## Why is the proxy domain `localhost.scind.io`?
 
-RFC 6761 reserves `.localhost` for loopback. No DNS, no `/etc/hosts`, no certificates — `https://myapp.localhost` works on every developer's machine out of the box. (You can change it via `XCIND_PROXY_DOMAIN`, but you almost never need to.)
+The default proxy domain is `localhost.scind.io`: a public name whose `*.localhost.scind.io` wildcard resolves to loopback (`127.0.0.1` / `::1`). It is **two-plus labels on purpose** — a single-label wildcard like `*.localhost` is rejected by strict TLS stacks (macOS `curl`/Safari, Go), so `https://myapp.localhost` fails for them even though Chrome accepts it. `localhost.scind.io` gives a valid wildcard certificate on every stack.
+
+Native `.localhost` (RFC 6761, loopback with zero DNS config) is still supported via `XCIND_PROXY_DOMAIN` and resolves entirely on-machine, but it is single-label — so it works only in lenient clients like Chrome. See [Local HTTPS](../guides/https-tls.md) for the full rationale and trust setup.
 
 See [ADR-0008: Traefik reverse proxy](../../engineering/decisions/0008-traefik-reverse-proxy.md).
 

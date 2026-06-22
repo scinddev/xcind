@@ -55,7 +55,7 @@ Hostnames switch templates:
 
 | Mode | Template | Example |
 |------|----------|---------|
-| App | `{app}-{export}.{domain}` | `myapp-api.localhost` |
+| App | `{app}-{export}.{domain}` | `myapp-api.localhost.scind.io` |
 | Workspace | `{workspace}-{app}-{export}.{domain}` | `dev-backend-api.xcind.localhost` |
 
 A `{workspace}-internal` Docker network is created automatically, with network aliases so services can reach each other by `{app}-{service}` (default template — see [Configuration reference](../reference/configuration.md) for `XCIND_WORKSPACE_SERVICE_TEMPLATE`).
