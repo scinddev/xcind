@@ -1338,6 +1338,98 @@ unset XCIND_PROXY_CONFIG_DIR XCIND_PROXY_STATE_DIR XCIND_PROXY_DIR XCIND_PROXY_C
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-proxy-apex-for-app (direct, jq/Docker/yq-free) ==="
+
+# This function is the reusable apex anchor: no service validation, no port
+# inference, no hooks, no cache writes — so these tests call it directly and
+# need no resolved-config.yaml or yq. Each case sets only the env it exercises.
+APEX_FN_TMP=$(mktemp_d)
+export XCIND_APP="myapp"
+export XCIND_WORKSPACE=""
+export XCIND_PROXY_DOMAIN="localhost"
+export XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+# An empty config dir keeps the optional global config.sh source a no-op until
+# the override case below creates one.
+export XCIND_PROXY_CONFIG_DIR="$APEX_FN_TMP/proxy-config"
+mkdir -p "$XCIND_PROXY_CONFIG_DIR"
+unset XCIND_PROXY_TLS_MODE
+
+# 1. apex disabled (empty template) → non-zero, empty stdout
+XCIND_PROXY_EXPORTS=("web")
+XCIND_APP_APEX_URL_TEMPLATE=""
+apex_d_out=$(__xcind-proxy-apex-for-app) && apex_d_rc=0 || apex_d_rc=$?
+assert_eq "apex-fn disabled: returns non-zero" "1" "$apex_d_rc"
+assert_eq "apex-fn disabled: empty stdout" "" "$apex_d_out"
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+
+# 2. no proxied export (only an assigned entry) → non-zero
+XCIND_PROXY_EXPORTS=("web;type=assigned")
+apex_a_out=$(__xcind-proxy-apex-for-app) && apex_a_rc=0 || apex_a_rc=$?
+assert_eq "apex-fn assigned-only: returns non-zero" "1" "$apex_a_rc"
+assert_eq "apex-fn assigned-only: empty stdout" "" "$apex_a_out"
+
+# 3. no exports at all (set -u safe) → non-zero
+unset XCIND_PROXY_EXPORTS
+apex_n_out=$(__xcind-proxy-apex-for-app) && apex_n_rc=0 || apex_n_rc=$?
+assert_eq "apex-fn no-exports: returns non-zero" "1" "$apex_n_rc"
+assert_eq "apex-fn no-exports: empty stdout" "" "$apex_n_out"
+
+# 4. workspaceless, tls auto → https://myapp.localhost / myapp.localhost / https
+XCIND_PROXY_EXPORTS=("web")
+apex_out=$(__xcind-proxy-apex-for-app)
+IFS=$'\t' read -r apex_url apex_host apex_scheme <<<"$apex_out"
+assert_eq "apex-fn auto: url" "https://myapp.localhost" "$apex_url"
+assert_eq "apex-fn auto: host" "myapp.localhost" "$apex_host"
+assert_eq "apex-fn auto: scheme" "https" "$apex_scheme"
+
+# 5. workspace mode → https://dev-myapp.localhost / dev-myapp.localhost / https
+XCIND_WORKSPACE="dev"
+XCIND_APP_APEX_URL_TEMPLATE='{workspace}-{app}.{domain}'
+apex_ws_out=$(__xcind-proxy-apex-for-app)
+IFS=$'\t' read -r apex_ws_url apex_ws_host apex_ws_scheme <<<"$apex_ws_out"
+assert_eq "apex-fn workspace: url" "https://dev-myapp.localhost" "$apex_ws_url"
+assert_eq "apex-fn workspace: host" "dev-myapp.localhost" "$apex_ws_host"
+assert_eq "apex-fn workspace: scheme" "https" "$apex_ws_scheme"
+# Restore the workspaceless template for the remaining cases.
+XCIND_WORKSPACE=""
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+
+# 6. scheme = http — export-level tls=disable collapses the apex to http
+XCIND_PROXY_EXPORTS=("web;tls=disable")
+apex_http_out=$(__xcind-proxy-apex-for-app)
+IFS=$'\t' read -r apex_http_url apex_http_host apex_http_scheme <<<"$apex_http_out"
+assert_eq "apex-fn http (tls=disable): url" "http://myapp.localhost" "$apex_http_url"
+assert_eq "apex-fn http (tls=disable): host" "myapp.localhost" "$apex_http_host"
+assert_eq "apex-fn http (tls=disable): scheme" "http" "$apex_http_scheme"
+# Proxy-level disabled forces http too (overrides per-export tls).
+XCIND_PROXY_EXPORTS=("web")
+apex_pdis_scheme=$( (
+  export XCIND_PROXY_TLS_MODE="disabled"
+  __xcind-proxy-apex-for-app
+) | cut -f3)
+assert_eq "apex-fn http (proxy disabled): scheme" "http" "$apex_pdis_scheme"
+
+# 7. first-proxied anchor — an earlier assigned entry does not consume the slot
+XCIND_PROXY_EXPORTS=("api;type=assigned" "web")
+apex_first_out=$(__xcind-proxy-apex-for-app)
+IFS=$'\t' read -r apex_first_url apex_first_host apex_first_scheme <<<"$apex_first_out"
+assert_eq "apex-fn first-proxied: host from web (not assigned api)" "myapp.localhost" "$apex_first_host"
+assert_eq "apex-fn first-proxied: url" "https://myapp.localhost" "$apex_first_url"
+
+# 8. global config.sh domain override is sourced (mirrors the GENERATE hook)
+echo 'XCIND_PROXY_DOMAIN="override.test"' >"$XCIND_PROXY_CONFIG_DIR/config.sh"
+XCIND_PROXY_EXPORTS=("web")
+apex_cfg_host=$(__xcind-proxy-apex-for-app | cut -f2)
+assert_eq "apex-fn config.sh override: host uses override domain" "myapp.override.test" "$apex_cfg_host"
+rm -f "$XCIND_PROXY_CONFIG_DIR/config.sh"
+
+# Teardown — restore the pre-section env (XCIND_PROXY_CONFIG_DIR was unset above).
+unset XCIND_PROXY_EXPORTS XCIND_PROXY_CONFIG_DIR
+rm -rf "$APEX_FN_TMP"
+unset APEX_FN_TMP
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-proxy-ensure-certs (openssl fallback) ==="
 
 if command -v openssl >/dev/null 2>&1; then

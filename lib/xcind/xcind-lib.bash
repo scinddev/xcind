@@ -777,6 +777,18 @@ __xcind-resolve-json() {
   local _app_name="${XCIND_APP:-$(basename "$app_root")}"
   local _workspaceless="${XCIND_WORKSPACELESS:-1}"
 
+  local _had_app_url_template="${XCIND_APP_URL_TEMPLATE+set}"
+  local _had_app_apex_url_template="${XCIND_APP_APEX_URL_TEMPLATE+set}"
+  local _app_url_template="${XCIND_APP_URL_TEMPLATE:-}"
+  local _app_apex_url_template="${XCIND_APP_APEX_URL_TEMPLATE:-}"
+  __xcind-resolve-url-templates
+  if [ "$_had_app_url_template" = "set" ]; then
+    XCIND_APP_URL_TEMPLATE="$_app_url_template"
+  fi
+  if [ "$_had_app_apex_url_template" = "set" ]; then
+    XCIND_APP_APEX_URL_TEMPLATE="$_app_apex_url_template"
+  fi
+
   # Resolve tools
   local tools_json
   tools_json=$(__xcind-resolve-tools)
@@ -789,6 +801,20 @@ __xcind-resolve-json() {
   local proxied_json
   proxied_json=$(__xcind-proxy-json-for-app "$app_root")
 
+  # Resolve apex (present-but-null when disabled or no proxied export).
+  # Subshell command-subst mirrors assigned_json above; helper side effects
+  # (optional config.sh source) stay confined here.
+  local apex_json
+  local _apex_tsv _apex_url _apex_host _apex_scheme
+  if _apex_tsv=$(__xcind-proxy-apex-for-app 2>/dev/null); then
+    IFS=$'\t' read -r _apex_url _apex_host _apex_scheme <<<"$_apex_tsv"
+    apex_json=$(jq -n \
+      --arg url "$_apex_url" --arg host "$_apex_host" --arg scheme "$_apex_scheme" \
+      '{enabled: true, hostname: $host, url: $url, scheme: $scheme}')
+  else
+    apex_json='{"enabled":false,"hostname":null,"url":null,"scheme":null}'
+  fi
+
   # Build JSON with jq
   jq -n \
     --arg app_root "$app_root" \
@@ -800,6 +826,7 @@ __xcind-resolve-json() {
     --argjson tools "$tools_json" \
     --argjson assigned_exports "$assigned_json" \
     --argjson proxied_exports "$proxied_json" \
+    --argjson apex "$apex_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
     --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
@@ -817,7 +844,8 @@ __xcind-resolve-json() {
             bakeFiles: $bake_files,
             tools: $tools,
             assignedExports: $assigned_exports,
-            proxiedExports: $proxied_exports
+            proxiedExports: $proxied_exports,
+            apex: $apex
         }'
 }
 
@@ -881,6 +909,56 @@ EOF
 #   __xcind-dump-docker-compose-configuration
 __xcind-dump-docker-compose-configuration() {
   xcind-compose config
+}
+
+# Dump the canonical Starship [custom.xcind] prompt block to stdout.
+# Static text (no resolved app config), so this runs from any directory.
+# The active command is names-only (xcind-prompt); the --apex opt-in is
+# shown as a commented hint line, per Brief Q1.
+#
+# Usage:
+#   __xcind-dump-starship-snippet
+__xcind-dump-starship-snippet() {
+  cat <<'EOF'
+# ~/.config/starship.toml
+[custom.xcind]
+description = "Xcind workspace/app context"
+command     = "xcind-prompt"
+# command   = "xcind-prompt --apex"   # opt-in: append the apex hostname as a clickable OSC 8 link
+when        = "xcind-prompt --detect"
+shell       = ["bash", "--noprofile", "--norc", "-c"]   # skip user rc for speed
+symbol      = "⬡ "
+style       = "bold cyan"
+format      = "[$symbol$output]($style) "
+EOF
+}
+
+# Dump the canonical Starship [custom.xcind] block as a Nix Home Manager
+# attrset to stdout. Mirrors __xcind-dump-starship-snippet: static text (no
+# resolved app config), so this runs from any directory. Emits a BARE attrset
+# `{ … }` (no LHS attr-path, no trailing `;`) preceded by a short splice-hint
+# comment — the user splices it under their own starship settings attr-path.
+# Under the quoted heredoc the Starship $symbol/$output/$style placeholders
+# stay literal (Nix only antiquotes ${...}, never $letter or $(), so no
+# escaping is required). The shell list carries -c and the --apex opt-in is a
+# Nix # comment line, mirroring the TOML sibling.
+#
+# Usage:
+#   __xcind-dump-starship-snippet-nix
+__xcind-dump-starship-snippet-nix() {
+  cat <<'EOF'
+# Splice into Home Manager: programs.starship.settings.custom.xcind = { ... };
+{
+  description = "Xcind workspace/app context";
+  command = "xcind-prompt";
+  # command = "xcind-prompt --apex";   # opt-in: append the apex hostname as a clickable OSC 8 link
+  when = "xcind-prompt --detect";
+  shell = [ "bash" "--noprofile" "--norc" "-c" ];
+  symbol = "⬡ ";
+  style = "bold cyan";
+  format = "[$symbol$output]($style) ";
+}
+EOF
 }
 
 # --------------------------------------------------------------------------
@@ -980,9 +1058,13 @@ __xcind-discover-workspace() {
       __XCIND_SOURCED_CONFIG_FILES+=("$_ws_override")
     fi
 
-    # Auto-register discovered workspaces. Silent on failure — never
-    # break a compose/config run because the registry is unwritable.
-    { __xcind-with-registry-lock __xcind-registry-add "$parent" >/dev/null 2>&1 || true; }
+    # Auto-register discovered workspaces unless registry writes are
+    # suppressed via XCIND_NO_REGISTRY (read-only callers, e.g. the prompt
+    # helper). Silent on failure — never break a compose/config run because
+    # the registry is unwritable.
+    if [[ -z ${XCIND_NO_REGISTRY:-} ]]; then
+      { __xcind-with-registry-lock __xcind-registry-add "$parent" >/dev/null 2>&1 || true; }
+    fi
   else
     XCIND_WORKSPACELESS=1
     XCIND_WORKSPACE_ROOT=""

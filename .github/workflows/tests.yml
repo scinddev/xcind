@@ -41,6 +41,7 @@ jobs:
             bin/xcind-application \
             bin/xcind-compose \
             bin/xcind-config \
+            bin/xcind-prompt \
             bin/xcind-proxy \
             bin/xcind-workspace \
             lib/xcind/xcind-app-lib.bash \
@@ -57,6 +58,7 @@ jobs:
             lib/xcind/xcind-workspace-lib.bash \
             test/test-xcind.sh \
             test/test-xcind-proxy.sh \
+            test/test-xcind-prompt.sh \
             test/lib/assert.sh \
             test/lib/setup.sh \
             install.sh \
@@ -84,6 +86,10 @@ jobs:
       - name: Run proxy tests
         if: startsWith(matrix.os, 'ubuntu-')
         run: bash test/test-xcind-proxy.sh
+      # The prompt suite is pure bash + coreutils (no proxy TLS / BSD-stat
+      # portability gaps), so it runs on all four matrix OSes — no OS gate.
+      - name: Run prompt tests
+        run: bash test/test-xcind-prompt.sh
 
   npm-install-test:
     runs-on: ${{ matrix.os }}
@@ -125,9 +131,10 @@ jobs:
       - name: Build image (bash ${{ matrix.bashver }})
         run: docker build --build-arg "BASHVER=${{ matrix.bashver }}" -t "xcind-test:${{ matrix.bashver }}" .
       - name: Run tests in container
-        # bash-version only exercises test-xcind.sh — the proxy suite has
-        # preexisting portability gaps against Alpine / bash 3.2 that are
-        # out of scope for this PR's TLS work. Track as follow-up.
+        # bash-version exercises test-xcind.sh + test-xcind-prompt.sh (both pure
+        # bash + coreutils, so they must pass on the project min, Bash 3.2). The
+        # proxy suite has preexisting portability gaps against Alpine / bash 3.2
+        # and stays out of this matrix. Track as follow-up.
         run: |
           docker run --rm \
             -v "$PWD:/opt/xcind:ro" \
@@ -135,3 +142,9 @@ jobs:
             --entrypoint bash \
             "xcind-test:${{ matrix.bashver }}" \
             test/test-xcind.sh
+          docker run --rm \
+            -v "$PWD:/opt/xcind:ro" \
+            -w /opt/xcind \
+            --entrypoint bash \
+            "xcind-test:${{ matrix.bashver }}" \
+            test/test-xcind-prompt.sh

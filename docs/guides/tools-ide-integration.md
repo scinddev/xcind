@@ -16,6 +16,10 @@ Xcind ships completions for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xci
 
 `xcind-compose` delegates to Docker's own completion, so you get the full `docker compose` UX.
 
+## Starship prompt
+
+Xcind can show your current workspace/app (and optionally the apex hostname) right in your [Starship](https://starship.rs) prompt. See [Starship prompt](./starship.md) for the `[custom.xcind]` snippet and setup.
+
 ## JetBrains plugin
 
 The JetBrains plugin reads `xcind-config --json` to discover compose files, env files, and tools per app. Point the plugin's "xcind config" path at your installed `xcind-config` binary (`which xcind-config`).
@@ -56,4 +60,5 @@ source_env .xcind.sh
 
 ## Where to go next
 
+- [Starship prompt](./starship.md) — show your workspace/app context in your prompt.
 - [`xcind-config` reference](../reference/cli.md#xcind-config) — `--json`, `--preview`, `doctor`, completion targets.

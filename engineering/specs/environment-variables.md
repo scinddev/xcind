@@ -51,6 +51,15 @@ When `XCIND_APP_ENV_FILES` is configured, the `xcind-app-env-hook` generates a c
 
 This is separate from `XCIND_COMPOSE_ENV_FILES`, which provides variables for YAML interpolation only.
 
+## Read-only / behavioral flags
+
+Unlike the generated labels above, these are **input** variables you set in the
+environment to change Xcind's behavior.
+
+| Variable | Effect |
+|----------|--------|
+| `XCIND_NO_REGISTRY` | When set (non-empty), skip the automatic workspace-registry write during discovery. Discovery, config sourcing, and all `XCIND_*` variable resolution still run unchanged — only the registry write is suppressed. Intended for read-only callers (e.g. the prompt helper) that must not mutate shared state. Unset or empty = register as usual. |
+
 ---
 
 ## Related Documents

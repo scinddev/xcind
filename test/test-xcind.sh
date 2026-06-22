@@ -2034,6 +2034,117 @@ rm -rf "$JSON_WS"
 
 # ======================================================================
 echo ""
+echo "=== Test: JSON output includes apex object ==="
+
+# Determinism guard: reset_xcind_state does NOT clear XCIND_PROXY_EXPORTS or
+# XCIND_APP_APEX_URL_TEMPLATE, so every block below sets/unsets BOTH explicitly
+# (plus XCIND_PROXY_DOMAIN/TLS_MODE/CONFIG_DIR for the enabled cases) so apex
+# state from earlier tests cannot leak in.
+
+# --- apex enabled (workspace) ---
+APEX_WS=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="dev"
+XCIND_APP="xesapps"
+XCIND_PROXY_DOMAIN="example.test"
+unset XCIND_PROXY_CONFIG_DIR
+XCIND_APP_APEX_URL_TEMPLATE='{workspace}-{app}.{domain}'
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex=$(__xcind-resolve-json "$APEX_WS")
+
+assert_eq "JSON apex.enabled (workspace)" \
+  "true" "$(echo "$json_apex" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname (workspace)" \
+  "dev-xesapps.example.test" "$(echo "$json_apex" | jq -r '.apex.hostname')"
+# scheme derives from __xcind-proxy-resolve-export-tls — assert membership,
+# not a hardcoded value, so the test doesn't couple to the TLS-mode default.
+assert_eq "JSON apex.scheme in {http,https} (workspace)" \
+  "true" "$(echo "$json_apex" | jq -r '.apex.scheme == "http" or .apex.scheme == "https"')"
+assert_eq "JSON apex.url == scheme://hostname (workspace)" \
+  "true" "$(echo "$json_apex" | jq -r '.apex.url == (.apex.scheme + "://" + .apex.hostname)')"
+
+rm -rf "$APEX_WS"
+
+# --- apex enabled (workspaceless) ---
+APEX_WL=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+unset XCIND_PROXY_CONFIG_DIR
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex_wl=$(__xcind-resolve-json "$APEX_WL")
+
+assert_eq "JSON apex.enabled (workspaceless)" \
+  "true" "$(echo "$json_apex_wl" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname (workspaceless)" \
+  "acmeapps.example.test" "$(echo "$json_apex_wl" | jq -r '.apex.hostname')"
+assert_eq "JSON apex.url == scheme://hostname (workspaceless)" \
+  "true" "$(echo "$json_apex_wl" | jq -r '.apex.url == (.apex.scheme + "://" + .apex.hostname)')"
+
+rm -rf "$APEX_WL"
+
+# --- apex disabled: empty template, proxied export present ---
+APEX_OFF_TMPL=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+XCIND_APP_APEX_URL_TEMPLATE=""
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex_off=$(__xcind-resolve-json "$APEX_OFF_TMPL")
+
+assert_eq "JSON apex.enabled (empty template)" \
+  "false" "$(echo "$json_apex_off" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname null (empty template)" \
+  "null" "$(echo "$json_apex_off" | jq -r '.apex.hostname')"
+assert_eq "JSON apex.url null (empty template)" \
+  "null" "$(echo "$json_apex_off" | jq -r '.apex.url')"
+assert_eq "JSON apex.scheme null (empty template)" \
+  "null" "$(echo "$json_apex_off" | jq -r '.apex.scheme')"
+
+rm -rf "$APEX_OFF_TMPL"
+
+# --- apex disabled: non-empty template, no proxied export (assigned only) ---
+APEX_OFF_EXP=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+XCIND_PROXY_EXPORTS=("worker:9000;type=assigned")
+
+json_apex_noexp=$(__xcind-resolve-json "$APEX_OFF_EXP")
+
+assert_eq "JSON apex.enabled (no proxied export)" \
+  "false" "$(echo "$json_apex_noexp" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname null (no proxied export)" \
+  "null" "$(echo "$json_apex_noexp" | jq -r '.apex.hostname')"
+assert_eq "JSON apex.url null (no proxied export)" \
+  "null" "$(echo "$json_apex_noexp" | jq -r '.apex.url')"
+assert_eq "JSON apex.scheme null (no proxied export)" \
+  "null" "$(echo "$json_apex_noexp" | jq -r '.apex.scheme')"
+
+rm -rf "$APEX_OFF_EXP"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-naming-hook (workspaceless mode) ==="
 
 NAMING_WL=$(mktemp_d)
@@ -2356,6 +2467,172 @@ assert_contains "generate-docker-compose-configuration stdout + json: error mess
 
 # ======================================================================
 echo ""
+echo "=== Test: --generate-starship ==="
+
+# The block is static (no resolved app config) and runs before
+# __xcind-prepare-app, so it needs no Docker and no app context.
+
+# (a) stdout block
+gs_stdout_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship) && gs_stdout_rc=0 || gs_stdout_rc=$?
+assert_eq "generate-starship stdout: exit code 0" "0" "$gs_stdout_rc"
+assert_contains "generate-starship stdout: has [custom.xcind]" \
+  "[custom.xcind]" "$gs_stdout_result"
+assert_contains "generate-starship stdout: has description" \
+  "description =" "$gs_stdout_result"
+assert_contains "generate-starship stdout: has format" \
+  "format" "$gs_stdout_result"
+assert_contains "generate-starship stdout: has symbol" \
+  "symbol" "$gs_stdout_result"
+assert_contains "generate-starship stdout: bash shell executes command strings" \
+  'shell       = ["bash", "--noprofile", "--norc", "-c"]' "$gs_stdout_result"
+
+# (b) names-only default: active command is xcind-prompt (no active --apex).
+# The commented hint "# command   = ..." is allowed; the assertion keys on the
+# un-commented "command     =" prefix so the comment does not trip it.
+assert_contains "generate-starship: names-only active command" \
+  'command     = "xcind-prompt"' "$gs_stdout_result"
+assert_not_contains "generate-starship: no active --apex command" \
+  'command     = "xcind-prompt --apex"' "$gs_stdout_result"
+
+# (c) file form == stdout. Run from a fresh cwd outside any app to prove no
+# app context is needed; both = and space forms write the same bytes as stdout.
+GS_CWD=$(mktemp_d)
+GS_EQ_FILE=$(mktemp_d)/starship-eq.toml
+(cd "$GS_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship="$GS_EQ_FILE") && gs_eq_rc=0 || gs_eq_rc=$?
+assert_eq "generate-starship=FILE: exit code 0" "0" "$gs_eq_rc"
+assert_file_exists "generate-starship=FILE: file exists" "$GS_EQ_FILE"
+gs_eq_diff=$(diff <(printf '%s\n' "$gs_stdout_result") "$GS_EQ_FILE" 2>&1 || true)
+assert_eq "generate-starship=FILE: content matches stdout" "" "$gs_eq_diff"
+
+GS_SP_FILE=$(mktemp_d)/starship-sp.toml
+(cd "$GS_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship "$GS_SP_FILE") && gs_sp_rc=0 || gs_sp_rc=$?
+assert_eq "generate-starship FILE (space form): exit code 0" "0" "$gs_sp_rc"
+assert_file_exists "generate-starship FILE (space form): file exists" "$GS_SP_FILE"
+gs_sp_diff=$(diff <(printf '%s\n' "$gs_stdout_result") "$GS_SP_FILE" 2>&1 || true)
+assert_eq "generate-starship FILE (space form): content matches stdout" "" "$gs_sp_diff"
+rm -rf "$GS_CWD" "$(dirname "$GS_EQ_FILE")" "$(dirname "$GS_SP_FILE")"
+
+# (d) empty = rejected
+gs_empty_rc=0
+gs_empty_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship= 2>&1) || gs_empty_rc=$?
+assert_eq "empty --generate-starship=: non-zero exit" "1" "$gs_empty_rc"
+assert_contains "empty --generate-starship=: error message" \
+  "requires a file path" "$gs_empty_result"
+
+# (e) cannot combine with other actions
+gs_combine_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --json 2>&1) && gs_combine_rc=0 || gs_combine_rc=$?
+assert_eq "generate-starship + json: non-zero exit" "true" \
+  "$([ "$gs_combine_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "generate-starship + json: error message" \
+  "cannot be combined" "$gs_combine_result"
+
+# ------------------------------------------------------------------
+# --format toml|nix modifier (step-10)
+# ------------------------------------------------------------------
+
+# (f) --format toml is byte-identical to no --format (default path unchanged).
+gs_toml_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format toml) && gs_toml_rc=0 || gs_toml_rc=$?
+assert_eq "generate-starship --format toml: exit code 0" "0" "$gs_toml_rc"
+gs_toml_diff=$(diff <(printf '%s\n' "$gs_stdout_result") \
+  <(printf '%s\n' "$gs_toml_result") 2>&1 || true)
+assert_eq "generate-starship --format toml == no --format (byte-identical)" \
+  "" "$gs_toml_diff"
+assert_contains "generate-starship default: shell list carries -c" \
+  'shell       = ["bash", "--noprofile", "--norc", "-c"]' "$gs_stdout_result"
+
+# (g) --format nix: present + well-formed bare attrset.
+gs_nix_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format nix) && gs_nix_rc=0 || gs_nix_rc=$?
+assert_eq "generate-starship --format nix: exit code 0" "0" "$gs_nix_rc"
+assert_contains "generate-starship nix: splice-hint comment" \
+  "# Splice into Home Manager: programs.starship.settings.custom.xcind" \
+  "$gs_nix_result"
+assert_contains "generate-starship nix: description" \
+  'description = "Xcind workspace/app context"' "$gs_nix_result"
+assert_contains "generate-starship nix: command" \
+  'command = "xcind-prompt"' "$gs_nix_result"
+assert_contains "generate-starship nix: when" \
+  'when = "xcind-prompt --detect"' "$gs_nix_result"
+assert_contains "generate-starship nix: shell list with -c" \
+  'shell = [ "bash" "--noprofile" "--norc" "-c" ]' "$gs_nix_result"
+assert_contains "generate-starship nix: style" \
+  'style = "bold cyan"' "$gs_nix_result"
+assert_contains "generate-starship nix: format placeholders literal" \
+  'format = "[$symbol$output]($style) "' "$gs_nix_result"
+
+# (h) nix opens as a BARE attrset: a standalone `{` immediately followed by the
+# description line. This is the collision-free discriminator — do NOT
+# assert_not_contains on `programs.starship.settings.custom.xcind = {`, which
+# legitimately appears inside the splice-hint comment.
+assert_contains "generate-starship nix: opens as bare attrset" \
+  "$(printf '{\n  description = "Xcind workspace/app context";')" \
+  "$gs_nix_result"
+
+# (i) nix is NOT toml: no [custom.xcind] table header.
+assert_not_contains "generate-starship nix: not a TOML table" \
+  "[custom.xcind]" "$gs_nix_result"
+
+# (j) nix file form, both arg orders, written from a fresh cwd (no app context).
+GS_NIX_CWD=$(mktemp_d)
+GS_NIX_AFTER=$(mktemp_d)/starship-after.nix
+(cd "$GS_NIX_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format nix "$GS_NIX_AFTER") &&
+  gs_nix_after_rc=0 || gs_nix_after_rc=$?
+assert_eq "generate-starship --format nix FILE (--format before file): exit 0" \
+  "0" "$gs_nix_after_rc"
+assert_file_exists "generate-starship --format nix FILE: file exists" \
+  "$GS_NIX_AFTER"
+gs_nix_after_diff=$(diff <(printf '%s\n' "$gs_nix_result") "$GS_NIX_AFTER" 2>&1 || true)
+assert_eq "generate-starship --format nix FILE: content matches stdout" \
+  "" "$gs_nix_after_diff"
+
+GS_NIX_EQ=$(mktemp_d)/starship-eq.nix
+(cd "$GS_NIX_CWD" && PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship="$GS_NIX_EQ" --format nix) &&
+  gs_nix_eq_rc=0 || gs_nix_eq_rc=$?
+assert_eq "generate-starship=FILE --format nix: exit 0" "0" "$gs_nix_eq_rc"
+assert_file_exists "generate-starship=FILE --format nix: file exists" "$GS_NIX_EQ"
+gs_nix_eq_diff=$(diff <(printf '%s\n' "$gs_nix_result") "$GS_NIX_EQ" 2>&1 || true)
+assert_eq "generate-starship=FILE --format nix: content matches stdout" \
+  "" "$gs_nix_eq_diff"
+rm -rf "$GS_NIX_CWD" "$(dirname "$GS_NIX_AFTER")" "$(dirname "$GS_NIX_EQ")"
+
+# (k) unknown --format value → exit 2 + stderr names expected values.
+gs_badfmt_rc=0
+gs_badfmt_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format yaml 2>&1) || gs_badfmt_rc=$?
+assert_eq "unknown --format value: exit code 2" "2" "$gs_badfmt_rc"
+assert_contains "unknown --format value: stderr names toml" \
+  "toml" "$gs_badfmt_result"
+assert_contains "unknown --format value: stderr names nix" \
+  "nix" "$gs_badfmt_result"
+
+# (l) --format without --generate-starship → exit 2 (D6).
+gs_orphan_rc=0
+gs_orphan_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --format nix 2>&1) || gs_orphan_rc=$?
+assert_eq "--format without --generate-starship: exit code 2" "2" "$gs_orphan_rc"
+assert_contains "--format without --generate-starship: error message" \
+  "only valid with --generate-starship" "$gs_orphan_result"
+
+# (m) combine still rejected: --format does not bump _action_count.
+gs_nix_combine_rc=0
+gs_nix_combine_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
+  --generate-starship --format nix --json 2>&1) && gs_nix_combine_rc=0 ||
+  gs_nix_combine_rc=$?
+assert_eq "generate-starship --format nix + json: non-zero exit" "true" \
+  "$([ "$gs_nix_combine_rc" -ne 0 ] && echo true || echo false)"
+assert_contains "generate-starship --format nix + json: error message" \
+  "cannot be combined" "$gs_nix_combine_result"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-config argument validation ==="
 
 # 5. Unknown flag is rejected
@@ -2450,6 +2727,12 @@ assert_contains "completion bash: registers xcind-workspace" \
   "complete -F _xcind_workspace_completions xcind-workspace" "$comp_bash_result"
 assert_contains "completion bash: has proxy init flags" \
   "--proxy-domain" "$comp_bash_result"
+assert_contains "completion bash: lists --generate-starship" \
+  "--generate-starship" "$comp_bash_result"
+assert_contains "completion bash: lists --format" \
+  "--format" "$comp_bash_result"
+assert_contains "completion bash: --format offers toml nix" \
+  'compgen -W "toml nix"' "$comp_bash_result"
 
 # 2. completion zsh produces output
 comp_zsh_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -2465,6 +2748,12 @@ assert_contains "completion zsh: registers xcind-workspace" \
   "compdef _xcind-workspace xcind-workspace" "$comp_zsh_result"
 assert_contains "completion zsh: has workspace init command" \
   "init:Initialize a workspace directory" "$comp_zsh_result"
+assert_contains "completion zsh: lists --generate-starship" \
+  "--generate-starship" "$comp_zsh_result"
+assert_contains "completion zsh: lists --format" \
+  "--format:Output format" "$comp_zsh_result"
+assert_contains "completion zsh: --format offers nix value" \
+  "nix:Nix Home Manager attrset" "$comp_zsh_result"
 
 # 3. completion with no arg fails
 comp_noarg_result=$(PATH="$XCIND_ROOT/bin:$PATH" xcind-config \
@@ -3205,7 +3494,10 @@ echo '# app config' >"$disc_app/.xcind.sh"
 
 # Run discovery in a subshell so XCIND_* global mutations don't bleed
 # into later tests. Rebind registry constants to the per-test state dir
-# (read by the registry lib; exports silence SC2034).
+# (read by the registry lib; exports silence SC2034). The XCIND_NO_REGISTRY
+# test below rebinds the same names in its own subshell, so shellcheck pairs
+# these modifications (SC2030/SC2031) — benign; each subshell is isolated.
+# shellcheck disable=SC2030,SC2031
 (
   export XDG_STATE_HOME="$disc_state"
   export XCIND_REGISTRY_DIR="$disc_state/xcind"
@@ -3218,6 +3510,55 @@ echo '# app config' >"$disc_app/.xcind.sh"
 disc_tsv="$disc_state/xcind/workspaces.tsv"
 assert_file_exists "discovery created registry file" "$disc_tsv"
 assert_contains "discovery registered workspace root" "$disc_ws" "$(cat "$disc_tsv")"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-discover-workspace honors XCIND_NO_REGISTRY ==="
+
+# Mirror of the auto-registers test above, but with XCIND_NO_REGISTRY=1
+# exported: discovery must still resolve workspace identity vars while
+# writing NO registry file (read-only callers, e.g. the prompt helper).
+guard_tmp=$(mktemp_d)
+guard_state="$guard_tmp/state"
+guard_ws="$guard_tmp/myws"
+guard_app="$guard_ws/api"
+mkdir -p "$guard_app"
+echo 'XCIND_IS_WORKSPACE=1' >"$guard_ws/.xcind.sh"
+echo '# app config' >"$guard_app/.xcind.sh"
+
+# Capture the resolved XCIND_* vars to a temp file since they don't
+# survive the subshell boundary. Wrapped in a function so the registry-env
+# exports stay in their own scope and don't cross-pair with the
+# auto-registers subshell above (shellcheck SC2030/SC2031).
+guard_vars="$guard_tmp/vars"
+run_no_registry_discovery() {
+  # Registry constants are read by the registry lib inside this subshell.
+  # The same-named exports in the auto-registers subshell above trip the
+  # SC2030/SC2031 subshell-modification pair — benign and intentional here.
+  # shellcheck disable=SC2030,SC2031
+  (
+    export XDG_STATE_HOME="$guard_state"
+    export XCIND_REGISTRY_DIR="$guard_state/xcind"
+    export XCIND_REGISTRY_FILE="$guard_state/xcind/workspaces.tsv"
+    export XCIND_REGISTRY_LOCK="$guard_state/xcind/workspaces.lock"
+    export XCIND_NO_REGISTRY=1
+    reset_xcind_state
+    __xcind-discover-workspace "$guard_app"
+    {
+      echo "XCIND_WORKSPACE=$XCIND_WORKSPACE"
+      echo "XCIND_WORKSPACE_ROOT=$XCIND_WORKSPACE_ROOT"
+      echo "XCIND_WORKSPACELESS=$XCIND_WORKSPACELESS"
+    } >"$guard_vars"
+  )
+}
+run_no_registry_discovery
+
+guard_tsv="$guard_state/xcind/workspaces.tsv"
+guard_out=$(<"$guard_vars")
+assert_file_missing "XCIND_NO_REGISTRY: no registry file written" "$guard_tsv"
+assert_contains "XCIND_NO_REGISTRY: workspace resolved" "XCIND_WORKSPACE=myws" "$guard_out"
+assert_contains "XCIND_NO_REGISTRY: workspace root resolved" "XCIND_WORKSPACE_ROOT=$guard_ws" "$guard_out"
+assert_contains "XCIND_NO_REGISTRY: workspace mode active" "XCIND_WORKSPACELESS=0" "$guard_out"
 
 # ======================================================================
 echo ""

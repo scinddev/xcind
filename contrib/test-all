@@ -9,7 +9,7 @@ PROJECT_ROOT=$(cd "$DIR/.." && pwd)
 SHFMT_IMAGE="mvdan/shfmt:v3.10.0"
 SHELLCHECK_IMAGE="koalaman/shellcheck:v0.11.0"
 BASH_VERSIONS=("3.2" "4.0" "4.4" "5.0" "5.1" "5" "latest")
-SHELL_FILES=(bin/xcind-application bin/xcind-compose bin/xcind-config bin/xcind-proxy bin/xcind-workspace lib/xcind/xcind-app-lib.bash lib/xcind/xcind-app-env-lib.bash lib/xcind/xcind-assigned-lib.bash lib/xcind/xcind-bootstrap.bash lib/xcind/xcind-completion-bash.bash lib/xcind/xcind-completion-zsh.bash lib/xcind/xcind-host-gateway-lib.bash lib/xcind/xcind-lib.bash lib/xcind/xcind-naming-lib.bash lib/xcind/xcind-proxy-lib.bash lib/xcind/xcind-registry-lib.bash lib/xcind/xcind-workspace-lib.bash test/test-xcind.sh test/test-xcind-proxy.sh test/lib/assert.sh test/lib/setup.sh install.sh uninstall.sh)
+SHELL_FILES=(bin/xcind-application bin/xcind-compose bin/xcind-config bin/xcind-prompt bin/xcind-proxy bin/xcind-workspace lib/xcind/xcind-app-lib.bash lib/xcind/xcind-app-env-lib.bash lib/xcind/xcind-assigned-lib.bash lib/xcind/xcind-bootstrap.bash lib/xcind/xcind-completion-bash.bash lib/xcind/xcind-completion-zsh.bash lib/xcind/xcind-host-gateway-lib.bash lib/xcind/xcind-lib.bash lib/xcind/xcind-naming-lib.bash lib/xcind/xcind-proxy-lib.bash lib/xcind/xcind-registry-lib.bash lib/xcind/xcind-workspace-lib.bash test/test-xcind.sh test/test-xcind-proxy.sh test/test-xcind-prompt.sh test/lib/assert.sh test/lib/setup.sh install.sh uninstall.sh)
 
 # --- Color support ---
 
@@ -139,6 +139,12 @@ run_test() {
   bash "$PROJECT_ROOT/test/test-xcind-proxy.sh" || rc2=$?
   record_result "test-proxy" "$rc2"
   echo ""
+
+  echo "${BOLD}=== test-prompt ===${RESET}"
+  local rc3=0
+  bash "$PROJECT_ROOT/test/test-xcind-prompt.sh" || rc3=$?
+  record_result "test-prompt" "$rc3"
+  echo ""
 }
 
 run_bash_versions() {
@@ -153,6 +159,17 @@ run_bash_versions() {
         --entrypoint bash \
         "xcind-test:$ver" \
         test/test-xcind.sh || rc=$?
+    fi
+    # The prompt suite must also pass on the project min (Bash 3.2). It is pure
+    # bash + coreutils, so it runs on every bash version (cf. the proxy suite,
+    # which has portability gaps and stays out of this matrix).
+    if [ "$rc" -eq 0 ]; then
+      docker run --rm \
+        -v "$PROJECT_ROOT:/opt/xcind:ro" \
+        -w /opt/xcind \
+        --entrypoint bash \
+        "xcind-test:$ver" \
+        test/test-xcind-prompt.sh || rc=$?
     fi
     record_result "bash $ver" "$rc"
     echo ""

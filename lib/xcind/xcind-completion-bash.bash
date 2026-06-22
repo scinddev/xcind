@@ -128,9 +128,23 @@ _xcind_config_completions() {
     return
   fi
 
+  # After --generate-starship, also offer the --format modifier alongside an
+  # optional output file path.
+  if [[ $prev == "--generate-starship" ]]; then
+    COMPREPLY=($(compgen -W "--format" -f -- "$cur"))
+    return
+  fi
+
+  # After --format, offer the supported output formats.
+  if [[ $prev == "--format" ]]; then
+    COMPREPLY=($(compgen -W "toml nix" -- "$cur"))
+    return
+  fi
+
   local opts="--help -h --version -V --check --json --preview
     --generate-docker-wrapper --generate-docker-compose-wrapper
-    --generate-docker-compose-configuration completion doctor"
+    --generate-docker-compose-configuration --generate-starship --format
+    completion doctor"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

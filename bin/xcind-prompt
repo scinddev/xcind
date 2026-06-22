@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+# xcind-prompt — Emit a compact Xcind context segment for a shell prompt
+#
+# Designed for Starship's `[custom.<name>]` extension point: it runs on every
+# prompt draw, so it must stay well under Starship's 500 ms command_timeout.
+# It runs a *trimmed* prepare (discovery + config + name/URL-template
+# resolution) and STOPS before the expensive build-compose-opts / hook / cache
+# / jq block. It never writes the workspace registry (XCIND_NO_REGISTRY=1).
+#
+# Usage:
+#   xcind-prompt                 Print "<workspace>/<app>" (or "<app>" when
+#                                workspaceless); empty when outside an app.
+#   xcind-prompt --print FIELD   Select which field to print: both (default,
+#                                "<workspace>/<app>"), workspace, app, apex, or
+#                                apex-url. apex-url emits the apex URL
+#                                ("<scheme>://<hostname>") as plain text — no
+#                                OSC 8, so the hyperlink flags are a no-op for it.
+#   xcind-prompt --apex          Append the apex hostname as an OSC 8 hyperlink.
+#   xcind-prompt --no-hyperlink  Emit plain text (apex hostname, no escapes).
+#   xcind-prompt --detect        Exit 0 inside an app, non-zero outside; no
+#                                output. Field-aware with --print: plain
+#                                --detect is a fast stat-walk; --detect --print
+#                                workspace|apex sources config to know
+#                                availability (no jq/Docker/hooks; within
+#                                Starship's 500ms budget).
+#   xcind-prompt -h | --help     Show this help.
+#
+# Environment:
+#   XCIND_PROMPT_HYPERLINKS=0    Disable OSC 8 hyperlinks (same as --no-hyperlink).
+#
+# Output has no trailing newline; stderr stays empty in normal operation.
+
+set -euo pipefail
+
+# Resolve XCIND_ROOT by following symlinks to the real install directory
+# (npm, nix profile, and manual symlinks all route through here). macOS
+# lacks `readlink -f`, so the resolver is a manual loop.
+# Keep in sync with the equivalent stub in the other bin/ scripts.
+__xcind_src="${BASH_SOURCE[0]}"
+while [ -L "$__xcind_src" ]; do
+  __xcind_src_dir=$(cd "$(dirname "$__xcind_src")" && pwd)
+  __xcind_src=$(readlink "$__xcind_src")
+  [[ $__xcind_src != /* ]] && __xcind_src="$__xcind_src_dir/$__xcind_src"
+done
+XCIND_ROOT="$(cd "$(dirname "$__xcind_src")/.." && pwd)"
+unset __xcind_src __xcind_src_dir
+# shellcheck disable=SC1091
+source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
+
+usage() {
+  cat <<'HELPEOF'
+Usage: xcind-prompt [OPTIONS]
+
+Emit a compact Xcind context segment for a shell prompt (e.g. Starship).
+
+Options:
+  --print FIELD     Print a specific field: both (default), workspace, app,
+                    apex, apex-url
+  --apex            Append the apex hostname as an OSC 8 clickable hyperlink
+  --no-hyperlink    Emit plain text (apex hostname, no escape sequences)
+  --detect          Exit 0 inside an app, non-zero outside; no output.
+                    With --print it probes that field's availability:
+                    --detect --print workspace exits 0 only in workspace mode,
+                    --detect --print apex exits 0 only when an apex resolves.
+  -h, --help        Show this help
+
+Environment:
+  XCIND_PROMPT_HYPERLINKS=0   Disable OSC 8 hyperlinks (same as --no-hyperlink)
+
+Cost note: plain --detect is a fast stat-walk; --detect --print workspace|apex
+sources config to know availability (no jq/Docker/hooks; within Starship's
+500ms budget).
+
+Default output is "<workspace>/<app>" (or "<app>" when workspaceless), and
+empty when run outside any app. There is no trailing newline.
+
+--print selects one field: both (default, byte-identical to no --print),
+workspace (empty when workspaceless), app, apex (the OSC 8-linked apex
+hostname, or empty when no apex), or apex-url (the apex URL as plain text —
+"<scheme>://<hostname>"; no OSC 8, so --no-hyperlink / XCIND_PROMPT_HYPERLINKS=0
+have no effect on it). --apex appends the apex link to the name selectors
+(both/app/workspace); it is redundant and ignored for --print apex and
+--print apex-url.
+HELPEOF
+}
+
+# _xcind_prompt_prepare — the trimmed, budget-safe subset of __xcind-prepare-app
+# (lib/xcind/xcind-lib.bash): discovery + config + name/URL-template resolution
+# in their exact order, STOPPING before __xcind-build-compose-opts and the
+# hook/cache/jq block. Sets XCIND_APP_ROOT and the XCIND_* identity/template
+# globals. Returns 1 when run outside any app (the caller decides the exit).
+# Extracted so the main display flow AND the field-aware --detect path share one
+# copy — no logic drift. Preserves the live source-count behavior (a plain run
+# sources twice: the workspace probe in __xcind-app-root plus __xcind-load-config).
+_xcind_prompt_prepare() {
+  local app_root
+  app_root=$(__xcind-app-root 2>/dev/null) || return 1
+
+  # Suppress the workspace registry auto-write before discovery runs (the guard
+  # in __xcind-discover-workspace tests XCIND_NO_REGISTRY for emptiness).
+  export XCIND_NO_REGISTRY=1
+  export XCIND_APP_ROOT="$app_root"
+
+  __XCIND_SOURCED_CONFIG_FILES=()
+
+  __xcind-discover-workspace "$app_root"
+
+  # Workspace-level additional configs (sourced before app config so app wins).
+  if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE_ROOT:-} ]]; then
+    __xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
+  fi
+
+  __xcind-load-config "$app_root" || return 1
+  __xcind-source-additional-configs "$app_root"
+  __xcind-late-bind-workspace
+
+  __xcind-resolve-app "$app_root"
+  __xcind-resolve-url-templates
+}
+
+# --- Flag parsing ---
+# Seed hyperlink state from the env var so it and --no-hyperlink are equivalent.
+_apex=false
+_detect=false
+_hyperlinks=true
+_print=both
+[[ ${XCIND_PROMPT_HYPERLINKS:-1} == 0 ]] && _hyperlinks=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --apex) _apex=true ;;
+  --detect) _detect=true ;;
+  --no-hyperlink) _hyperlinks=false ;;
+  --print)
+    # Space-separated value only; --print=both falls to the unknown-option arm.
+    shift
+    [[ $# -gt 0 ]] || {
+      echo "xcind-prompt: --print requires a value" >&2
+      exit 2
+    }
+    case "$1" in
+    both | workspace | app | apex | apex-url) _print="$1" ;;
+    *)
+      echo "xcind-prompt: invalid --print value: $1 (expected: both, workspace, app, apex, apex-url)" >&2
+      exit 2
+      ;;
+    esac
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "xcind-prompt: unknown option: $1" >&2
+    exit 2
+    ;;
+  esac
+  shift
+done
+
+# --- --detect: field-aware availability probe ---
+# Cost asymmetry (be honest): plain --detect is a fast stat-walk;
+# --detect --print workspace|apex sources config to know availability (no
+# jq/Docker/hooks; within Starship's 500ms budget). The both|app arms keep the
+# cheap path — only the upward .xcind.sh stat-walk runs (one workspace-probe
+# source inside __xcind-app-root; no config load, no apex). The workspace|apex
+# arms must run the trimmed prepare because availability is unknowable without
+# resolving the config exports / URL templates. stderr stays empty on every
+# exit; the exit code alone is the signal.
+if [[ $_detect == true ]]; then
+  case "$_print" in
+  both | app)
+    if __xcind-app-root >/dev/null 2>&1; then exit 0; else exit 1; fi
+    ;;
+  workspace | apex | apex-url)
+    _xcind_prompt_prepare >/dev/null 2>&1 || exit 1
+    if [[ $_print == workspace ]]; then
+      [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE:-} ]] && exit 0
+      exit 1
+    else
+      __xcind-proxy-apex-for-app >/dev/null 2>&1 && exit 0
+      exit 1
+    fi
+    ;;
+  esac
+fi
+
+# --- Trimmed prepare ---
+# Resolve discovery + config + name/URL templates (the budget-safe subset).
+# Outside an app, exit 0 with empty output (the live no-app contract).
+_xcind_prompt_prepare || exit 0
+
+# --- Resolve the apex link once ---
+# Both `--print apex` and the `--apex` append consume one resolution. The apex
+# pipeline (__xcind-proxy-apex-for-app) is the same one the GENERATE hook drives:
+# no jq/Docker/hooks/cache. apex_link is empty when no apex resolves (disabled
+# template or no proxied export); the append/dispatch below treat that as "none".
+apex_link=""
+apex_url=""
+need_apex=false
+if [[ $_print == apex ]] || [[ $_print == apex-url ]] || [[ $_apex == true ]]; then
+  need_apex=true
+fi
+if [[ $need_apex == true ]]; then
+  if apex_tsv=$(__xcind-proxy-apex-for-app 2>/dev/null); then
+    IFS=$'\t' read -r apex_url apex_host _ <<<"$apex_tsv"
+    if [[ $_hyperlinks == true ]]; then
+      # OSC 8 hyperlink, ST-terminated (\e\\), not BEL. SC1003 misreads the
+      # literal-backslash escape in the printf format; the format is correct.
+      # shellcheck disable=SC1003
+      apex_link=$(printf '\e]8;;%s\e\\%s\e]8;;\e\\' "$apex_url" "$apex_host")
+    else
+      apex_link="$apex_host"
+    fi
+  fi
+fi
+
+# --- Display string (field dispatch) ---
+case "$_print" in
+both)
+  display="$XCIND_APP"
+  if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE:-} ]]; then
+    display="${XCIND_WORKSPACE}/${XCIND_APP}"
+  fi
+  ;;
+app) display="$XCIND_APP" ;;
+workspace) display="${XCIND_WORKSPACE:-}" ;;
+apex) display="$apex_link" ;;    # already linked/plain, or empty when no apex
+apex-url) display="$apex_url" ;; # plain URL (scheme://host), no OSC 8; empty when no apex
+esac
+
+# Append the apex link to the NAME selectors (both/app/workspace) only, and only
+# when one resolved. When the base field is empty (e.g. workspaceless
+# `--print workspace --apex`) emit the apex link alone with NO leading space.
+if [[ $_print != apex ]] && [[ $_print != apex-url ]] && [[ $_apex == true ]] && [[ -n $apex_link ]]; then
+  if [[ -n $display ]]; then
+    display="$display $apex_link"
+  else
+    display="$apex_link"
+  fi
+fi
+
+# Final emit — no trailing newline.
+printf '%s' "$display"

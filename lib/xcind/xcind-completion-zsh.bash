@@ -133,6 +133,8 @@ _xcind-config() {
     '--generate-docker-wrapper:Generate docker wrapper script'
     '--generate-docker-compose-wrapper:Generate docker-compose wrapper script'
     '--generate-docker-compose-configuration:Generate resolved compose config'
+    '--generate-starship:Generate Starship [custom.xcind] prompt block'
+    '--format:Output format for --generate-starship (toml or nix)'
     'completion:Output shell completion script'
   )
 
@@ -150,6 +152,21 @@ _xcind-config() {
     ;;
   --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration)
     _files
+    return
+    ;;
+  --generate-starship)
+    # Offer the --format modifier alongside an optional output file path.
+    local -a starship_opts=('--format:Output format (toml or nix)')
+    _describe 'option' starship_opts
+    _files
+    return
+    ;;
+  --format)
+    local -a formats=(
+      'toml:TOML [custom.xcind] block (default)'
+      'nix:Nix Home Manager attrset'
+    )
+    _describe 'format' formats
     return
     ;;
   esac

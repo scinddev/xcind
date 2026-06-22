@@ -129,11 +129,29 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
   "tools": {
     "php": { "service": "app", "use": "exec" },
     "npm": { "service": "app", "use": "exec" }
+  },
+  "assignedExports": {
+    "worker": {
+      "compose_service": "worker",
+      "container_port": 9000,
+      "host_port": 49213,
+      "declared_port": 9000
+    }
+  },
+  "apex": {
+    "enabled": true,
+    "hostname": "my-workspace-my-app.example.test",
+    "url": "https://my-workspace-my-app.example.test",
+    "scheme": "https"
   }
 }
 ```
 
 The `tools` object is keyed by tool name. Each entry includes `service`, `use` (default `"exec"`), and optionally `path`. See [`XCIND_TOOLS`](./configuration.md#xcind_tools) for the declaration format.
+
+The `assignedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port`, `host_port`, and `declared_port`. It is `{}` when the app declares no `type=assigned` exports (or none have been assigned a host port yet).
+
+The `apex` object describes the app's apex host derived from the shared proxy backend. It is **always present**: when an apex is available (`XCIND_APP_APEX_URL_TEMPLATE` is set and the app has at least one `type=proxied` export), `enabled` is `true` and `hostname`/`url`/`scheme` are populated; otherwise `enabled` is `false` and `hostname`/`url`/`scheme` are `null` (present-but-null, never omitted, so consumers can read `.apex.enabled` and `.apex.hostname` without existence checks). `url` is `scheme://hostname`; `scheme` is `http` or `https`.
 
 ### `--check` Mode
 
