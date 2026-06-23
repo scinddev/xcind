@@ -24,7 +24,7 @@ See [ADR-0008: Traefik reverse proxy](../../engineering/decisions/0008-traefik-r
 
 A typical app exposes more than one thing — web UI, an API, sometimes a worker dashboard. Including `{export}` keeps them distinguishable while staying predictable.
 
-If you have a single export and want the shorter form, set an apex template (see [`engineering/reference/configuration.md`](../../engineering/reference/configuration.md) — the `*_APEX_URL_TEMPLATE` family).
+If you have a single export and want the shorter form, set an apex template (see [`engineering/reference/configuration.md`](../../engineering/reference/configuration.md) — the `*_APEX_URL_TEMPLATE` family). When an apex template is set, `xcind-application urls`, `exports`, and `status` report the apex URL for the headlining (first proxied) export — the short canonical URL that actually serves traffic — while other exports keep their per-export hostname.
 
 ## Why generate compose overlays instead of editing the user's compose file?
 

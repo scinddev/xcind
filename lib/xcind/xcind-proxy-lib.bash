@@ -756,7 +756,12 @@ __xcind-proxy-preferred-scheme() {
 }
 
 # Build a JSON object of proxied exports for an app, keyed by export name:
-#   { "<name>": { compose_service, container_port, url, tls } }
+#   { "<name>": { compose_service, container_port, url, tls, apex_url?, apex_host? } }
+#
+# apex_url/apex_host appear on the FIRST proxied export only (the apex anchor),
+# and only when an apex template is configured — they are the canonical short
+# URL/host that actually serves traffic for the headlining export. Other
+# exports omit them. Consumers prefer apex_url over url for that export.
 #
 # URLs are computed from XCIND_APP_URL_TEMPLATE (not read off running
 # containers) so they resolve even when nothing is up — the proxied-export
@@ -798,8 +803,19 @@ __xcind-proxy-json-for-app() {
   # full prepare pipeline; the -f check below then simply skips inference.
   local resolved_config="${XCIND_CACHE_DIR:-}/resolved-config.yaml"
 
+  # Apex anchor — url/host for the headlining (first proxied) export, via the
+  # shared helper so it stays byte-identical with the GENERATE hook's labels.
+  # Empty when apex is disabled or no proxied export exists; the per-export
+  # apex keys are then omitted entirely (the apex template was confirmed to be
+  # resolved by __xcind-resolve-json before this runs, so no resolve here).
+  local apex_url="" apex_host="" _apex_tsv
+  if _apex_tsv=$(__xcind-proxy-apex-for-app 2>/dev/null); then
+    IFS=$'\t' read -r apex_url apex_host _ <<<"$_apex_tsv"
+  fi
+
   local result="{}"
   local entry
+  local is_first_proxied=true
   for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
     local _export_name _compose_service _port _type _tls _effective_tls
     __xcind-proxy-parse-entry "$entry" 2>/dev/null || continue
@@ -819,13 +835,25 @@ __xcind-proxy-json-for-app() {
     scheme=$(__xcind-proxy-preferred-scheme "$_effective_tls")
     url="$scheme://$hostname"
 
+    # Apex keys ride on the first proxied export only (its anchor); other
+    # proxied exports keep their per-export host and omit the apex keys.
+    local this_apex_url="" this_apex_host=""
+    if [[ $is_first_proxied == true ]]; then
+      this_apex_url="$apex_url"
+      this_apex_host="$apex_host"
+    fi
+    is_first_proxied=false
+
     result=$(printf '%s' "$result" | jq \
       --arg name "$_export_name" \
       --arg svc "$_compose_service" \
       --argjson cport "$cport_json" \
       --arg url "$url" \
       --arg tls "$_tls" \
-      '. + {($name): {compose_service: $svc, container_port: $cport, url: $url, tls: $tls}}')
+      --arg apex_url "$this_apex_url" \
+      --arg apex_host "$this_apex_host" \
+      '. + {($name): ({compose_service: $svc, container_port: $cport, url: $url, tls: $tls}
+            + (if $apex_url != "" then {apex_url: $apex_url, apex_host: $apex_host} else {} end))}')
   done
   printf '%s' "$result"
 }

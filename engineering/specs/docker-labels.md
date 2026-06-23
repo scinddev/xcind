@@ -71,6 +71,12 @@ labels:
   - "xcind.apex.url=https://dev-frontend.localhost"
 ```
 
+> **Consumed, not only emitted.** `xcind-application status` reads the apex host
+> when reporting a running app's live URLs: the headlining (first proxied)
+> export's per-export host is replaced by the apex host in the status `urls[]`
+> array, matching `xcind-application urls`/`exports`. (Both surfaces derive the
+> apex host from the same source as these labels, so they are byte-identical.)
+
 ---
 
 ## Proxy Container Labels
