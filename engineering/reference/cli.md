@@ -138,6 +138,16 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
       "declared_port": 9000
     }
   },
+  "proxiedExports": {
+    "web": {
+      "compose_service": "web",
+      "container_port": 8080,
+      "url": "https://my-workspace-my-app-web.example.test",
+      "tls": "auto",
+      "apex_url": "https://my-workspace-my-app.example.test",
+      "apex_host": "my-workspace-my-app.example.test"
+    }
+  },
   "apex": {
     "enabled": true,
     "hostname": "my-workspace-my-app.example.test",
@@ -150,6 +160,8 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
 The `tools` object is keyed by tool name. Each entry includes `service`, `use` (default `"exec"`), and optionally `path`. See [`XCIND_TOOLS`](./configuration.md#xcind_tools) for the declaration format.
 
 The `assignedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port`, `host_port`, and `declared_port`. It is `{}` when the app declares no `type=assigned` exports (or none have been assigned a host port yet).
+
+The `proxiedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port` (`null` when it cannot be inferred), `url` (the per-export hostname URL, computed from `XCIND_APP_URL_TEMPLATE`), and `tls` (the declared per-export mode). It is `{}` when the app declares no `type=proxied` exports. The **first** proxied export — the apex anchor — additionally carries `apex_url` and `apex_host`: the shorter canonical URL/host that actually serves the app's traffic (present only when an apex template is configured). Other proxied exports omit these keys. Consumers should prefer `apex_url` over `url` for the headlining export; `xcind-application urls`/`exports` do exactly this.
 
 The `apex` object describes the app's apex host derived from the shared proxy backend. It is **always present**: when an apex is available (`XCIND_APP_APEX_URL_TEMPLATE` is set and the app has at least one `type=proxied` export), `enabled` is `true` and `hostname`/`url`/`scheme` are populated; otherwise `enabled` is `false` and `hostname`/`url`/`scheme` are `null` (present-but-null, never omitted, so consumers can read `.apex.enabled` and `.apex.hostname` without existence checks). `url` is `scheme://hostname`; `scheme` is `http` or `https`.
 
@@ -350,6 +362,9 @@ Manages individual xcind applications. Also available as `xcind-app`.
 | `init [DIR] [OPTIONS]` | Initialize an application directory (scaffold `.xcind.sh`) |
 | `status [DIR] [OPTIONS]` | Show resolved configuration and container status for a single application |
 | `list [DIR] [OPTIONS]` | List applications inside the enclosing workspace |
+| `ports [SERVICE] [DIR] [--json]` | Show the host port assigned to each `type=assigned` export |
+| `urls [SERVICE] [DIR] [--json]` | Show the URL for each `type=proxied` export (apex URL for the headlining export when an apex template is set) |
+| `exports [SERVICE] [DIR] [--json]` | Unified per-export view; proxied entries include `apexUrl`/`apexHost` for the headlining export |
 
 ### Init Options
 
@@ -398,7 +413,7 @@ xcind-app list                                 # Short alias
 - Walks upward from `DIR` (or current directory) to find the nearest app `.xcind.sh` that is not a workspace marker.
 - Invokes `xcind-config --json` against the resolved app to discover compose files, env files, workspace membership, and defined services (requires `jq` and `yq`).
 - Queries Docker for containers labeled with `xcind.app.name` (and, in workspace mode, `xcind.workspace.name`) to report per-service status.
-- With `--json`, outputs a structured object with `app`, `path`, `workspace`, `composeFiles`, `composeEnvFiles`, `definedServices`, `services`, `urls`, `total`, and `running`.
+- With `--json`, outputs a structured object with `app`, `path`, `workspace`, `composeFiles`, `composeEnvFiles`, `definedServices`, `services`, `urls`, `total`, and `running`. The `urls` array is scraped from the running containers' `xcind.export.*.host` labels; when an apex template is set, the headlining (first proxied) export's per-export host is swapped for the apex host, matching `urls`/`exports`.
 
 **List:**
 

@@ -1433,6 +1433,75 @@ unset APEX_FN_TMP
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-proxy-json-for-app (apex keys) ==="
+
+# Introspection contract: apex_url/apex_host ride on the FIRST proxied export
+# only (the apex anchor), and only when an apex template is configured. Like
+# the apex-for-app section above, this calls the function directly (no prepare
+# pipeline) — the per-export `url` and apex keys must resolve from the
+# templates already in scope, with no resolved-config.yaml or Docker required.
+JFA_TMP=$(mktemp_d)
+export XCIND_APP="myapp"
+export XCIND_WORKSPACE=""
+export XCIND_PROXY_DOMAIN="localhost"
+export XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+export XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+export XCIND_PROXY_CONFIG_DIR="$JFA_TMP/proxy-config"
+mkdir -p "$XCIND_PROXY_CONFIG_DIR"
+unset XCIND_PROXY_TLS_MODE XCIND_CACHE_DIR
+
+# 1. single proxied export, apex enabled → apex_url/apex_host present alongside
+#    the per-export url (apex is the short canonical host).
+XCIND_PROXY_EXPORTS=("app:8080")
+jfa_one=$(__xcind-proxy-json-for-app "$JFA_TMP")
+assert_eq "json-for-app: per-export url" "https://myapp-app.localhost" \
+  "$(printf '%s' "$jfa_one" | jq -r '.app.url')"
+assert_eq "json-for-app: apex_url on first proxied" "https://myapp.localhost" \
+  "$(printf '%s' "$jfa_one" | jq -r '.app.apex_url')"
+assert_eq "json-for-app: apex_host on first proxied" "myapp.localhost" \
+  "$(printf '%s' "$jfa_one" | jq -r '.app.apex_host')"
+
+# 2. multiple proxied exports → only the FIRST carries apex keys.
+XCIND_PROXY_EXPORTS=("app:8080" "api:9090")
+jfa_two=$(__xcind-proxy-json-for-app "$JFA_TMP")
+assert_eq "json-for-app: first proxied has apex_url" "https://myapp.localhost" \
+  "$(printf '%s' "$jfa_two" | jq -r '.app.apex_url')"
+assert_eq "json-for-app: second proxied omits apex_url" "false" \
+  "$(printf '%s' "$jfa_two" | jq -r '.api | has("apex_url")')"
+assert_eq "json-for-app: second proxied omits apex_host" "false" \
+  "$(printf '%s' "$jfa_two" | jq -r '.api | has("apex_host")')"
+assert_eq "json-for-app: second proxied keeps per-export url" "https://myapp-api.localhost" \
+  "$(printf '%s' "$jfa_two" | jq -r '.api.url')"
+
+# 3. assigned entry placed first does NOT consume the apex slot — the first
+#    *proxied* export still anchors it (mirrors __xcind-proxy-apex-for-app).
+XCIND_PROXY_EXPORTS=("admin:7000;type=assigned" "app:8080")
+jfa_asgn=$(__xcind-proxy-json-for-app "$JFA_TMP")
+assert_eq "json-for-app: assigned-first does not appear in proxied map" "false" \
+  "$(printf '%s' "$jfa_asgn" | jq -r 'has("admin")')"
+assert_eq "json-for-app: apex anchored to first proxied (app)" "https://myapp.localhost" \
+  "$(printf '%s' "$jfa_asgn" | jq -r '.app.apex_url')"
+
+# 4. apex disabled (empty template) → no apex keys anywhere.
+XCIND_APP_APEX_URL_TEMPLATE=""
+XCIND_PROXY_EXPORTS=("app:8080")
+jfa_off=$(__xcind-proxy-json-for-app "$JFA_TMP")
+assert_eq "json-for-app: apex disabled omits apex_url" "false" \
+  "$(printf '%s' "$jfa_off" | jq -r '.app | has("apex_url")')"
+assert_eq "json-for-app: apex disabled omits apex_host" "false" \
+  "$(printf '%s' "$jfa_off" | jq -r '.app | has("apex_host")')"
+assert_eq "json-for-app: apex disabled keeps per-export url" "https://myapp-app.localhost" \
+  "$(printf '%s' "$jfa_off" | jq -r '.app.url')"
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+
+# Teardown — clear the introspection env so it cannot leak into later sections.
+unset XCIND_PROXY_EXPORTS XCIND_PROXY_CONFIG_DIR
+unset XCIND_APP_URL_TEMPLATE XCIND_APP_APEX_URL_TEMPLATE
+rm -rf "$JFA_TMP"
+unset JFA_TMP
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-proxy-ensure-certs (openssl fallback) ==="
 
 if command -v openssl >/dev/null 2>&1; then

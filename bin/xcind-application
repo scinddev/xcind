@@ -351,6 +351,37 @@ __xcind-application-status() {
     fi
   fi
 
+  # Prefer the apex host for the headlining proxied export, mirroring the
+  # `urls`/`exports` views. apex_host (from the apex introspection object) is
+  # byte-identical to the running container's xcind.apex.host label; headline_host
+  # is the per-export host the apex stands in for (the proxied export carrying
+  # apex_host, scheme stripped). We only SWAP a host that was actually scraped,
+  # so the apex appears exactly when its container is running — sibling exports
+  # on the same service keep their own per-export hosts.
+  if [[ ${#urls[@]} -gt 0 ]]; then
+    local apex_host headline_host
+    apex_host=$(printf '%s' "$xcind_json" | jq -r '.apex.hostname // empty')
+    if [[ -n $apex_host ]]; then
+      headline_host=$(printf '%s' "$xcind_json" | jq -r '
+        (.proxiedExports // {}) | to_entries
+        | map(select(.value.apex_host)) | (.[0].value.url // "")
+        | sub("^[a-z]+://"; "")')
+      if [[ -n $headline_host ]]; then
+        local -a swapped_urls=()
+        local _u apex_done=false
+        for _u in "${urls[@]}"; do
+          if [[ $_u == "$headline_host" ]]; then
+            [[ $apex_done == false ]] && swapped_urls+=("$apex_host")
+            apex_done=true
+          else
+            swapped_urls+=("$_u")
+          fi
+        done
+        urls=("${swapped_urls[@]+"${swapped_urls[@]}"}")
+      fi
+    fi
+  fi
+
   local total=${#defined_services[@]}
 
   if [[ $json_mode == true ]]; then
@@ -613,10 +644,15 @@ __xcind-application-introspect() {
 __xcind-application-render-scalar() {
   local xcind_json="$1" json_mode="$2" service="$3" kind="$4"
 
-  local mk vf this_noun this_article other_mk other_noun other_article other_cmd
+  # `af` is the apex field preferred over `vf` when present. urls report the
+  # apex URL for the headlining proxied export (the canonical short URL that
+  # actually serves traffic); ports have no apex, so af="" — `.value[""]` is
+  # null and the coalesce falls straight through to the per-export value.
+  local mk vf af this_noun this_article other_mk other_noun other_article other_cmd
   if [[ $kind == "ports" ]]; then
     mk="assignedExports"
     vf="host_port"
+    af=""
     this_noun="assigned port"
     this_article="an"
     other_mk="proxiedExports"
@@ -626,6 +662,7 @@ __xcind-application-render-scalar() {
   else
     mk="proxiedExports"
     vf="url"
+    af="apex_url"
     this_noun="proxied URL"
     this_article="a"
     other_mk="assignedExports"
@@ -637,16 +674,16 @@ __xcind-application-render-scalar() {
   # No SERVICE: list every entry.
   if [[ -z $service ]]; then
     if [[ $json_mode == true ]]; then
-      printf '%s' "$xcind_json" | jq --arg mk "$mk" --arg vf "$vf" \
-        '.[$mk] | map_values(.[$vf])'
+      printf '%s' "$xcind_json" | jq --arg mk "$mk" --arg vf "$vf" --arg af "$af" \
+        '.[$mk] | map_values(.[$af] // .[$vf])'
       return 0
     fi
     local name value
     while IFS=$'\t' read -r name value; do
       [[ -z $name ]] && continue
       printf '%-18s%s\n' "$name" "$value"
-    done < <(printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg vf "$vf" \
-      '.[$mk] | to_entries | sort_by(.key)[] | "\(.key)\t\(.value[$vf])"')
+    done < <(printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg vf "$vf" --arg af "$af" \
+      '.[$mk] | to_entries | sort_by(.key)[] | "\(.key)\t\(.value[$af] // .value[$vf])"')
     return 0
   fi
 
@@ -687,11 +724,11 @@ __xcind-application-render-scalar() {
   fi
 
   if [[ $json_mode == true ]]; then
-    printf '%s' "$xcind_json" | jq --arg mk "$mk" --arg s "$name" --arg vf "$vf" \
-      '.[$mk][$s][$vf]'
+    printf '%s' "$xcind_json" | jq --arg mk "$mk" --arg s "$name" --arg vf "$vf" --arg af "$af" \
+      '.[$mk][$s] | (.[$af] // .[$vf])'
   else
-    printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg s "$name" --arg vf "$vf" \
-      '.[$mk][$s][$vf]'
+    printf '%s' "$xcind_json" | jq -r --arg mk "$mk" --arg s "$name" --arg vf "$vf" --arg af "$af" \
+      '.[$mk][$s] | (.[$af] // .[$vf])'
   fi
 }
 
@@ -713,13 +750,16 @@ __xcind-application-render-exports() {
     }))
     + ((.proxiedExports // {}) | to_entries | map({
       key: .key,
-      value: {
+      value: ({
         type: "proxied",
         composeService: .value.compose_service,
         containerPort: .value.container_port,
         url: .value.url,
         tls: .value.tls
       }
+      + (if .value.apex_url
+         then {apexUrl: .value.apex_url, apexHost: .value.apex_host}
+         else {} end))
     }))
     | from_entries')
 
@@ -735,7 +775,7 @@ __xcind-application-render-exports() {
       [[ -z $name ]] && continue
       printf '%-18s%-10s%s\n' "$name" "$type" "$target"
     done < <(printf '%s' "$merged" | jq -r \
-      'to_entries | sort_by(.key)[] | "\(.key)\t\(.value.type)\t\(.value.hostPort // .value.url)"')
+      'to_entries | sort_by(.key)[] | "\(.key)\t\(.value.type)\t\(.value.hostPort // .value.apexUrl // .value.url)"')
     return 0
   fi
 

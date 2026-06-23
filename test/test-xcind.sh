@@ -2090,6 +2090,11 @@ assert_eq "JSON apex.hostname (workspaceless)" \
   "acmeapps.example.test" "$(echo "$json_apex_wl" | jq -r '.apex.hostname')"
 assert_eq "JSON apex.url == scheme://hostname (workspaceless)" \
   "true" "$(echo "$json_apex_wl" | jq -r '.apex.url == (.apex.scheme + "://" + .apex.hostname)')"
+# The headlining proxied export carries apex_url/apex_host mirroring .apex.
+assert_eq "JSON proxiedExports.api.apex_url == apex.url (workspaceless)" \
+  "true" "$(echo "$json_apex_wl" | jq -r '.proxiedExports.api.apex_url == .apex.url')"
+assert_eq "JSON proxiedExports.api.apex_host == apex.hostname (workspaceless)" \
+  "true" "$(echo "$json_apex_wl" | jq -r '.proxiedExports.api.apex_host == .apex.hostname')"
 
 rm -rf "$APEX_WL"
 
@@ -2115,6 +2120,11 @@ assert_eq "JSON apex.url null (empty template)" \
   "null" "$(echo "$json_apex_off" | jq -r '.apex.url')"
 assert_eq "JSON apex.scheme null (empty template)" \
   "null" "$(echo "$json_apex_off" | jq -r '.apex.scheme')"
+# Apex disabled → the proxied export carries no apex keys (per-export host only).
+assert_eq "JSON proxiedExports.api omits apex_url (empty template)" \
+  "false" "$(echo "$json_apex_off" | jq -r '.proxiedExports.api | has("apex_url")')"
+assert_eq "JSON proxiedExports.api omits apex_host (empty template)" \
+  "false" "$(echo "$json_apex_off" | jq -r '.proxiedExports.api | has("apex_host")')"
 
 rm -rf "$APEX_OFF_TMPL"
 
@@ -2142,6 +2152,34 @@ assert_eq "JSON apex.scheme null (no proxied export)" \
   "null" "$(echo "$json_apex_noexp" | jq -r '.apex.scheme')"
 
 rm -rf "$APEX_OFF_EXP"
+
+# --- clean shell: apex template DERIVED (not pre-set), still propagates ---
+# Guards the "template availability" gotcha: introspection runs through
+# __xcind-resolve-json with NO prepare pipeline and NO explicit apex template,
+# so the apex template must be resolved from the workspaceless default
+# ({app}.{domain}) and flow into both .apex and the per-export apex_url.
+APEX_DERIVE=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_TOOLS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+# Critically: do NOT set the apex template — force resolution from defaults.
+unset XCIND_APP_APEX_URL_TEMPLATE XCIND_WORKSPACELESS_APP_APEX_URL_TEMPLATE
+XCIND_PROXY_EXPORTS=("api=app:3000")
+
+json_apex_derive=$(__xcind-resolve-json "$APEX_DERIVE")
+
+assert_eq "JSON apex.enabled (derived template)" \
+  "true" "$(echo "$json_apex_derive" | jq -r '.apex.enabled')"
+assert_eq "JSON apex.hostname (derived template)" \
+  "acmeapps.example.test" "$(echo "$json_apex_derive" | jq -r '.apex.hostname')"
+assert_eq "JSON proxiedExports.api.apex_url resolved (derived template)" \
+  "true" "$(echo "$json_apex_derive" | jq -r '.proxiedExports.api.apex_url == .apex.url')"
+
+rm -rf "$APEX_DERIVE"
 
 # ======================================================================
 echo ""
@@ -3793,6 +3831,94 @@ rm -rf "$APP_STATUS_WS" "$APP_STATUS_HOME" "$APP_STATUS_OUTSIDE"
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-application status apex URL (running container) ==="
+
+# The live status view scrapes per-export host labels off running containers.
+# When apex is enabled, the headlining export's per-export host is swapped for
+# the apex host (parity with `urls`/`exports`). This mock reports one running,
+# labeled container; the apex anchor's per-export host is fed to `inspect` via
+# a file so the expected hosts are derived from config (robust to domain
+# defaults) rather than hardcoded.
+APX_WS=$(mktemp_d)
+APX_HOME=$(mktemp_d)
+APX_INSPECT_FILE="$APX_HOME/inspect-host.txt"
+: >"$APX_INSPECT_FILE"
+export XCIND_TEST_INSPECT_FILE="$APX_INSPECT_FILE"
+_apx_orig_HOME="$HOME"
+_apx_orig_PATH="$PATH"
+export HOME="$APX_HOME"
+mkdir -p "$APX_HOME/bin"
+cat >"$APX_HOME/bin/docker" <<'MOCKEOF'
+#!/bin/sh
+# Mock docker: one running, labeled container for the status scan. `inspect`
+# echoes the per-export host the GENERATE hook would have labelled (supplied
+# via XCIND_TEST_INSPECT_FILE); `ps -q` yields its id; `ps -a` reports it Up.
+case "$1" in
+ps)
+  case " $* " in
+  *" -q "*) echo "apxcid" ;;
+  *) printf 'apxws-webapp-nginx-1\tUp 2 minutes\n' ;;
+  esac
+  ;;
+inspect) cat "$XCIND_TEST_INSPECT_FILE" 2>/dev/null || true ;;
+compose)
+  shift
+  for _arg in "$@"; do
+    if [ "$_arg" = "config" ]; then
+      echo 'services:'
+      echo '  nginx:'
+      echo '    image: nginx'
+      echo '    ports:'
+      echo '      - "80:80"'
+      exit 0
+    fi
+  done
+  exit 0
+  ;;
+*) exit 0 ;;
+esac
+MOCKEOF
+chmod +x "$APX_HOME/bin/docker"
+export PATH="$APX_HOME/bin:$_apx_orig_PATH"
+
+"$XCIND_ROOT/bin/xcind-workspace" init "$APX_WS" --name "apxws" >/dev/null 2>&1
+mkdir -p "$APX_WS/webapp"
+cat >"$APX_WS/webapp/.xcind.sh" <<'APXCFG'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_APP="webapp"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("web=nginx:80")
+APXCFG
+cat >"$APX_WS/webapp/compose.yaml" <<'APXCOMPOSE'
+services:
+  nginx:
+    image: nginx
+    ports:
+      - "80:80"
+APXCOMPOSE
+APX_APP="$APX_WS/webapp"
+
+# Derive the per-export host (apex anchor) and apex host from config.
+apx_exports=$(cd "$APX_APP" && "$XCIND_ROOT/bin/xcind-application" exports --json 2>&1)
+apx_perexport_host=$(printf '%s' "$apx_exports" | jq -r '.web.url | sub("^[a-z]+://"; "")')
+apx_apex_host=$(printf '%s' "$apx_exports" | jq -r '.web.apexHost')
+# Feed the per-export host to the inspect mock so the swap has something to match.
+printf '%s\n' "$apx_perexport_host" >"$APX_INSPECT_FILE"
+
+apx_status_json=$(cd "$APX_APP" && "$XCIND_ROOT/bin/xcind-application" status --json 2>&1)
+assert_eq "status --json: urls contains apex host" "true" \
+  "$(printf '%s' "$apx_status_json" | jq -r --arg h "$apx_apex_host" '.urls | index($h) != null')"
+assert_eq "status --json: urls drops the per-export host (swapped)" "true" \
+  "$(printf '%s' "$apx_status_json" | jq -r --arg h "$apx_perexport_host" '.urls | index($h) == null')"
+
+export HOME="$_apx_orig_HOME"
+export PATH="$_apx_orig_PATH"
+unset _apx_orig_HOME _apx_orig_PATH XCIND_TEST_INSPECT_FILE
+rm -rf "$APX_WS" "$APX_HOME"
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-application ports / urls / exports CLI ==="
 
 APP_PUE_WS=$(mktemp_d)
@@ -3898,6 +4024,53 @@ pue_web_type=$(printf '%s' "$pue_exports_json" | jq -r '.web.type')
 assert_eq "exports --json: web is proxied" "proxied" "$pue_web_type"
 pue_db_hostport=$(printf '%s' "$pue_exports_json" | jq -r '.db.hostPort')
 assert_eq "exports --json: db hostPort matches ports" "$pue_db_port" "$pue_db_hostport"
+
+# Apex reporting: this app is in a workspace, so the default apex template is
+# active and `web` is the headlining (only) proxied export.
+#   - `urls` reports the apex URL (canonical short host, no per-export segment).
+#   - `exports --json` keeps the per-export `url` AND adds apexUrl/apexHost.
+#   - the assigned `db` export is untouched (no apex keys).
+pue_web_apexurl=$(printf '%s' "$pue_exports_json" | jq -r '.web.apexUrl')
+pue_web_perexport=$(printf '%s' "$pue_exports_json" | jq -r '.web.url')
+assert_eq "exports --json: web keeps per-export url" "1" \
+  "$([[ $pue_web_perexport == *-web.* ]] && echo 1 || echo 0)"
+assert_eq "exports --json: web apexUrl drops the per-export segment" "1" \
+  "$([[ -n $pue_web_apexurl && $pue_web_apexurl != *-web.* ]] && echo 1 || echo 0)"
+assert_eq "exports --json: web apexUrl != per-export url" "1" \
+  "$([[ $pue_web_apexurl != "$pue_web_perexport" ]] && echo 1 || echo 0)"
+assert_eq "exports --json: assigned db has no apexUrl" "false" \
+  "$(printf '%s' "$pue_exports_json" | jq -r '.db | has("apexUrl")')"
+# `urls` (json + text) prefers the apex URL for the headlining export.
+assert_eq "urls --json: web prefers apex URL" "$pue_web_apexurl" \
+  "$(printf '%s' "$pue_urls_json" | jq -r '.web')"
+pue_web_urls_text=$(cd "$PUE_APP" && "$XCIND_ROOT/bin/xcind-application" urls 2>&1 | awk '$1=="web"{print $2}')
+assert_eq "urls text: web prefers apex URL" "$pue_web_apexurl" "$pue_web_urls_text"
+
+# Regression — apex disabled (empty workspaceless/workspace override) reports
+# the per-export host exactly as before, with no apex keys leaking in.
+mkdir -p "$APP_PUE_WS/noapex"
+cat >"$APP_PUE_WS/noapex/.xcind.sh" <<'NOAPEXCFG'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_APP="noapex"
+XCIND_WORKSPACE_APP_APEX_URL_TEMPLATE=""
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_PROXY_EXPORTS=("web=nginx:80")
+NOAPEXCFG
+cat >"$APP_PUE_WS/noapex/compose.yaml" <<'NOAPEXCOMPOSE'
+services:
+  nginx:
+    image: nginx
+    ports:
+      - "80:80"
+NOAPEXCOMPOSE
+pue_noapex_urls=$(cd "$APP_PUE_WS/noapex" && "$XCIND_ROOT/bin/xcind-application" urls --json 2>&1)
+pue_noapex_web=$(printf '%s' "$pue_noapex_urls" | jq -r '.web')
+assert_eq "urls --json: apex-disabled keeps per-export host" "1" \
+  "$([[ $pue_noapex_web == *-web.* ]] && echo 1 || echo 0)"
+pue_noapex_exports=$(cd "$APP_PUE_WS/noapex" && "$XCIND_ROOT/bin/xcind-application" exports --json 2>&1)
+assert_eq "exports --json: apex-disabled web has no apexUrl" "false" \
+  "$(printf '%s' "$pue_noapex_exports" | jq -r '.web | has("apexUrl")')"
 
 # Wrong-type lookups are helpful errors, not "not found"
 pue_ports_web_status=$(capture_status "$XCIND_ROOT/bin/xcind-application" ports "web" "$PUE_APP")
