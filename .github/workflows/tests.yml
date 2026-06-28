@@ -50,6 +50,7 @@ jobs:
             lib/xcind/xcind-bootstrap.bash \
             lib/xcind/xcind-completion-bash.bash \
             lib/xcind/xcind-completion-zsh.bash \
+            lib/xcind/xcind-discovery-lib.bash \
             lib/xcind/xcind-host-gateway-lib.bash \
             lib/xcind/xcind-lib.bash \
             lib/xcind/xcind-naming-lib.bash \

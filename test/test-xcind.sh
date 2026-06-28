@@ -1687,9 +1687,9 @@ unset ALWAYS_VAL_APP always_val_run_out always_val_rc
 # Restore default hooks and clean environment for subsequent tests
 unset XCIND_SHA XCIND_CACHE_DIR XCIND_GENERATED_DIR
 # shellcheck disable=SC2034 # reset for downstream tests
-XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook" "xcind-discovery-hook")
 # shellcheck disable=SC2034 # reset for downstream tests
-XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook" "xcind-discovery-hook")
 reset_xcind_state
 
 # ======================================================================
@@ -2989,6 +2989,106 @@ assert_eq "no compose.app.yaml when skipped" "false" \
   "$([ -f "$XCIND_GENERATED_DIR/compose.app.yaml" ] && echo true || echo false)"
 
 rm -rf "$APP_HOOK_DIR"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-discovery-hook ==="
+
+DISC_DIR=$(mktemp_d)
+export XCIND_APP="myapp"
+export XCIND_SHA="dischooktest"
+export XCIND_CACHE_DIR="$DISC_DIR/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$DISC_DIR/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+  db:
+    image: postgres
+YAML
+
+# Assigned-ports state backing the assigned export.
+DISC_ASSIGNED_DIR=$(mktemp_d)
+XCIND_ASSIGNED_PORTS_FILE="${DISC_ASSIGNED_DIR}/assigned-ports.tsv"
+# shellcheck disable=SC2034 # read at runtime by the assigned-port helpers
+XCIND_ASSIGNED_PORTS_LOCK="${DISC_ASSIGNED_DIR}/assigned-ports.lock"
+__xcind-assigned-upsert 54320 "" myapp db 5432 "$DISC_DIR"
+
+# URL templates (resolved by the prepare pipeline in production).
+XCIND_APP_URL_TEMPLATE='{app}-{export}.{domain}'
+XCIND_APP_APEX_URL_TEMPLATE='{app}.{domain}'
+XCIND_PROXY_DOMAIN="localhost.scind.io"
+# shellcheck disable=SC2034 # read at runtime by xcind-discovery-hook
+XCIND_PROXY_TLS_MODE="auto"
+
+# --- Standalone mode: proxied web + assigned db ---
+XCIND_WORKSPACELESS=1
+unset XCIND_WORKSPACE 2>/dev/null || true
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned")
+
+disc_out=$(xcind-discovery-hook "$DISC_DIR")
+assert_contains "discovery hook prints -f flag" \
+  "-f $XCIND_GENERATED_DIR/compose.discovery.yaml" "$disc_out"
+assert_file_exists "compose.discovery.yaml created" \
+  "$XCIND_GENERATED_DIR/compose.discovery.yaml"
+
+disc_yaml=$(<"$XCIND_GENERATED_DIR/compose.discovery.yaml")
+assert_contains "discovery applies to web service" "  web:" "$disc_yaml"
+assert_contains "discovery applies to db service" "  db:" "$disc_yaml"
+# Proxied export (tls=auto → both schemes; base vars default to HTTPS)
+assert_contains "proxied host" \
+  "XCIND_MYAPP_WEB_HOST=myapp-web.localhost.scind.io" "$disc_yaml"
+assert_contains "proxied port defaults to 443" "XCIND_MYAPP_WEB_PORT=443" "$disc_yaml"
+assert_contains "proxied scheme https" "XCIND_MYAPP_WEB_SCHEME=https" "$disc_yaml"
+assert_contains "proxied url" \
+  "XCIND_MYAPP_WEB_URL=https://myapp-web.localhost.scind.io" "$disc_yaml"
+assert_contains "proxied http protocol var" "XCIND_MYAPP_WEB_HTTP_PORT=80" "$disc_yaml"
+assert_contains "proxied https protocol var" "XCIND_MYAPP_WEB_HTTPS_PORT=443" "$disc_yaml"
+# Apex (first proxied export = web)
+assert_contains "apex host" "XCIND_MYAPP_APEX_HOST=myapp.localhost.scind.io" "$disc_yaml"
+assert_contains "apex url" \
+  "XCIND_MYAPP_APEX_URL=https://myapp.localhost.scind.io" "$disc_yaml"
+# Assigned export (standalone → host is the compose service name)
+assert_contains "assigned host is compose service" "XCIND_MYAPP_DB_HOST=db" "$disc_yaml"
+assert_contains "assigned port is container port" "XCIND_MYAPP_DB_PORT=5432" "$disc_yaml"
+assert_contains "assigned host port is allocated port" \
+  "XCIND_MYAPP_DB_HOST_PORT=54320" "$disc_yaml"
+assert_not_contains "no workspace name when standalone" \
+  "XCIND_WORKSPACE_NAME=" "$disc_yaml"
+
+# --- Workspace mode: assigned host uses the network alias + workspace name ---
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="dev"
+XCIND_WORKSPACE_SERVICE_TEMPLATE='{app}-{service}'
+XCIND_PROXY_EXPORTS=("db:5432;type=assigned")
+xcind-discovery-hook "$DISC_DIR" >/dev/null
+disc_ws_yaml=$(<"$XCIND_GENERATED_DIR/compose.discovery.yaml")
+assert_contains "workspace assigned host uses alias" \
+  "XCIND_MYAPP_DB_HOST=myapp-db" "$disc_ws_yaml"
+assert_contains "workspace name injected" "XCIND_WORKSPACE_NAME=dev" "$disc_ws_yaml"
+
+# --- Nothing to inject: no exports, no assigned state, not a workspace ---
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_WORKSPACELESS=1
+unset XCIND_WORKSPACE 2>/dev/null || true
+XCIND_PROXY_EXPORTS=()
+XCIND_ASSIGNED_PORTS_FILE="${DISC_ASSIGNED_DIR}/none.tsv"
+empty_out=$(xcind-discovery-hook "$DISC_DIR")
+assert_eq "no output when nothing to inject" "" "$empty_out"
+assert_file_missing "no compose.discovery.yaml when empty" \
+  "$XCIND_GENERATED_DIR/compose.discovery.yaml"
+
+unset XCIND_PROXY_EXPORTS XCIND_APP_URL_TEMPLATE XCIND_APP_APEX_URL_TEMPLATE
+unset XCIND_WORKSPACE XCIND_WORKSPACE_SERVICE_TEMPLATE XCIND_WORKSPACELESS
+unset XCIND_PROXY_DOMAIN XCIND_PROXY_TLS_MODE
+unset XCIND_ASSIGNED_PORTS_FILE XCIND_ASSIGNED_PORTS_LOCK
+rm -rf "$DISC_DIR" "$DISC_ASSIGNED_DIR"
+reset_xcind_state
 
 # ======================================================================
 echo ""
