@@ -30,7 +30,7 @@ For each export the `xcind-discovery-hook` generates `environment:` variables an
 | `XCIND_{APP}_{E}_HOST` | Proxied hostname (e.g. `myapp-web.localhost.scind.io`) |
 | `XCIND_{APP}_{E}_PORT` | Proxy entrypoint port — `XCIND_PROXY_HTTPS_PORT` (default 443) for https, `XCIND_PROXY_HTTP_PORT` (default 80) for http |
 | `XCIND_{APP}_{E}_SCHEME` | `http` or `https` |
-| `XCIND_{APP}_{E}_URL` | `{scheme}://{hostname}` |
+| `XCIND_{APP}_{E}_URL` | `{scheme}://{hostname}` with `:port` appended when the proxy entrypoint uses a non-default port |
 
 When an export serves **both** schemes, base variables default to HTTPS, and protocol-specific variables are also emitted: `XCIND_{APP}_{E}_HTTPS_HOST/_PORT/_URL` and `XCIND_{APP}_{E}_HTTP_HOST/_PORT/_URL`. Prefer HTTPS for service-to-service traffic; use the `_HTTP_*` variants only when HTTP is explicitly required.
 
@@ -43,7 +43,7 @@ For the apex export — the **first `proxied` export** (Xcind's positional rule;
 | `XCIND_{APP}_APEX_HOST` | Apex hostname (e.g. `myapp.localhost.scind.io`) |
 | `XCIND_{APP}_APEX_PORT` | Apex entrypoint port |
 | `XCIND_{APP}_APEX_SCHEME` | `http` or `https` |
-| `XCIND_{APP}_APEX_URL` | `{scheme}://{apex_hostname}` |
+| `XCIND_{APP}_APEX_URL` | `{scheme}://{apex_hostname}` with `:port` appended when the proxy entrypoint uses a non-default port |
 
 No apex variables are emitted when there is no proxied export (an assigned-type export never anchors the apex).
 
@@ -89,6 +89,9 @@ psql "host=localhost port=${XCIND_MYAPP_DB_HOST_PORT} dbname=app"
 ```
 
 > **Precedence**: `compose.discovery.yaml` is merged last, so these variables win over an `environment:` value of the same key declared in your base compose file.
+
+When `XCIND_PROXY_HTTP_PORT` or `XCIND_PROXY_HTTPS_PORT` is customized away
+from `80` or `443`, the matching URL variables include the explicit port.
 
 ---
 

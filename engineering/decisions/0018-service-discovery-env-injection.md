@@ -89,9 +89,9 @@ block precedence on `environment:` key collisions.
 
 - One more generated overlay and an `XCIND_HOOKS_ALWAYS` member (re-runs each
   invocation); the hook is kept side-effect-free and cheap to bound the cost.
-- Discovery variables for an export removed from `XCIND_PROXY_EXPORTS` can linger
-  until the assigned-port state is cleaned, since assigned discovery reads the
-  shared state file — the same staleness window as the existing introspection.
+- Assigned discovery still reads the shared state file for allocated host ports,
+  but filters injection to currently declared `type=assigned` exports so stale
+  rows are not exposed to containers.
 
 ### Neutral
 

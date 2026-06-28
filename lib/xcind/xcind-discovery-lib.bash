@@ -41,6 +41,25 @@ __xcind-discovery-envify() {
   printf '%s' "$s" | tr '[:lower:]' '[:upper:]'
 }
 
+# Render a public URL for a proxied host. Default ports stay implicit; custom
+# proxy entrypoint ports are included so *_URL is directly usable.
+__xcind-discovery-url() {
+  local scheme="$1" host="$2" port="$3"
+  if [[ $scheme == "https" && $port == "443" ]] ||
+    [[ $scheme == "http" && $port == "80" ]]; then
+    printf '%s://%s' "$scheme" "$host"
+  else
+    printf '%s://%s:%s' "$scheme" "$host" "$port"
+  fi
+}
+
+# Quote a scalar as a YAML single-quoted string. Single quotes inside the value
+# are represented by two adjacent single quotes.
+__xcind-discovery-yaml-quote() {
+  local s="${1//\'/\'\'}"
+  printf "'%s'" "$s"
+}
+
 # --------------------------------------------------------------------------
 # Hook Function
 # --------------------------------------------------------------------------
@@ -101,7 +120,7 @@ xcind-discovery-hook() {
       hostname=$(__xcind-proxy-export-hostname "$_export_name" "$app" "$XCIND_PROXY_DOMAIN")
       scheme=$(__xcind-proxy-preferred-scheme "$_effective_tls")
       if [[ $scheme == "https" ]]; then port="$https_port"; else port="$http_port"; fi
-      url="$scheme://$hostname"
+      url=$(__xcind-discovery-url "$scheme" "$hostname" "$port")
       exp_env=$(__xcind-discovery-envify "$_export_name")
       prefix="XCIND_${app_env}_${exp_env}"
 
@@ -114,10 +133,10 @@ xcind-discovery-hook() {
       if [[ $_effective_tls == "both" ]]; then
         env_lines+=("${prefix}_HTTPS_HOST=$hostname")
         env_lines+=("${prefix}_HTTPS_PORT=$https_port")
-        env_lines+=("${prefix}_HTTPS_URL=https://$hostname")
+        env_lines+=("${prefix}_HTTPS_URL=$(__xcind-discovery-url https "$hostname" "$https_port")")
         env_lines+=("${prefix}_HTTP_HOST=$hostname")
         env_lines+=("${prefix}_HTTP_PORT=$http_port")
-        env_lines+=("${prefix}_HTTP_URL=http://$hostname")
+        env_lines+=("${prefix}_HTTP_URL=$(__xcind-discovery-url http "$hostname" "$http_port")")
       fi
     done
 
@@ -126,6 +145,7 @@ xcind-discovery-hook() {
     if _apex_tsv=$(__xcind-proxy-apex-for-app 2>/dev/null); then
       IFS=$'\t' read -r apex_url apex_host apex_scheme <<<"$_apex_tsv"
       if [[ $apex_scheme == "https" ]]; then apex_port="$https_port"; else apex_port="$http_port"; fi
+      apex_url=$(__xcind-discovery-url "$apex_scheme" "$apex_host" "$apex_port")
       local aprefix="XCIND_${app_env}_APEX"
       env_lines+=("${aprefix}_HOST=$apex_host")
       env_lines+=("${aprefix}_PORT=$apex_port")
@@ -139,12 +159,33 @@ xcind-discovery-hook() {
   # unavailable the assigned variables are simply omitted; proxied variables
   # are unaffected.
   if command -v jq &>/dev/null; then
+    local -a current_assigned_exports=()
+    if [[ -n ${XCIND_PROXY_EXPORTS+set} && ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]]; then
+      local assigned_entry
+      for assigned_entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+        _export_name="" _compose_service="" _port="" _type=""
+        __xcind-proxy-parse-entry "$assigned_entry" 2>/dev/null || continue
+        [[ $_type == "assigned" ]] || continue
+        current_assigned_exports+=("$_export_name")
+      done
+    fi
+
     local assigned_json
     assigned_json=$(__xcind-assigned-json-for-app "$app_root")
-    if [[ -n $assigned_json && $assigned_json != "{}" ]]; then
+    if [[ ${#current_assigned_exports[@]} -gt 0 && -n $assigned_json && $assigned_json != "{}" ]]; then
       local xport
       while IFS= read -r xport; do
         [[ -z $xport ]] && continue
+
+        local declared=false declared_xport
+        for declared_xport in "${current_assigned_exports[@]}"; do
+          if [[ $declared_xport == "$xport" ]]; then
+            declared=true
+            break
+          fi
+        done
+        [[ $declared == true ]] || continue
+
         local csvc cport hport host exp_env prefix
         csvc=$(printf '%s' "$assigned_json" | jq -r --arg k "$xport" '.[$k].compose_service // ""')
         cport=$(printf '%s' "$assigned_json" | jq -r --arg k "$xport" '.[$k].container_port')
@@ -183,7 +224,7 @@ xcind-discovery-hook() {
   # Build the shared environment block once.
   local env_block="" line
   for line in "${env_lines[@]}"; do
-    env_block+=$'\n'"      - \"$line\""
+    env_block+=$'\n'"      - $(__xcind-discovery-yaml-quote "$line")"
   done
 
   # Attach the block to every service.

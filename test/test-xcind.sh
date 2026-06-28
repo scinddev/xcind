@@ -3058,6 +3058,25 @@ assert_contains "assigned host port is allocated port" \
 assert_not_contains "no workspace name when standalone" \
   "XCIND_WORKSPACE_NAME=" "$disc_yaml"
 
+# Custom proxy entrypoint ports are included in URLs so *_URL remains usable.
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+# shellcheck disable=SC2034 # read at runtime by xcind-discovery-hook
+XCIND_PROXY_HTTPS_PORT=8443
+# shellcheck disable=SC2034 # read at runtime by xcind-discovery-hook
+XCIND_PROXY_HTTP_PORT=8080
+xcind-discovery-hook "$DISC_DIR" >/dev/null
+disc_ports_yaml=$(<"$XCIND_GENERATED_DIR/compose.discovery.yaml")
+assert_contains "custom https port included in base URL" \
+  "XCIND_MYAPP_WEB_URL=https://myapp-web.localhost.scind.io:8443" "$disc_ports_yaml"
+assert_contains "custom https protocol URL includes port" \
+  "XCIND_MYAPP_WEB_HTTPS_URL=https://myapp-web.localhost.scind.io:8443" "$disc_ports_yaml"
+assert_contains "custom http protocol URL includes port" \
+  "XCIND_MYAPP_WEB_HTTP_URL=http://myapp-web.localhost.scind.io:8080" "$disc_ports_yaml"
+assert_contains "custom apex URL includes port" \
+  "XCIND_MYAPP_APEX_URL=https://myapp.localhost.scind.io:8443" "$disc_ports_yaml"
+unset XCIND_PROXY_HTTPS_PORT XCIND_PROXY_HTTP_PORT
+
 # --- Workspace mode: assigned host uses the network alias + workspace name ---
 rm -rf "$XCIND_GENERATED_DIR"
 mkdir -p "$XCIND_GENERATED_DIR"
@@ -3071,12 +3090,26 @@ assert_contains "workspace assigned host uses alias" \
   "XCIND_MYAPP_DB_HOST=myapp-db" "$disc_ws_yaml"
 assert_contains "workspace name injected" "XCIND_WORKSPACE_NAME=dev" "$disc_ws_yaml"
 
-# --- Nothing to inject: no exports, no assigned state, not a workspace ---
+# YAML single-quote escaping protects generated environment scalars.
+quoted_disc_line=$(__xcind-discovery-yaml-quote "XCIND_WORKSPACE_NAME=dev's")
+assert_eq "discovery YAML quote escapes single quotes" \
+  "'XCIND_WORKSPACE_NAME=dev''s'" "$quoted_disc_line"
+
+# --- Nothing to inject: no current exports, even with stale assigned state ---
 rm -rf "$XCIND_GENERATED_DIR"
 mkdir -p "$XCIND_GENERATED_DIR"
 XCIND_WORKSPACELESS=1
 unset XCIND_WORKSPACE 2>/dev/null || true
 XCIND_PROXY_EXPORTS=()
+stale_out=$(xcind-discovery-hook "$DISC_DIR")
+assert_eq "stale assigned state is ignored without declarations" "" "$stale_out"
+assert_file_missing "no compose.discovery.yaml for stale assigned state" \
+  "$XCIND_GENERATED_DIR/compose.discovery.yaml"
+
+# --- Nothing to inject: no exports, no assigned state, not a workspace ---
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+# shellcheck disable=SC2034 # read at runtime by the assigned-port helpers
 XCIND_ASSIGNED_PORTS_FILE="${DISC_ASSIGNED_DIR}/none.tsv"
 empty_out=$(xcind-discovery-hook "$DISC_DIR")
 assert_eq "no output when nothing to inject" "" "$empty_out"
