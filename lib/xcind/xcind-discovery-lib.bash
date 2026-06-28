@@ -54,9 +54,12 @@ __xcind-discovery-url() {
 }
 
 # Quote a scalar as a YAML single-quoted string. Single quotes inside the value
-# are represented by two adjacent single quotes.
+# are represented by two adjacent single quotes. The quote char comes from a
+# variable so the replacement contains no backslashes — Bash 3.2 keeps literal
+# backslashes in `${var//x/\'}` replacements, which would corrupt the output.
 __xcind-discovery-yaml-quote() {
-  local s="${1//\'/\'\'}"
+  local sq="'"
+  local s="${1//$sq/$sq$sq}"
   printf "'%s'" "$s"
 }
 
