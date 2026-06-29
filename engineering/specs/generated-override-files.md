@@ -23,6 +23,7 @@ Each hook writes a separate compose file:
 | `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network, export labels |
 | `xcind-assigned-hook` | `compose.assigned.yaml` | Stable host port bindings with flock-serialized state |
 | `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases and identity labels |
+| `xcind-discovery-hook` | `compose.discovery.yaml` | Service-discovery `environment:` vars (`XCIND_{APP}_{EXPORT}_*`) on all services |
 
 These files are gitignored and regenerated on cache miss.
 
@@ -220,6 +221,39 @@ networks:
 
 ---
 
+### `compose.discovery.yaml`
+
+Injects an `environment:` block of service-discovery variables onto every
+service of the current app, so applications can read their own export
+hostnames, ports, and URLs at runtime without hardcoding them. The same block
+is attached to every service (own-app scope). Generated last so its values win
+on key collision.
+
+```yaml
+services:
+
+  web:
+    environment:
+      - "XCIND_MYAPP_WEB_HOST=myapp-web.localhost.scind.io"
+      - "XCIND_MYAPP_WEB_PORT=443"
+      - "XCIND_MYAPP_WEB_SCHEME=https"
+      - "XCIND_MYAPP_WEB_URL=https://myapp-web.localhost.scind.io"
+      - "XCIND_MYAPP_APEX_HOST=myapp.localhost.scind.io"
+      - "XCIND_MYAPP_APEX_URL=https://myapp.localhost.scind.io"
+      - "XCIND_MYAPP_DB_HOST=myapp-db"
+      - "XCIND_MYAPP_DB_PORT=5432"
+      - "XCIND_MYAPP_DB_HOST_PORT=54320"
+
+  db:
+    environment:
+      # …same block…
+```
+
+See [Environment Variables](./environment-variables.md) for the full schema and
+[ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the design.
+
+---
+
 ## Merge Order
 
 Docker Compose files are merged by `docker compose` in this order:
@@ -234,7 +268,8 @@ docker compose \
   -f .xcind/generated/{sha}/compose.host-gateway.yaml \
   -f .xcind/generated/{sha}/compose.proxy.yaml \
   -f .xcind/generated/{sha}/compose.assigned.yaml \
-  -f .xcind/generated/{sha}/compose.workspace.yaml
+  -f .xcind/generated/{sha}/compose.workspace.yaml \
+  -f .xcind/generated/{sha}/compose.discovery.yaml
 ```
 
 Application compose files come first (resolved by xcind from `XCIND_COMPOSE_FILES`), followed by hook-generated files in registration order.

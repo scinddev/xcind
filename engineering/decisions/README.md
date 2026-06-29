@@ -25,6 +25,7 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0015](./0015-application-export-introspection.md) | Application Export Introspection and Command Placement | Proposed |
 | [0016](./0016-proxy-domain-wildcard-constraint.md) | Proxy Domain Must Be Multi-Label; Default `localhost.scind.io` | Accepted |
 | [0017](./0017-apex-url-reporting.md) | Reporting Prefers the Apex URL for the Headlining Export | Accepted |
+| [0018](./0018-service-discovery-env-injection.md) | Service-Discovery Environment Variable Injection | Accepted |
 
 ## ADR Format
 

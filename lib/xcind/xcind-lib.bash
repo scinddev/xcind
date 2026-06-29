@@ -84,9 +84,11 @@ source "$__XCIND_LIB_DIR/xcind-host-gateway-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 # shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-discovery-lib.bash"
+# shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-registry-lib.bash"
 
-XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")
+XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook" "xcind-discovery-hook")
 XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
 
 # Hooks whose output depends on live state outside the cache SHA inputs
@@ -95,7 +97,7 @@ XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hoo
 # ordering, marker semantics, and the cache-completeness check, but on a
 # cache HIT replay `__xcind-run-hooks` re-runs them instead of replaying
 # their persisted output. Pure hooks continue to replay from cache.
-XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
+XCIND_HOOKS_ALWAYS=("xcind-assigned-hook" "xcind-discovery-hook")
 
 # Names of hooks that soft-skipped this run because yq was missing.
 # Populated by hooks themselves; drained and reported as a single
