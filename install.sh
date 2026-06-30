@@ -33,6 +33,7 @@ install -m 644 "$XCIND_ROOT/lib/xcind/xcind-host-gateway-lib.bash" "$PREFIX/lib/
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-completion-bash.bash" "$PREFIX/lib/xcind/xcind-completion-bash.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-completion-zsh.bash" "$PREFIX/lib/xcind/xcind-completion-zsh.bash"
 install -m 644 "$XCIND_ROOT/lib/xcind/xcind-discovery-lib.bash" "$PREFIX/lib/xcind/xcind-discovery-lib.bash"
+install -m 644 "$XCIND_ROOT/lib/xcind/xcind-hostenv-lib.bash" "$PREFIX/lib/xcind/xcind-hostenv-lib.bash"
 
 # Build provenance: emit xcind-build-info.bash when installing from a git
 # checkout. Tarballs without a .git directory get a plain XCIND_VERSION.
