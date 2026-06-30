@@ -64,28 +64,25 @@ __xcind-discovery-yaml-quote() {
 }
 
 # --------------------------------------------------------------------------
-# Hook Function
+# Pair builder (shared seam)
 # --------------------------------------------------------------------------
 
-# Main hook function called by the xcind pipeline. Generates
-# compose.discovery.yaml with the discovery environment block for all services.
-xcind-discovery-hook() {
-  local app_root="$1"
+# Build the discovery KEY=VALUE pairs for an app under a given view.
+#   view: "container" (in-network alias/service + container port) or
+#         "host" (127.0.0.1 + assigned host port).
+# Prints one KEY=VALUE per line on stdout. Pure: no file writes, no -f, no
+# service enumeration. Requires jq only for assigned exports (soft-omitted when
+# missing); does NOT require yq — the caller owns service enumeration.
+#
+# Single source of truth for the discovery variable set, shared by the GENERATE
+# overlay (xcind-discovery-hook, container view) and the host-view env-file
+# emitter (xcind-hostenv-lib.bash, host view) so the two never drift. The view
+# split is strictly scoped to assigned exports: only their _HOST/_PORT change.
+# The proxied + apex blocks and XCIND_WORKSPACE_NAME are view-invariant — a
+# proxied _HOST is the SNI hostname Traefik routes on and MUST NOT be IP-substituted.
+__xcind-discovery-build-pairs() {
+  local app_root="$1" view="${2:-container}"
   local app="${XCIND_APP:-$(basename "$app_root")}"
-
-  # yq is required for service enumeration; record and soft-skip if missing.
-  # The consolidated summary is emitted by __xcind-run-hooks at the end of the
-  # run. Containers still run without these convenience variables.
-  if ! command -v yq &>/dev/null; then
-    __XCIND_HOOKS_SKIPPED_NO_YQ+=("xcind-discovery-hook")
-    return 0
-  fi
-
-  local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
-  if [[ ! -f $resolved_config ]]; then
-    echo "Warning: resolved-config.yaml not found, skipping xcind-discovery-hook." >&2
-    return 0
-  fi
 
   # Establish domain, TLS mode, and proxy ports exactly as xcind-proxy-hook
   # does, so generated hostnames stay byte-identical with the proxy labels.
@@ -189,30 +186,80 @@ xcind-discovery-hook() {
         done
         [[ $declared == true ]] || continue
 
-        local csvc cport hport host exp_env prefix
+        local csvc cport hport host port_for_view exp_env prefix
         csvc=$(printf '%s' "$assigned_json" | jq -r --arg k "$xport" '.[$k].compose_service // ""')
         cport=$(printf '%s' "$assigned_json" | jq -r --arg k "$xport" '.[$k].container_port')
         hport=$(printf '%s' "$assigned_json" | jq -r --arg k "$xport" '.[$k].host_port')
         [[ -z $csvc ]] && csvc="$xport"
 
-        # In-network host: workspace alias when in a workspace (where the
-        # alias actually exists), else the compose service name reachable on
-        # Compose's default network.
-        if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]]; then
-          host=$(__xcind-render-template "$XCIND_WORKSPACE_SERVICE_TEMPLATE" \
-            workspace "${XCIND_WORKSPACE:-}" app "$app" service "$csvc")
+        if [[ $view == host ]]; then
+          # Host view: reachable on the loopback IP + the allocated host port.
+          # Literal 127.0.0.1 (not localhost) avoids ::1/IPv6 surprises in
+          # strict clients; _PORT carries the host port on the host.
+          host="127.0.0.1"
+          port_for_view="$hport"
         else
-          host="$csvc"
+          # Container view in-network host: workspace alias when in a workspace
+          # (where the alias actually exists), else the compose service name
+          # reachable on Compose's default network; _PORT is the container port.
+          if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]]; then
+            host=$(__xcind-render-template "$XCIND_WORKSPACE_SERVICE_TEMPLATE" \
+              workspace "${XCIND_WORKSPACE:-}" app "$app" service "$csvc")
+          else
+            host="$csvc"
+          fi
+          port_for_view="$cport"
         fi
 
         exp_env=$(__xcind-discovery-envify "$xport")
         prefix="XCIND_${app_env}_${exp_env}"
         env_lines+=("${prefix}_HOST=$host")
-        env_lines+=("${prefix}_PORT=$cport")
+        env_lines+=("${prefix}_PORT=$port_for_view")
         env_lines+=("${prefix}_HOST_PORT=$hport")
       done < <(printf '%s' "$assigned_json" | jq -r 'keys[]')
     fi
   fi
+
+  # Emit one KEY=VALUE per line. Guard the empty case: under `set -u` Bash 3.2
+  # errors on "${arr[@]}" for an empty array.
+  if [[ ${#env_lines[@]} -gt 0 ]]; then
+    local _pair
+    for _pair in "${env_lines[@]}"; do
+      printf '%s\n' "$_pair"
+    done
+  fi
+}
+
+# --------------------------------------------------------------------------
+# Hook Function
+# --------------------------------------------------------------------------
+
+# Main hook function called by the xcind pipeline. Generates
+# compose.discovery.yaml with the discovery environment block (container view)
+# for all services.
+xcind-discovery-hook() {
+  local app_root="$1"
+
+  # yq is required for service enumeration; record and soft-skip if missing.
+  # The consolidated summary is emitted by __xcind-run-hooks at the end of the
+  # run. Containers still run without these convenience variables.
+  if ! command -v yq &>/dev/null; then
+    __XCIND_HOOKS_SKIPPED_NO_YQ+=("xcind-discovery-hook")
+    return 0
+  fi
+
+  local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
+  if [[ ! -f $resolved_config ]]; then
+    echo "Warning: resolved-config.yaml not found, skipping xcind-discovery-hook." >&2
+    return 0
+  fi
+
+  # Build the container-view pairs (shared seam with the host-view emitter).
+  local -a env_lines=()
+  local _pair
+  while IFS= read -r _pair; do
+    [[ -n $_pair ]] && env_lines+=("$_pair")
+  done < <(__xcind-discovery-build-pairs "$app_root" container)
 
   # Nothing to inject (no exports, not in a workspace).
   if [[ ${#env_lines[@]} -eq 0 ]]; then

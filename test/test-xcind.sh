@@ -3058,6 +3058,35 @@ assert_contains "assigned host port is allocated port" \
 assert_not_contains "no workspace name when standalone" \
   "XCIND_WORKSPACE_NAME=" "$disc_yaml"
 
+# Byte-identical regression (step-01): __xcind-discovery-build-pairs is the
+# single producer of the discovery pair set, shared by this GENERATE overlay
+# (container view) and the host-view emitter. Pin the full ordered container
+# output for the standalone fixture so the extraction cannot silently drift.
+disc_golden=$(
+  cat <<'PAIRS'
+XCIND_MYAPP_WEB_HOST=myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_PORT=443
+XCIND_MYAPP_WEB_SCHEME=https
+XCIND_MYAPP_WEB_URL=https://myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_HTTPS_HOST=myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_HTTPS_PORT=443
+XCIND_MYAPP_WEB_HTTPS_URL=https://myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_HTTP_HOST=myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_HTTP_PORT=80
+XCIND_MYAPP_WEB_HTTP_URL=http://myapp-web.localhost.scind.io
+XCIND_MYAPP_APEX_HOST=myapp.localhost.scind.io
+XCIND_MYAPP_APEX_PORT=443
+XCIND_MYAPP_APEX_SCHEME=https
+XCIND_MYAPP_APEX_URL=https://myapp.localhost.scind.io
+XCIND_MYAPP_DB_HOST=db
+XCIND_MYAPP_DB_PORT=5432
+XCIND_MYAPP_DB_HOST_PORT=54320
+PAIRS
+)
+disc_pairs=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "discovery build-pairs container view byte-identical (standalone)" \
+  "$disc_golden" "$disc_pairs"
+
 # Custom proxy entrypoint ports are included in URLs so *_URL remains usable.
 rm -rf "$XCIND_GENERATED_DIR"
 mkdir -p "$XCIND_GENERATED_DIR"
