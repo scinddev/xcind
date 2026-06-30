@@ -903,6 +903,77 @@ assert_eq "resolve-app preserves explicit" "custom-name" "$XCIND_APP"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-sanitize-token ==="
+
+assert_eq "sanitize lowercases" "myapp" "$(__xcind-sanitize-token "MyApp")"
+assert_eq "sanitize maps slashes to dashes" "feature-perf-2" \
+  "$(__xcind-sanitize-token "feature/perf-2")"
+assert_eq "sanitize maps dots to dashes" "foo-bar" "$(__xcind-sanitize-token "foo.bar")"
+assert_eq "sanitize collapses repeated dashes" "a-b" "$(__xcind-sanitize-token "a--b")"
+assert_eq "sanitize trims leading non-alnum" "x" "$(__xcind-sanitize-token "...x")"
+assert_eq "sanitize trims trailing non-alnum" "x" "$(__xcind-sanitize-token "x...")"
+assert_eq "sanitize trims wrapping dashes" "foo" "$(__xcind-sanitize-token "--foo--")"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-resolve-instance ==="
+
+# Explicit value wins and is sanitized.
+reset_xcind_state
+XCIND_INSTANCE="My Inst"
+__xcind-resolve-instance "/path/to/myapp"
+assert_eq "resolve-instance: explicit value wins (sanitized)" "my-inst" "$XCIND_INSTANCE"
+
+# Kill switch forces empty.
+unset XCIND_INSTANCE
+XCIND_INSTANCE_AUTO=0
+__xcind-resolve-instance "/path/to/myapp"
+assert_eq "resolve-instance: XCIND_INSTANCE_AUTO=0 yields empty" "" "$XCIND_INSTANCE"
+unset XCIND_INSTANCE_AUTO XCIND_INSTANCE
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-detect-worktree-instance ==="
+
+if command -v git >/dev/null 2>&1; then
+  GIT_MAIN=$(mktemp_d)
+  (cd "$GIT_MAIN" && git init -q && git config user.email t@example.com &&
+    git config user.name test && git commit -q --allow-empty -m init) || true
+
+  # Main worktree → empty token.
+  assert_eq "detect: main worktree yields empty token" "" \
+    "$(__xcind-detect-worktree-instance "$GIT_MAIN")"
+
+  # Linked worktree → token = sanitized directory basename.
+  WT_DIR="${GIT_MAIN}-perf-2"
+  (cd "$GIT_MAIN" && git worktree add -q "$WT_DIR" -b perf) || true
+  wt_expected=$(__xcind-sanitize-token "$(basename "$WT_DIR")")
+  assert_eq "detect: linked worktree yields sanitized dir basename" \
+    "$wt_expected" "$(__xcind-detect-worktree-instance "$WT_DIR")"
+
+  # resolve-instance auto-detects in a worktree.
+  unset XCIND_INSTANCE
+  __xcind-resolve-instance "$WT_DIR"
+  assert_eq "resolve-instance: auto-detects the worktree token" \
+    "$wt_expected" "$XCIND_INSTANCE"
+
+  # Kill switch forces empty even inside a worktree.
+  unset XCIND_INSTANCE
+  XCIND_INSTANCE_AUTO=0
+  __xcind-resolve-instance "$WT_DIR"
+  assert_eq "resolve-instance: XCIND_INSTANCE_AUTO=0 forces empty in a worktree" \
+    "" "$XCIND_INSTANCE"
+  unset XCIND_INSTANCE_AUTO XCIND_INSTANCE
+
+  (cd "$GIT_MAIN" && git worktree remove --force "$WT_DIR" 2>/dev/null) || rm -rf "$WT_DIR"
+  rm -rf "$GIT_MAIN"
+else
+  echo "  (skipped: git not available)"
+fi
+reset_xcind_state
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-resolve-url-templates ==="
 
 # Workspaceless mode
@@ -999,6 +1070,21 @@ else
   echo "  ✗ SHA invalidates on content change"
   FAIL=$((FAIL + 1))
 fi
+
+# Instance joins the SHA: a non-empty instance changes it; an empty instance
+# leaves it byte-identical to the no-instance baseline (regression — no cache
+# churn for existing main checkouts on upgrade).
+XCIND_INSTANCE=""
+sha_no_inst=$(__xcind-compute-sha "$SHA_APP")
+assert_eq "SHA with empty instance == no-instance baseline (regression)" \
+  "$sha3" "$sha_no_inst"
+XCIND_INSTANCE="perf"
+sha_inst=$(__xcind-compute-sha "$SHA_APP")
+assert_eq "SHA changes when XCIND_INSTANCE is set" "true" \
+  "$([ "$sha_no_inst" != "$sha_inst" ] && echo true || echo false)"
+sha_inst2=$(__xcind-compute-sha "$SHA_APP")
+assert_eq "SHA stable for the same instance" "$sha_inst" "$sha_inst2"
+unset XCIND_INSTANCE
 
 rm -rf "$SHA_APP"
 
