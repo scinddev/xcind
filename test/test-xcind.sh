@@ -959,6 +959,7 @@ if command -v git >/dev/null 2>&1; then
 
   # Kill switch forces empty even inside a worktree.
   unset XCIND_INSTANCE
+  # shellcheck disable=SC2034  # read cross-file by __xcind-resolve-instance
   XCIND_INSTANCE_AUTO=0
   __xcind-resolve-instance "$WT_DIR"
   assert_eq "resolve-instance: XCIND_INSTANCE_AUTO=0 forces empty in a worktree" \
@@ -2290,6 +2291,13 @@ assert_eq "compose.naming.yaml was created" "true" \
 generated="$(cat "$XCIND_GENERATED_DIR/compose.naming.yaml")"
 assert_contains "workspaceless name is app only" "name: myapp" "$generated"
 
+# With an instance token, it folds in after the app: {app}-{instance}.
+XCIND_INSTANCE="perf"
+xcind-naming-hook "$NAMING_WL" >/dev/null
+generated="$(cat "$XCIND_GENERATED_DIR/compose.naming.yaml")"
+assert_contains "workspaceless name folds in instance" "name: myapp-perf" "$generated"
+unset XCIND_INSTANCE
+
 rm -rf "$NAMING_WL"
 
 # ======================================================================
@@ -2313,7 +2321,97 @@ assert_contains "naming hook returns -f flag" "-f $XCIND_GENERATED_DIR/compose.n
 generated="$(cat "$XCIND_GENERATED_DIR/compose.naming.yaml")"
 assert_contains "workspace name is workspace-app" "name: dev-frontend" "$generated"
 
+# With an instance token, it folds in between workspace and app:
+# {workspace}-{instance}-{app}.
+XCIND_INSTANCE="perf"
+xcind-naming-hook "$NAMING_WS" >/dev/null
+generated="$(cat "$XCIND_GENERATED_DIR/compose.naming.yaml")"
+assert_contains "workspace name folds in instance" "name: dev-perf-frontend" "$generated"
+unset XCIND_INSTANCE
+
 rm -rf "$NAMING_WS"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-workspace-network-name (instance folding) ==="
+
+XCIND_WORKSPACE="dev"
+
+unset XCIND_INSTANCE
+assert_eq "network name without instance is unchanged" "dev-internal" \
+  "$(__xcind-workspace-network-name)"
+
+XCIND_INSTANCE=""
+assert_eq "empty instance is unchanged from today" "dev-internal" \
+  "$(__xcind-workspace-network-name)"
+
+XCIND_INSTANCE="perf"
+assert_eq "network name folds in instance" "dev-perf-internal" \
+  "$(__xcind-workspace-network-name)"
+
+unset XCIND_INSTANCE XCIND_WORKSPACE
+
+# ======================================================================
+echo ""
+echo "=== Test: workspace network name identical across GENERATE/EXECUTE ==="
+
+# The GENERATE hook writes the network into compose.workspace.yaml's footer;
+# the EXECUTE hook inspects/creates it via docker. Both must derive the same
+# string from __xcind-workspace-network-name — check with and without instance.
+NETSYM_TMP=$(mktemp_d)
+export XCIND_SHA="netsymhash"
+export XCIND_CACHE_DIR="$NETSYM_TMP/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$NETSYM_TMP/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+printf 'services:\n  web: {}\n' >"$XCIND_CACHE_DIR/resolved-config.yaml"
+
+# Docker mock records the network name the EXECUTE hook inspects.
+NETSYM_BIN="$NETSYM_TMP/bin"
+mkdir -p "$NETSYM_BIN"
+cat >"$NETSYM_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+if [ "$1 $2" = "network inspect" ]; then
+  printf '%s' "$3" >"$XCIND_NETSYM_INSPECTED"
+  exit 0
+fi
+exit 0
+MOCKEOF
+chmod +x "$NETSYM_BIN/docker"
+netsym_old_path="$PATH"
+export PATH="$NETSYM_BIN:$PATH"
+export XCIND_NETSYM_INSPECTED="$NETSYM_TMP/inspected"
+
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="dev"
+XCIND_APP="web"
+
+for netsym_inst in "" "perf"; do
+  XCIND_INSTANCE="$netsym_inst"
+  netsym_expected=$(__xcind-workspace-network-name)
+
+  # GENERATE: read the network name out of the generated footer.
+  xcind-workspace-hook "$NETSYM_TMP" >/dev/null
+  netsym_generate=$(yq -r '.networks | keys | .[0]' \
+    "$XCIND_GENERATED_DIR/compose.workspace.yaml")
+
+  # EXECUTE: capture the network name docker was asked to inspect.
+  __xcind-workspace-execute-hook "$NETSYM_TMP" >/dev/null 2>&1
+  netsym_execute=$(<"$XCIND_NETSYM_INSPECTED")
+
+  netsym_label="instance='${netsym_inst:-<empty>}'"
+  assert_eq "GENERATE network name matches helper ($netsym_label)" \
+    "$netsym_expected" "$netsym_generate"
+  assert_eq "EXECUTE network name matches helper ($netsym_label)" \
+    "$netsym_expected" "$netsym_execute"
+  assert_eq "GENERATE and EXECUTE agree ($netsym_label)" \
+    "$netsym_generate" "$netsym_execute"
+done
+
+export PATH="$netsym_old_path"
+unset XCIND_INSTANCE XCIND_WORKSPACE XCIND_APP XCIND_WORKSPACELESS \
+  XCIND_NETSYM_INSPECTED netsym_old_path netsym_inst netsym_expected \
+  netsym_generate netsym_execute netsym_label
+rm -rf "$NETSYM_TMP"
 
 # ======================================================================
 echo ""
@@ -3327,7 +3425,7 @@ assert_contains "own mode rewrites with the new host port" \
 assert_not_contains "own mode drops the stale host port" \
   "XCIND_MYAPP_DB_PORT=54320" "$he_own_body2"
 # Restore the original assigned state for the remaining cases.
-# shellcheck disable=SC2034 # read at runtime by the assigned-port helpers
+# shellcheck disable=SC2034  # read cross-file by xcind-assigned-lib
 XCIND_ASSIGNED_PORTS_FILE="${HE_ASSIGNED_DIR}/assigned-ports.tsv"
 
 # --- block mode: append into a markerless file, preserving other lines ---

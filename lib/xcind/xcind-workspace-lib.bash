@@ -20,6 +20,24 @@ XCIND_WORKSPACE_SERVICE_SNIPPET='  {service}:
           - {alias}'
 
 # --------------------------------------------------------------------------
+# Shared Helpers
+# --------------------------------------------------------------------------
+
+# Compute the external workspace network name. Folds XCIND_INSTANCE (the
+# per-worktree isolation token) in between the workspace and the -internal
+# suffix so each worktree gets its own shared network; an empty instance leaves
+# the name byte-identical to today ({workspace}-internal). Shared by the
+# GENERATE and EXECUTE hooks so both render the same string.
+__xcind-workspace-network-name() {
+  local instance="${XCIND_INSTANCE:-}"
+  if [[ -n $instance ]]; then
+    printf '%s' "${XCIND_WORKSPACE}-${instance}-internal"
+  else
+    printf '%s' "${XCIND_WORKSPACE}-internal"
+  fi
+}
+
+# --------------------------------------------------------------------------
 # Hook Function
 # --------------------------------------------------------------------------
 
@@ -44,7 +62,8 @@ xcind-workspace-hook() {
   fi
 
   local resolved_config="$XCIND_CACHE_DIR/resolved-config.yaml"
-  local network="${XCIND_WORKSPACE}-internal"
+  local network
+  network=$(__xcind-workspace-network-name)
 
   # Enumerate all compose services
   local services
@@ -104,7 +123,8 @@ __xcind-workspace-execute-hook() {
     return 0
   fi
 
-  local network="${XCIND_WORKSPACE}-internal"
+  local network
+  network=$(__xcind-workspace-network-name)
   if docker network inspect "$network" >/dev/null 2>&1; then
     return 0
   fi
