@@ -3086,6 +3086,8 @@ PAIRS
 disc_pairs=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
 assert_eq "discovery build-pairs container view byte-identical (standalone)" \
   "$disc_golden" "$disc_pairs"
+disc_bad_view_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" badview)
+assert_eq "discovery build-pairs rejects an unknown view" "2" "$disc_bad_view_status"
 
 # Custom proxy entrypoint ports are included in URLs so *_URL remains usable.
 rm -rf "$XCIND_GENERATED_DIR"
@@ -3239,6 +3241,7 @@ assert_contains "own mode rewrites with the new host port" \
 assert_not_contains "own mode drops the stale host port" \
   "XCIND_MYAPP_DB_PORT=54320" "$he_own_body2"
 # Restore the original assigned state for the remaining cases.
+# shellcheck disable=SC2034 # read at runtime by the assigned-port helpers
 XCIND_ASSIGNED_PORTS_FILE="${HE_ASSIGNED_DIR}/assigned-ports.tsv"
 
 # --- block mode: append into a markerless file, preserving other lines ---
@@ -3275,6 +3278,17 @@ assert_contains "block replace injects host-flavored values" \
   "XCIND_MYAPP_DB_HOST=127.0.0.1" "$he_markers_body"
 he_markers_count=$(grep -c '^# >>> xcind >>>$' "$he_markers" || true)
 assert_eq "block replace keeps exactly one region" "1" "$he_markers_count"
+
+# --- block mode fails closed on malformed markers, preserving the file ---
+XCIND_HOST_ENV_FILE=".env.malformed"
+he_malformed="$HE_DIR/.env.malformed"
+printf '%s\n' "HEAD=1" "# >>> xcind >>>" "STALE=old" "TAIL=2" >"$he_malformed"
+he_malformed_before=$(<"$he_malformed")
+he_malformed_status=$(capture_status __xcind-hostenv-execute-hook "$HE_DIR")
+assert_eq "block mode malformed markers exit non-zero" "1" "$he_malformed_status"
+he_malformed_after=$(<"$he_malformed")
+assert_eq "block mode malformed markers preserve file content" \
+  "$he_malformed_before" "$he_malformed_after"
 unset XCIND_HOST_ENV_MODE 2>/dev/null || true
 
 # --- opt-out: unset XCIND_HOST_ENV_FILE is a silent no-op ---
@@ -3293,6 +3307,23 @@ assert_eq "bad mode: hook exits non-zero" "1" "$he_bad_status"
 he_bad_err=$(__xcind-hostenv-execute-hook "$HE_DIR" 2>&1 >/dev/null || true)
 assert_contains "bad mode: error names the valid modes" "own|block" "$he_bad_err"
 assert_file_missing "bad mode writes nothing" "$HE_DIR/.env.bad"
+
+# --- missing jq: assigned host-view files fail rather than silently omitting pairs ---
+# shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook
+XCIND_HOST_ENV_FILE=".env.nojq"
+unset XCIND_HOST_ENV_MODE 2>/dev/null || true
+he_saved_path="$PATH"
+he_nojq_path="$HE_ASSIGNED_DIR/no-jq-path"
+mkdir -p "$he_nojq_path"
+PATH="$he_nojq_path"
+he_nojq_status=$(capture_status __xcind-hostenv-execute-hook "$HE_DIR")
+PATH="$he_saved_path"
+assert_eq "missing jq with assigned exports exits non-zero" "1" "$he_nojq_status"
+PATH="$he_nojq_path"
+he_nojq_err=$(__xcind-hostenv-execute-hook "$HE_DIR" 2>&1 >/dev/null || true)
+PATH="$he_saved_path"
+assert_contains "missing jq error names XCIND_HOST_ENV_FILE" "XCIND_HOST_ENV_FILE" "$he_nojq_err"
+assert_file_missing "missing jq writes nothing" "$HE_DIR/.env.nojq"
 
 unset XCIND_HOST_ENV_FILE XCIND_HOST_ENV_MODE 2>/dev/null || true
 unset XCIND_PROXY_EXPORTS XCIND_APP_URL_TEMPLATE XCIND_APP_APEX_URL_TEMPLATE

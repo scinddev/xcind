@@ -63,6 +63,20 @@ __xcind-hostenv-render() {
   done
 }
 
+# Return 0 when the current config declares at least one assigned export.
+__xcind-hostenv-has-assigned-exports() {
+  [[ -n ${XCIND_PROXY_EXPORTS+set} && ${#XCIND_PROXY_EXPORTS[@]} -gt 0 ]] || return 1
+
+  local entry
+  local _export_name _compose_service _port _type _tls
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    _export_name="" _compose_service="" _port="" _type="" _tls=""
+    __xcind-proxy-parse-entry "$entry" 2>/dev/null || continue
+    [[ $_type == "assigned" ]] && return 0
+  done
+  return 1
+}
+
 # Frame the body for own mode: a do-not-edit header followed by the body.
 __xcind-hostenv-frame-own() {
   local body="$1"
@@ -123,6 +137,27 @@ __xcind-hostenv-write-own() {
   __xcind-hostenv-atomic-write "$target" "$content"
 }
 
+# Validate block markers before replacing anything. Block mode preserves
+# user-managed content, so malformed marker state must fail closed.
+__xcind-hostenv-validate-block-markers() {
+  local target="$1"
+  [[ -f $target ]] || return 0
+
+  local begin_count end_count
+  begin_count=$(grep -cF -- "$__XCIND_HOSTENV_BEGIN" "$target" || true)
+  end_count=$(grep -cF -- "$__XCIND_HOSTENV_END" "$target" || true)
+
+  if [[ $begin_count -eq 0 && $end_count -eq 0 ]]; then
+    return 0
+  fi
+  if [[ $begin_count -eq 1 && $end_count -eq 1 ]]; then
+    return 0
+  fi
+
+  echo "xcind: malformed XCIND_HOST_ENV_FILE block markers in $target (expected one begin and one end marker)" >&2
+  return 1
+}
+
 # Print $target with the first begin..end marked region (inclusive) replaced by
 # $block, preserving every other line. Assumes the begin marker is present.
 __xcind-hostenv-replace-block() {
@@ -143,6 +178,10 @@ __xcind-hostenv-replace-block() {
     fi
     out+="$line"$'\n'
   done <"$target"
+  if [[ $in_block -eq 1 ]]; then
+    echo "xcind: malformed XCIND_HOST_ENV_FILE block markers in $target (missing end marker)" >&2
+    return 1
+  fi
   printf '%s' "${out%$'\n'}"
 }
 
@@ -154,8 +193,10 @@ __xcind-hostenv-write-block() {
   block=$(__xcind-hostenv-frame-block "$body")
   [[ -f $target ]] && existing=$(<"$target")
 
+  __xcind-hostenv-validate-block-markers "$target" || return 1
+
   if [[ -f $target ]] && grep -qF -- "$__XCIND_HOSTENV_BEGIN" "$target"; then
-    content=$(__xcind-hostenv-replace-block "$target" "$block")
+    content=$(__xcind-hostenv-replace-block "$target" "$block") || return 1
   elif [[ -n $existing ]]; then
     content="${existing}"$'\n\n'"${block}"
   else
@@ -185,6 +226,11 @@ __xcind-hostenv-execute-hook() {
   local mode="${XCIND_HOST_ENV_MODE:-own}"
   if [[ $mode != own && $mode != block ]]; then
     echo "xcind: invalid XCIND_HOST_ENV_MODE '$mode' (expected: own|block)" >&2
+    return 1
+  fi
+
+  if ! command -v jq &>/dev/null && __xcind-hostenv-has-assigned-exports; then
+    echo "xcind: jq is required to write XCIND_HOST_ENV_FILE when assigned exports are configured" >&2
     return 1
   fi
 

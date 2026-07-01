@@ -14,7 +14,7 @@
 | `XCIND_HOST_ENV_MODE` | `own` | How `XCIND_HOST_ENV_FILE` is written: `own` (xcind owns the whole file) or `block` (rewrite only the `# >>> xcind >>>` marked region) |
 | `XCIND_ADDITIONAL_CONFIG_FILES` | `()` | Extra shell scripts to source after `.xcind.sh` |
 
-For each file pattern, Xcind also checks for an `.override` variant — see [Override files](../guides/override-files.md).
+For each compose, compose-env, and app-env file pattern, Xcind also checks for an `.override` variant — see [Override files](../guides/override-files.md). `XCIND_HOST_ENV_FILE` is a generated output path and does not derive an override sibling.
 
 File patterns support shell variable expansion (use single quotes to defer expansion until runtime):
 

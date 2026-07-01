@@ -84,6 +84,14 @@ __xcind-discovery-build-pairs() {
   local app_root="$1" view="${2:-container}"
   local app="${XCIND_APP:-$(basename "$app_root")}"
 
+  case "$view" in
+  container | host) ;;
+  *)
+    echo "xcind: invalid discovery view '$view' (expected: container|host)" >&2
+    return 2
+    ;;
+  esac
+
   # Establish domain, TLS mode, and proxy ports exactly as xcind-proxy-hook
   # does, so generated hostnames stay byte-identical with the proxy labels.
   XCIND_PROXY_DOMAIN="${XCIND_PROXY_DOMAIN:-localhost.scind.io}"
