@@ -87,9 +87,11 @@ source "$__XCIND_LIB_DIR/xcind-workspace-lib.bash"
 source "$__XCIND_LIB_DIR/xcind-discovery-lib.bash"
 # shellcheck disable=SC1091
 source "$__XCIND_LIB_DIR/xcind-registry-lib.bash"
+# shellcheck disable=SC1091
+source "$__XCIND_LIB_DIR/xcind-hostenv-lib.bash"
 
 XCIND_HOOKS_GENERATE=("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook" "xcind-discovery-hook")
-XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")
+XCIND_HOOKS_EXECUTE=("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook" "__xcind-hostenv-execute-hook")
 
 # Hooks whose output depends on live state outside the cache SHA inputs
 # (e.g. `~/.local/state/xcind/proxy/assigned-ports.tsv` for the assigned

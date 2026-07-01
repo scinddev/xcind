@@ -33,6 +33,7 @@ Directory structure and file responsibilities for Xcind.
 | `lib/xcind/xcind-app-env-lib.bash` | `xcind-app-env-hook` (GENERATE) — injects app-level env files (`XCIND_APP_ENV_FILES`) into Compose services. |
 | `lib/xcind/xcind-assigned-lib.bash` | `xcind-assigned-hook` (GENERATE + `XCIND_HOOKS_ALWAYS`) and helpers for stable assigned host ports, `compose.assigned.yaml`, and the `proxy/assigned-ports.tsv` registry under `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/`. Re-runs on every cache hit to keep allocations consistent with live state. |
 | `lib/xcind/xcind-host-gateway-lib.bash` | `xcind-host-gateway-hook` (GENERATE) — normalizes `host.docker.internal` access across Docker Desktop, Linux, and WSL modes; the runtime-detected gateway value is also folded into the cache SHA when host-gateway support is enabled. |
+| `lib/xcind/xcind-hostenv-lib.bash` | `__xcind-hostenv-execute-hook` (EXECUTE) — writes the opt-in host-view env file (`XCIND_HOST_ENV_FILE`) with discovery variables resolved for host-run processes. |
 | `lib/xcind/xcind-naming-lib.bash` | `xcind-naming-hook` (GENERATE) — sets the Docker Compose project name and handles workspace/workspaceless collision avoidance. |
 | `lib/xcind/xcind-proxy-lib.bash` | `xcind-proxy-hook` (GENERATE) and `__xcind-proxy-execute-hook` (EXECUTE) plus the shared proxy lifecycle, configuration, and state helpers used by `bin/xcind-proxy`. |
 | `lib/xcind/xcind-registry-lib.bash` | Workspace registry persistence and locking helpers backing the `workspaces.tsv` state file under `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/`. Used by `bin/xcind-workspace` and the workspace lookup paths in `xcind-lib.bash`. |
@@ -78,6 +79,7 @@ Built-in hooks:
 - `xcind-workspace-hook` (GENERATE, from `xcind-workspace-lib.bash`) --- generates network aliases
 - `__xcind-proxy-execute-hook` (EXECUTE, from `xcind-proxy-lib.bash`) --- ensures proxy is running
 - `__xcind-workspace-execute-hook` (EXECUTE, from `xcind-workspace-lib.bash`) --- ensures workspace network exists
+- `__xcind-hostenv-execute-hook` (EXECUTE, from `xcind-hostenv-lib.bash`) --- writes the opt-in host-view env file
 
 ### How to add a new hook
 

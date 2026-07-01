@@ -13,6 +13,7 @@ SHELL_FILES = \
 	lib/xcind/xcind-completion-zsh.bash \
 	lib/xcind/xcind-discovery-lib.bash \
 	lib/xcind/xcind-host-gateway-lib.bash \
+	lib/xcind/xcind-hostenv-lib.bash \
 	lib/xcind/xcind-lib.bash \
 	lib/xcind/xcind-naming-lib.bash \
 	lib/xcind/xcind-proxy-lib.bash \

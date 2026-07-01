@@ -17,5 +17,6 @@ User-facing glossary. For maintainer-level terminology, see [`engineering/produc
 | **Override file** | A sibling file with `.override` in the name (e.g. `compose.override.yaml`, `.env.override`). Picked up automatically if present. |
 | **Compose env file** | Env file passed via `--env-file` for `${VAR}` substitution in compose YAML. Listed in `XCIND_COMPOSE_ENV_FILES`. |
 | **App env file** | Env file injected into running containers via `env_file:`. Listed in `XCIND_APP_ENV_FILES`. |
+| **Host-view env file** | An opt-in dotenv file (`XCIND_HOST_ENV_FILE`) holding the service-discovery variables with host-flavored values for assigned exports (`127.0.0.1` + the assigned host port), so host-run processes resolve the same endpoints containers do. Proxied/apex hosts stay their routable hostname. |
 | **Tool** | A binary inside a service container exposed to IDE integrations via `XCIND_TOOLS`. |
 | **Apex template** | A URL template that omits `{export}` (e.g. `myapp.localhost.scind.io`). Used when an app has a single, headlining export. When set, `xcind-application urls`/`exports`/`status` report the apex URL for that export. |

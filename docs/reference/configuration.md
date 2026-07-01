@@ -10,9 +10,11 @@
 | `XCIND_COMPOSE_FILES` | `("compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml")` | Compose file patterns; only those that exist on disk are used |
 | `XCIND_COMPOSE_ENV_FILES` | `(".env")` | `--env-file` patterns for `${VAR}` substitution in compose files |
 | `XCIND_APP_ENV_FILES` | `()` | Env files injected into running containers via `env_file:` |
+| `XCIND_HOST_ENV_FILE` | _(unset)_ | Opt-in: write a [host-view env file](../guides/env-files.md#host-view-env-file-xcind_host_env_file) — the discovery variables with host-flavored values for assigned exports — for host-run processes |
+| `XCIND_HOST_ENV_MODE` | `own` | How `XCIND_HOST_ENV_FILE` is written: `own` (xcind owns the whole file) or `block` (rewrite only the `# >>> xcind >>>` marked region) |
 | `XCIND_ADDITIONAL_CONFIG_FILES` | `()` | Extra shell scripts to source after `.xcind.sh` |
 
-For each file pattern, Xcind also checks for an `.override` variant — see [Override files](../guides/override-files.md).
+For each compose, compose-env, and app-env file pattern, Xcind also checks for an `.override` variant — see [Override files](../guides/override-files.md). `XCIND_HOST_ENV_FILE` is a generated output path and does not derive an override sibling.
 
 File patterns support shell variable expansion (use single quotes to defer expansion until runtime):
 
