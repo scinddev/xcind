@@ -3425,7 +3425,7 @@ assert_contains "own mode rewrites with the new host port" \
 assert_not_contains "own mode drops the stale host port" \
   "XCIND_MYAPP_DB_PORT=54320" "$he_own_body2"
 # Restore the original assigned state for the remaining cases.
-# shellcheck disable=SC2034  # read cross-file by xcind-assigned-lib
+# shellcheck disable=SC2034 # read at runtime by the assigned-port helpers
 XCIND_ASSIGNED_PORTS_FILE="${HE_ASSIGNED_DIR}/assigned-ports.tsv"
 
 # --- block mode: append into a markerless file, preserving other lines ---
