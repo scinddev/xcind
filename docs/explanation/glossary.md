@@ -9,6 +9,7 @@ User-facing glossary. For maintainer-level terminology, see [`engineering/produc
 | **App root** | The directory containing the closest `.xcind.sh` (walking upward from `$PWD`). |
 | **Workspace** | A directory containing apps, marked with `XCIND_IS_WORKSPACE=1` in its own `.xcind.sh`. Apps in a workspace share a domain and an internal network. |
 | **Workspaceless** | Single-app mode (no parent workspace). |
+| **Instance** | A per-worktree isolation token (`XCIND_INSTANCE`) that disambiguates the compose project name and the workspace network — never the app name or in-network aliases. Empty on the main checkout (names unchanged); auto-derived from a linked git worktree's directory name, overridable, and disableable with `XCIND_INSTANCE_AUTO=0`. |
 | **Export** | A service:port pair that gets a hostname or stable host port. Declared in `XCIND_PROXY_EXPORTS`. |
 | **Proxied export** | An export whose traffic flows through Traefik by hostname (`{app}-{export}.{domain}`). The default. |
 | **Assigned export** | An export pinned to a stable host port via `type=assigned`. Bypasses Traefik. |

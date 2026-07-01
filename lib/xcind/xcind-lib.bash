@@ -567,6 +567,7 @@ __xcind-prepare-app() {
 
   # Resolve names/URLs and build docker compose options
   __xcind-resolve-app "$app_root"
+  __xcind-resolve-instance "$app_root"
   __xcind-resolve-url-templates
   __xcind-build-compose-opts "$app_root"
 
@@ -592,7 +593,7 @@ __xcind-prepare-app() {
     export XCIND_SHA
     export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
     export XCIND_GENERATED_DIR="$app_root/.xcind/generated/$XCIND_SHA"
-    export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+    export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_INSTANCE
     export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
     export XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
 
@@ -1094,6 +1095,71 @@ __xcind-resolve-app() {
 }
 
 # --------------------------------------------------------------------------
+# Instance resolution (per-worktree isolation token)
+# --------------------------------------------------------------------------
+
+# Sanitize a token to lowercase [a-z0-9-], collapsing and trimming dashes.
+# Bash 3.2 safe (no ${var^^}). Collapse before trimming so leading/trailing
+# runs of non-alphanumerics (rendered as dashes) are fully removed.
+__xcind-sanitize-token() {
+  local s
+  s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')
+  while [[ $s == *--* ]]; do s="${s//--/-}"; done
+  s="${s#-}"
+  s="${s%-}"
+  printf '%s' "$s"
+}
+
+# Derive an isolation token from a linked git worktree, else empty. A linked
+# worktree has --absolute-git-dir != --git-common-dir (its .git is a file
+# pointing into .../.git/worktrees/<name>); the main worktree has them equal.
+# The token is the sanitized worktree directory basename — stable for the life
+# of the worktree, unlike the branch.
+__xcind-detect-worktree-instance() {
+  local app_root="$1"
+  command -v git >/dev/null 2>&1 || return 0
+  local gitdir commondir
+  gitdir=$(git -C "$app_root" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  commondir=$(git -C "$app_root" rev-parse --git-common-dir 2>/dev/null) || return 0
+  # Canonicalize --git-common-dir to a physical absolute path so it compares
+  # cleanly with --absolute-git-dir (git canonicalizes that one). It may be
+  # relative to the worktree, and on macOS /var is a symlink to /private/var, so
+  # a logical path would spuriously differ — resolve its parent with `pwd -P`.
+  local cd_dir cd_base
+  cd_base=$(basename "$commondir")
+  case "$commondir" in
+  /*) cd_dir=$(dirname "$commondir") ;;
+  *) cd_dir="$app_root/$(dirname "$commondir")" ;;
+  esac
+  cd_dir=$(cd "$cd_dir" 2>/dev/null && pwd -P) || return 0
+  commondir="$cd_dir/$cd_base"
+  [[ $gitdir == "$commondir" ]] && return 0 # main worktree → no instance
+  local top
+  top=$(git -C "$app_root" rev-parse --show-toplevel 2>/dev/null) || return 0
+  __xcind-sanitize-token "$(basename "$top")"
+}
+
+# Resolve XCIND_INSTANCE: an explicit value (env or .xcind.override.sh) wins;
+# else auto-detect from a linked worktree unless XCIND_INSTANCE_AUTO=0. The
+# token disambiguates the project name and workspace network only — never the
+# app name or in-network aliases (see xcind-naming-lib / xcind-workspace-lib).
+__xcind-resolve-instance() {
+  local app_root="$1"
+  if [[ -n ${XCIND_INSTANCE:-} ]]; then
+    XCIND_INSTANCE=$(__xcind-sanitize-token "$XCIND_INSTANCE")
+    export XCIND_INSTANCE
+    return 0
+  fi
+  if [[ ${XCIND_INSTANCE_AUTO:-1} == "0" ]]; then
+    XCIND_INSTANCE=""
+    export XCIND_INSTANCE
+    return 0
+  fi
+  XCIND_INSTANCE=$(__xcind-detect-worktree-instance "$app_root")
+  export XCIND_INSTANCE
+}
+
+# --------------------------------------------------------------------------
 # URL Template Resolution
 # --------------------------------------------------------------------------
 
@@ -1236,6 +1302,13 @@ __xcind-compute-sha() {
 "
   sha_input+="XCIND_WORKSPACELESS=${XCIND_WORKSPACELESS:-}
 "
+  # Only fold in the instance when set, so the main checkout's SHA (empty
+  # instance) stays byte-identical to before this feature — no cache churn on
+  # upgrade — while each linked worktree gets its own cache/generated dirs.
+  if [[ -n ${XCIND_INSTANCE:-} ]]; then
+    sha_input+="XCIND_INSTANCE=${XCIND_INSTANCE}
+"
+  fi
 
   # Add host-gateway variables so env changes invalidate the cache
   sha_input+="XCIND_HOST_GATEWAY_ENABLED=${XCIND_HOST_GATEWAY_ENABLED:-}

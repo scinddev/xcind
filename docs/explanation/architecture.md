@@ -54,6 +54,8 @@ The workspace hook adds aliases on the shared network so cross-app DNS works (`b
 
 The naming hook gives each app a stable, collision-free Compose project name (`{workspace}-{app}` or just `{app}`). This is what keeps two apps named `app` in two different workspaces from clobbering each other's containers, networks, and volumes.
 
+A second axis of isolation covers the same app in two places at once: the **instance** token (`XCIND_INSTANCE`). A linked git worktree is auto-assigned a token from its directory name, folded into the project name (`{workspace}-{instance}-{app}` / `{app}-{instance}`) and the workspace network (`{workspace}-{instance}-internal`) — never the app name or aliases, so cross-app DNS stays stable. The token is empty on the main checkout, so names are unchanged there; it also joins the config cache key so each instance caches separately. See [Workspaces vs single apps](../guides/workspaces-vs-apps.md#git-worktrees).
+
 ## The proxy
 
 A separate, **shared** Traefik runs once per host. Each app declares `XCIND_PROXY_EXPORTS` and the proxy hook generates Traefik labels — Traefik does the routing. The proxy is a normal `docker compose` project that lives at `~/.local/state/xcind/proxy/` and is started via `xcind-proxy up`.

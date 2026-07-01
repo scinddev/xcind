@@ -5,8 +5,11 @@
 # top-level Docker Compose `name:` field to prevent container/volume/network
 # name collisions across workspaces with identically-named app directories.
 #
-# In workspace mode:     name: {workspace}-{app}
-# In workspaceless mode: name: {app}
+# In workspace mode:     name: {workspace}-{instance}-{app}
+# In workspaceless mode: name: {app}-{instance}
+#
+# XCIND_INSTANCE is the per-worktree isolation token (empty on the main
+# checkout, so the name is byte-identical to today: {workspace}-{app} / {app}).
 #
 # This file is auto-sourced by xcind-lib.bash. The hook is registered by
 # default and runs for all apps.
@@ -22,12 +25,23 @@ xcind-naming-hook() {
   : "$app_root"       # Unused in this hook but required by interface
 
   local app="${XCIND_APP:-$(basename "$app_root")}"
+  local instance="${XCIND_INSTANCE:-}"
   local project_name
 
+  # An empty instance leaves the name byte-identical to today; a non-empty one
+  # folds in uniformly between workspace and app (see the table in the header).
   if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]] && [[ -n ${XCIND_WORKSPACE:-} ]]; then
-    project_name="${XCIND_WORKSPACE}-${app}"
+    if [[ -n $instance ]]; then
+      project_name="${XCIND_WORKSPACE}-${instance}-${app}"
+    else
+      project_name="${XCIND_WORKSPACE}-${app}"
+    fi
   else
-    project_name="${app}"
+    if [[ -n $instance ]]; then
+      project_name="${app}-${instance}"
+    else
+      project_name="${app}"
+    fi
   fi
 
   # Build output

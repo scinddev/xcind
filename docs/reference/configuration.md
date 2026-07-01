@@ -31,6 +31,8 @@ Walkthrough: [Environment files](../guides/env-files.md), [Override files](../gu
 | `XCIND_APP` | _(directory name)_ | App name, used in container/network/volume naming and proxy hostnames |
 | `XCIND_WORKSPACE` | _(unset)_ | Self-declare a workspace name without a parent `.xcind.sh` |
 | `XCIND_IS_WORKSPACE` | _(unset)_ | Set to `1` in a workspace root's `.xcind.sh` |
+| `XCIND_INSTANCE` | _(auto)_ | Per-worktree isolation token folded into the compose project name and workspace network — never the app name or aliases. Empty on the main checkout; auto-derived from a linked git worktree's directory name. Set explicitly to override the auto value |
+| `XCIND_INSTANCE_AUTO` | `1` | Set to `0` to disable worktree auto-detection (`XCIND_INSTANCE` stays empty unless set explicitly) |
 
 Walkthrough: [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
 
