@@ -45,6 +45,15 @@ automatically. If they are still missing:
 apt-get update -qq && apt-get install -y -qq shfmt shellcheck
 ```
 
+## Linear
+
+This project is tracked in Linear as **Xcind** (team `beausimensen` / `BDS`).
+Associate any issues, status updates, or work logged from this repo with that
+project.
+
+- Project ID: `44c2b1f2-7b6d-4c58-ab88-2c7742a0703b`
+- URL: https://linear.app/beausimensen/project/xcind-a78759deb450
+
 ## Before Committing
 
 Always follow the pre-commit check procedure in
