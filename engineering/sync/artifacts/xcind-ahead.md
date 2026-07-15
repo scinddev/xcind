@@ -1,7 +1,7 @@
 # P4 — Capabilities in Xcind, Absent from Scind ("Xcind is ahead")
 
 **Status**: COMPLETE.
-**Date**: 2026-07-15   **Branch**: `sync/p1-self-sync`
+**Date**: 2026-07-15   **Branch**: `sync/p3-p5-gap-analysis`
 **Plan**: [`04-xcind-capabilities-missing-from-scind.md`](../04-xcind-capabilities-missing-from-scind.md)
 **Inputs**: [`00-global-context.md`](../00-global-context.md) (§2 operating model, §2a
 DIVERGENCE-must-be-earned, §5 Go/Bash exclusion), [`correspondence-map.md`](./correspondence-map.md)
@@ -79,7 +79,7 @@ here, and they are handed back to P3 (XA-0025).
 
 ---
 
-## PROMOTE — 18 capabilities Scind should adopt
+## PROMOTE — 20 capabilities Scind should adopt (18 base + 2 supplement: XA-0043, XA-0044)
 
 Each names a target Scind change for P6.
 

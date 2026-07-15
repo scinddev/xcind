@@ -24,8 +24,8 @@ global-context §2 directionality rule.
 | **ESCALATE** | 6 | Human product call / routed to P4/P5/P6 (§2 could not be cleanly applied) |
 | **Total** | **39** | |
 
-**Confidence distribution:** 12 high, 17 medium, 5 low (CANON-CHANGE/CONFIRM),
-plus the 5 ESCALATEs held for human judgement.
+**Confidence distribution:** 8 high, 10 medium, 5 low (CANON-CHANGE/CONFIRM),
+plus the 6 ESCALATEs held for human judgement.
 
 ### The §2a safeguard did its job
 

@@ -2,7 +2,7 @@
 
 **Status**: COMPLETE. Every `SCIND-ONLY` and `PARTIAL`(Scind-richer) P2 row plus
 every Scind roadmap "Future" item evaluated and labeled.
-**Date**: 2026-07-15   **Branch**: `sync/p1-self-sync`
+**Date**: 2026-07-15   **Branch**: `sync/p3-p5-gap-analysis`
 **Inputs**: [`00-global-context.md`](../00-global-context.md) §2/§5,
 [`05-scind-capabilities-unexercised-in-xcind.md`](../05-scind-capabilities-unexercised-in-xcind.md),
 [`correspondence-map.md`](./correspondence-map.md) + `.json`.
