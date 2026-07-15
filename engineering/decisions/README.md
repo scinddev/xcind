@@ -26,6 +26,8 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0016](./0016-proxy-domain-wildcard-constraint.md) | Proxy Domain Must Be Multi-Label; Default `localhost.scind.io` | Accepted |
 | [0017](./0017-apex-url-reporting.md) | Reporting Prefers the Apex URL for the Headlining Export | Accepted |
 | [0018](./0018-service-discovery-env-injection.md) | Service-Discovery Environment Variable Injection | Accepted |
+| [0019](./0019-worktree-instance-isolation.md) | Per-Worktree Instance Isolation (`XCIND_INSTANCE`) | Accepted |
+| [0020](./0020-host-env-symmetry.md) | Host/Container Environment Symmetry (`XCIND_HOST_ENV_FILE`) | Accepted |
 
 ## ADR Format
 
