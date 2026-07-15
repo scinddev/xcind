@@ -1,6 +1,6 @@
 # Workspace Lifecycle
 
-> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init` and `xcind-workspace status` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
+> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init`, `status`, `list`, `register`, and `forget` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
 
 ---
 
@@ -27,7 +27,22 @@ XCIND_PROXY_DOMAIN="xcind.localhost"
 EOF
 ```
 
-See the [CLI Reference](../reference/cli.md#xcind-workspace) for full `init` and `status` options.
+See the [CLI Reference](../reference/cli.md#xcind-workspace) for full `init`, `status`, `list`, `register`, and `forget` options.
+
+### Managing the Workspace Registry
+
+Workspaces are tracked in a registry (`workspaces.tsv`, see [State](#state)) so
+they can be listed without scanning the filesystem. The registry is populated
+automatically on `init` and on every runtime discovery, and can be managed
+directly:
+
+```bash
+xcind-workspace list                 # List all registered workspaces
+xcind-workspace list --json          # Structured JSON
+xcind-workspace list --prune         # Drop stale entries (paths no longer workspaces) before listing
+xcind-workspace register ~/code/acme # Add an existing workspace to the registry
+xcind-workspace forget ~/code/old    # Remove a registry entry (directory need not exist)
+```
 
 ### Running Applications
 
@@ -60,7 +75,9 @@ Simply remove the directory. There is no state to clean up beyond Docker contain
 cd dev/frontend && xcind-compose down
 cd dev/backend && xcind-compose down
 
-# Remove workspace network (created by workspace hook)
+# Remove workspace network (created by workspace hook).
+# In a git worktree with a non-empty XCIND_INSTANCE the network is named
+# dev-{instance}-internal; see Naming Conventions.
 docker network rm dev-internal 2>/dev/null || true
 
 # Remove the workspace directory

@@ -34,8 +34,9 @@ myapp/
 ├── compose.yaml                      # Docker Compose file
 ├── .env                              # Environment file (optional)
 ├── .xcind/                           # Generated files (gitignored)
-│   ├── cache/{sha}/                  # Cached resolved config
-│   │   └── resolved-config.yaml
+│   ├── cache/{sha}/                  # Cached resolved config + config JSON
+│   │   ├── resolved-config.yaml
+│   │   └── config.json
 │   └── generated/{sha}/             # Hook-generated compose files
 │       ├── compose.naming.yaml
 │       ├── compose.app.yaml
@@ -43,7 +44,8 @@ myapp/
 │       ├── compose.host-gateway.yaml
 │       ├── compose.proxy.yaml
 │       ├── compose.assigned.yaml
-│       └── compose.workspace.yaml
+│       ├── compose.workspace.yaml
+│       └── compose.discovery.yaml
 └── src/                              # Application source code
 ```
 
@@ -95,6 +97,7 @@ The `.xcind/` directory contains all generated and cached files:
 | Path | Purpose |
 |------|---------|
 | `.xcind/cache/{sha}/resolved-config.yaml` | Merged compose config used by hooks for port inference and service validation |
+| `.xcind/cache/{sha}/config.json` | Cached `xcind-config --json` output (written after hooks; reflects `assignedExports`) |
 | `.xcind/generated/{sha}/compose.naming.yaml` | Docker Compose project name |
 | `.xcind/generated/{sha}/compose.app.yaml` | App identity labels |
 | `.xcind/generated/{sha}/compose.app-env.yaml` | App env file injection |
@@ -102,6 +105,7 @@ The `.xcind/` directory contains all generated and cached files:
 | `.xcind/generated/{sha}/compose.proxy.yaml` | Traefik labels and proxy network |
 | `.xcind/generated/{sha}/compose.assigned.yaml` | Stable host port bindings |
 | `.xcind/generated/{sha}/compose.workspace.yaml` | Workspace network aliases |
+| `.xcind/generated/{sha}/compose.discovery.yaml` | Service-discovery `environment:` vars |
 
 The `{sha}` is a SHA-256 hash of the configuration inputs. When inputs change, a new SHA directory is created and hooks re-run.
 

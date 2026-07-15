@@ -119,6 +119,72 @@ Set to `1` in a workspace root's `.xcind.sh` to mark the directory as a workspac
 XCIND_IS_WORKSPACE=1
 ```
 
+### `XCIND_INSTANCE`
+
+Per-worktree isolation token. When set to a non-empty value, it is folded into
+the Docker Compose **project name** and the **workspace network name** so that
+multiple git worktrees of the same repository do not collide on either:
+
+- Project name: `{workspace}-{instance}-{app}` (workspace mode) or `{app}-{instance}` (workspaceless).
+- Workspace network: `{workspace}-{instance}-internal`.
+
+When empty (the default on a primary checkout), naming is byte-identical to the
+un-instanced form — no migration is forced on single-worktree users. It does
+**not** change the app name or in-network service aliases, only the project and
+network namespacing. A non-empty value also participates in the generation-cache
+SHA so worktrees keep separate caches.
+
+**Default:** *(auto-detected — empty on the main checkout; the sanitized linked-worktree name inside a `git worktree`)*
+
+```bash
+XCIND_INSTANCE="pr-123"   # explicit token wins over auto-detection
+```
+
+Precedence: an explicit `XCIND_INSTANCE` (environment or `.xcind.override.sh`)
+wins; otherwise it is auto-detected from a linked git worktree unless
+[`XCIND_INSTANCE_AUTO`](#xcind_instance_auto) is `0`.
+
+### `XCIND_INSTANCE_AUTO`
+
+Controls git-worktree auto-detection of [`XCIND_INSTANCE`](#xcind_instance).
+Set to `0` to disable auto-detection (an explicit `XCIND_INSTANCE` still wins).
+
+**Default:** `1` (enabled)
+
+```bash
+XCIND_INSTANCE_AUTO=0  # never derive an instance token from the worktree
+```
+
+### `XCIND_HOST_ENV_FILE`
+
+Opt-in path to a **host-view env file** that mirrors the injected service-discovery
+variables (see [Environment Variables](../specs/environment-variables.md)) for
+processes running on the host rather than inside containers. When set non-empty,
+an EXECUTE-phase hook (`__xcind-hostenv-execute-hook`) writes the host-view
+values (assigned exports use their published `_HOST_PORT`) to this file on every
+`xcind-compose` run. Relative paths resolve against the app root. `jq` is required
+when the app declares any `type=assigned` exports.
+
+**Default:** *(unset — the host env file is not written)*
+
+```bash
+XCIND_HOST_ENV_FILE=".env.xcind"   # written relative to the app root
+```
+
+### `XCIND_HOST_ENV_MODE`
+
+How [`XCIND_HOST_ENV_FILE`](#xcind_host_env_file) is written:
+
+- `own` (default) — xcind fully owns the file and overwrites it each run.
+- `block` — xcind rewrites only its own managed region, delimited by
+  `# >>> xcind >>>` … `# <<< xcind <<<` markers, preserving the rest of the file.
+
+**Default:** `"own"`
+
+```bash
+XCIND_HOST_ENV_MODE="block"  # merge into a hand-maintained .env file
+```
+
 ### `XCIND_HOST_GATEWAY_ENABLED`
 
 Controls whether the host gateway hook runs. Set to `0` to disable automatic `host.docker.internal` normalization.
@@ -150,7 +216,7 @@ XCIND_HOST_GATEWAY="192.168.1.100"
 
 Array of hook function names that generate compose overlay files. Hooks run after file resolution and their output is cached by SHA.
 
-**Default:** `("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook")`
+**Default:** `("xcind-naming-hook" "xcind-app-hook" "xcind-app-env-hook" "xcind-host-gateway-hook" "xcind-proxy-hook" "xcind-assigned-hook" "xcind-workspace-hook" "xcind-discovery-hook")`
 
 All built-in hooks are registered automatically. Override to `()` to disable all generation hooks.
 
@@ -160,17 +226,22 @@ XCIND_HOOKS_GENERATE=()  # disable all generation hooks
 
 When `yq` is missing at runtime, default-registered hooks behave in one of
 two ways: non-load-bearing hooks (`xcind-app-hook`,
-`xcind-host-gateway-hook`, `xcind-workspace-hook`) soft-skip with a
-consolidated warning at the end of the run; hooks with load-bearing output
-(`xcind-app-env-hook`, `xcind-proxy-hook`, `xcind-assigned-hook`) hard-fail
-the pipeline. See [Hook Lifecycle](../specs/hook-lifecycle.md#generate) for
-the full policy.
+`xcind-host-gateway-hook`, `xcind-workspace-hook`, `xcind-discovery-hook`)
+soft-skip with a consolidated warning at the end of the run; hooks with
+load-bearing output (`xcind-app-env-hook`, `xcind-proxy-hook`,
+`xcind-assigned-hook`) hard-fail the pipeline. See
+[Hook Lifecycle](../specs/hook-lifecycle.md#generate) for the full policy.
+
+> **Always-run hooks:** `xcind-assigned-hook` and `xcind-discovery-hook` are
+> also listed in `XCIND_HOOKS_ALWAYS`, so on a cache hit they re-run against
+> current live state (assigned host ports) rather than replaying cached
+> stdout. They stay in `XCIND_HOOKS_GENERATE` for ordering and completeness.
 
 ### `XCIND_HOOKS_EXECUTE`
 
 Array of hook function names that ensure runtime preconditions before `docker compose` runs. These hooks run on every invocation (not cached) and only apply in `xcind-compose`, not `xcind-config`.
 
-**Default:** `("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook")`
+**Default:** `("__xcind-proxy-execute-hook" "__xcind-workspace-execute-hook" "__xcind-hostenv-execute-hook")`
 
 ```bash
 XCIND_HOOKS_EXECUTE=()  # disable all execute hooks
@@ -235,10 +306,12 @@ XCIND_PROXY_AUTO_START=0  # disable proxy auto-start
 
 Domain suffix for generated proxy hostnames. Can be set in the workspace `.xcind.sh` or in the global proxy config.
 
-**Default:** `"localhost"` (RFC 6761 — `.localhost` requires zero DNS configuration)
+**Default:** `"localhost.scind.io"` (a multi-label domain that resolves to loopback; see [ADR-0016](../decisions/0016-proxy-domain-wildcard-constraint.md))
+
+The domain must contain at least one dot. A single-label domain (e.g. bare `localhost`) makes the wildcard cert `*.<domain>` untrusted by strict TLS clients (macOS curl/Safari, Go), so `xcind-proxy` emits an advisory warning when it sees one. `localhost.scind.io` resolves to `127.0.0.1`, so it needs no local DNS configuration while still satisfying the multi-label constraint.
 
 ```bash
-XCIND_PROXY_DOMAIN="xcind.localhost"
+XCIND_PROXY_DOMAIN="dev.localhost.scind.io"
 ```
 
 ---
@@ -335,7 +408,7 @@ With `APP_ENV=dev`, xcind checks for `compose.dev.yaml` and `compose.dev.overrid
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XCIND_PROXY_DOMAIN` | `"localhost"` | Domain suffix for hostnames (and wildcard cert `*.${XCIND_PROXY_DOMAIN}`) |
+| `XCIND_PROXY_DOMAIN` | `"localhost.scind.io"` | Domain suffix for hostnames (and wildcard cert `*.${XCIND_PROXY_DOMAIN}`); must be multi-label — see [ADR-0016](../decisions/0016-proxy-domain-wildcard-constraint.md) |
 | `XCIND_PROXY_IMAGE` | `"traefik:v3"` | Traefik Docker image |
 | `XCIND_PROXY_HTTP_PORT` | `"80"` | Host port for HTTP traffic |
 | `XCIND_PROXY_TLS_MODE` | `"auto"` | TLS mode: `auto` (mkcert → openssl fallback), `custom` (user-provided cert), or `disabled` (HTTP-only) |

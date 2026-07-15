@@ -42,7 +42,7 @@ For schema definitions and field references, see [Configuration Reference](../re
 
 Machine-wide proxy settings. Created by `xcind-proxy init`. Existing config values are preserved as defaults on re-init; the file is always regenerated.
 
-Variables: `XCIND_PROXY_DOMAIN`, `XCIND_PROXY_IMAGE`, `XCIND_PROXY_HTTP_PORT`, `XCIND_PROXY_DASHBOARD`, `XCIND_PROXY_DASHBOARD_PORT`.
+Variables: `XCIND_PROXY_DOMAIN`, `XCIND_PROXY_IMAGE`, `XCIND_PROXY_HTTP_PORT`, `XCIND_PROXY_TLS_MODE`, `XCIND_PROXY_HTTPS_PORT`, `XCIND_PROXY_TLS_CERT_FILE`, `XCIND_PROXY_TLS_KEY_FILE`, `XCIND_PROXY_DASHBOARD`, `XCIND_PROXY_DASHBOARD_PORT`.
 
 ### Level 2: Workspace (`.xcind.sh` with `XCIND_IS_WORKSPACE=1`)
 
@@ -121,6 +121,13 @@ Hooks run after file resolution as the final step before executing `docker compo
 | `xcind-proxy-hook` | `xcind-proxy-lib.bash` | Generates Traefik labels and proxy network |
 | `xcind-assigned-hook` | `xcind-assigned-lib.bash` | Stable host port bindings |
 | `xcind-workspace-hook` | `xcind-workspace-lib.bash` | Generates workspace network aliases |
+| `xcind-discovery-hook` | `xcind-discovery-lib.bash` | Injects service-discovery `environment:` vars for all services |
+
+These are the `XCIND_HOOKS_GENERATE` hooks. A separate `XCIND_HOOKS_EXECUTE`
+phase runs runtime-precondition hooks (`__xcind-proxy-execute-hook`,
+`__xcind-workspace-execute-hook`, `__xcind-hostenv-execute-hook`) after
+generation, only under `xcind-compose`. See
+[Hook Lifecycle](./hook-lifecycle.md) for all phases.
 
 ### Template Resolution
 

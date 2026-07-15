@@ -42,6 +42,7 @@ Hook output is cached under `{app_root}/.xcind/generated/{sha}/`, keyed by a SHA
 - **Global proxy config** — content hash of `${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy/config.sh` when present.
 - **`XCIND_TOOLS`** — the full declarations array, joined newline-separated, when non-empty.
 - **Naming inputs** — the literal values of `XCIND_APP`, `XCIND_WORKSPACE`, and `XCIND_WORKSPACELESS`, so naming overrides invalidate the cache even if no file changed.
+- **Instance token** — the per-worktree isolation token `XCIND_INSTANCE`, included **only when non-empty**. An empty instance (the main checkout) contributes nothing, so its SHA is byte-identical to pre-instance builds; each linked worktree with a distinct token gets its own cache and generated directories.
 - **Host-gateway configuration** — the literal values of `XCIND_HOST_GATEWAY_ENABLED` and `XCIND_HOST_GATEWAY`.
 - **Detected host-gateway value** — when `XCIND_HOST_GATEWAY_ENABLED` is not `0`, the output of `__xcind-detect-host-gateway` is included so DHCP/VPN/WSL2-mode changes invalidate the cache even when configuration is stable.
 
@@ -52,9 +53,9 @@ A cache entry is treated as a hit only when both:
 
 A missing marker, a missing per-hook output, or a hook newly added to `XCIND_HOOKS_GENERATE` since the last run forces a full rebuild rather than a partial replay. On cache miss, the generated directory is rebuilt atomically: any prior contents are removed, the directory is recreated, hooks run in registration order, and the `.complete` marker (which records the registered hook list for diagnostics) is written only after every hook succeeds. If a hook fails mid-run, the partial generated directory is removed before the error propagates so the next invocation rebuilds from scratch.
 
-Hooks listed in `XCIND_HOOKS_ALWAYS` (currently `xcind-assigned-hook`) are exempt from the replay-only behavior: on a cache hit they are re-run against current live state, their persisted `.hook-output-{name}` is refreshed, and any deleted overlay file they own is regenerated. Pure GENERATE hooks (naming, app, app-env, host-gateway, proxy, workspace) continue to replay from `.hook-output-{name}` without re-execution. See [Hook Lifecycle: GENERATE](./hook-lifecycle.md#generate) for the full contract.
+Hooks listed in `XCIND_HOOKS_ALWAYS` (currently `xcind-assigned-hook` and `xcind-discovery-hook`) are exempt from the replay-only behavior: on a cache hit they are re-run against current live state, their persisted `.hook-output-{name}` is refreshed, and any deleted overlay file they own is regenerated. (`xcind-discovery-hook` is always-run because its assigned `*_HOST_PORT` values embed the same live-allocated host ports.) Pure GENERATE hooks (naming, app, app-env, host-gateway, proxy, workspace) continue to replay from `.hook-output-{name}` without re-execution. See [Hook Lifecycle: GENERATE](./hook-lifecycle.md#generate) for the full contract.
 
-The cache directory also stores two sibling artifacts that are not part of hook output:
+A separate cache directory, `{app_root}/.xcind/cache/{sha}/` (distinct from the `.xcind/generated/{sha}/` overlays above), stores two sibling artifacts that are not part of hook output:
 
 - `resolved-config.yaml` — `docker compose config` output, written **before** hooks run so hooks that need the resolved service list can read it.
 - `config.json` — `xcind-config --json` output, written **after** `__xcind-run-hooks` so the cached JSON reflects post-hook updates such as `assignedExports` populated by `xcind-assigned-hook`. Written via a `.tmp` sidecar and `mv` so a failed `jq` run never leaves a corrupt file; the write is a no-op when `jq` is unavailable.
@@ -150,35 +151,35 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=xcind-proxy"
       # HTTP router
-      - "traefik.http.routers.dev-frontend-web-http.rule=Host(`dev-frontend-web.localhost`)"
+      - "traefik.http.routers.dev-frontend-web-http.rule=Host(`dev-frontend-web.localhost.scind.io`)"
       - "traefik.http.routers.dev-frontend-web-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-web-http.service=dev-frontend-web-http"
       - "traefik.http.services.dev-frontend-web-http.loadbalancer.server.port=80"
       # HTTPS router (emitted when XCIND_PROXY_TLS_MODE != disabled)
-      - "traefik.http.routers.dev-frontend-web-https.rule=Host(`dev-frontend-web.localhost`)"
+      - "traefik.http.routers.dev-frontend-web-https.rule=Host(`dev-frontend-web.localhost.scind.io`)"
       - "traefik.http.routers.dev-frontend-web-https.entrypoints=websecure"
       - "traefik.http.routers.dev-frontend-web-https.tls=true"
       - "traefik.http.routers.dev-frontend-web-https.service=dev-frontend-web-https"
       - "traefik.http.services.dev-frontend-web-https.loadbalancer.server.port=80"
       # Apex routers
-      - "traefik.http.routers.dev-frontend-http.rule=Host(`dev-frontend.localhost`)"
+      - "traefik.http.routers.dev-frontend-http.rule=Host(`dev-frontend.localhost.scind.io`)"
       - "traefik.http.routers.dev-frontend-http.entrypoints=web"
       - "traefik.http.routers.dev-frontend-http.service=dev-frontend-http"
       - "traefik.http.services.dev-frontend-http.loadbalancer.server.port=80"
-      - "traefik.http.routers.dev-frontend-https.rule=Host(`dev-frontend.localhost`)"
+      - "traefik.http.routers.dev-frontend-https.rule=Host(`dev-frontend.localhost.scind.io`)"
       - "traefik.http.routers.dev-frontend-https.entrypoints=websecure"
       - "traefik.http.routers.dev-frontend-https.tls=true"
       - "traefik.http.routers.dev-frontend-https.service=dev-frontend-https"
       - "traefik.http.services.dev-frontend-https.loadbalancer.server.port=80"
       # Export labels — preferred URL is https when TLS is enabled
-      - "xcind.export.web.host=dev-frontend-web.localhost"
-      - "xcind.export.web.http.url=http://dev-frontend-web.localhost"
-      - "xcind.export.web.https.url=https://dev-frontend-web.localhost"
-      - "xcind.export.web.url=https://dev-frontend-web.localhost"
-      - "xcind.apex.host=dev-frontend.localhost"
-      - "xcind.apex.http.url=http://dev-frontend.localhost"
-      - "xcind.apex.https.url=https://dev-frontend.localhost"
-      - "xcind.apex.url=https://dev-frontend.localhost"
+      - "xcind.export.web.host=dev-frontend-web.localhost.scind.io"
+      - "xcind.export.web.http.url=http://dev-frontend-web.localhost.scind.io"
+      - "xcind.export.web.https.url=https://dev-frontend-web.localhost.scind.io"
+      - "xcind.export.web.url=https://dev-frontend-web.localhost.scind.io"
+      - "xcind.apex.host=dev-frontend.localhost.scind.io"
+      - "xcind.apex.http.url=http://dev-frontend.localhost.scind.io"
+      - "xcind.apex.https.url=https://dev-frontend.localhost.scind.io"
+      - "xcind.apex.url=https://dev-frontend.localhost.scind.io"
 
 networks:
   xcind-proxy:

@@ -1,9 +1,9 @@
 # Application Lifecycle
 
-> Xcind provides `xcind-application init`, `status`, and `list`
-> subcommands (aliased as `xcind-app`). An application exists when a
-> directory contains a `.xcind.sh` file that does **not** set
-> `XCIND_IS_WORKSPACE=1`.
+> Xcind provides `xcind-application init`, `status`, `list`, `ports`,
+> `urls`, and `exports` subcommands (aliased as `xcind-app`). An
+> application exists when a directory contains a `.xcind.sh` file that
+> does **not** set `XCIND_IS_WORKSPACE=1`.
 
 ---
 
@@ -36,7 +36,7 @@ EOF
 ```
 
 See the [CLI Reference](../reference/cli.md#xcind-application) for full
-`init`, `status`, and `list` options.
+`init`, `status`, `list`, `ports`, `urls`, and `exports` options.
 
 ### Running the Application
 
@@ -60,7 +60,13 @@ Xcind automatically:
 xcind-application status             # Text report for the app at $PWD
 xcind-application status --json      # Structured JSON
 xcind-application list               # Sibling apps in the enclosing workspace
+xcind-application ports [SERVICE]    # Host port assigned to each type=assigned export
+xcind-application urls [SERVICE]     # URL for each type=proxied export (apex URL for the headlining export)
+xcind-application exports [SERVICE]  # Unified per-export view (ports and URLs; apexUrl/apexHost on the headlining export)
 ```
+
+`ports`, `urls`, and `exports` each accept an optional `SERVICE` filter, an
+optional `DIR`, and `--json`.
 
 ### Stopping the Application
 
