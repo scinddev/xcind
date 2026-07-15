@@ -22,7 +22,7 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0012](./0012-unified-generate-flag-semantics.md) | Unified Generate Flag Semantics | Accepted |
 | [0013](./0013-host-docker-internal-normalization.md) | Automatic `host.docker.internal` Normalization | Accepted |
 | [0014](./0014-two-track-documentation.md) | Two-Track Documentation: User (Diátaxis) + Engineering (LDS) | Accepted |
-| [0015](./0015-application-export-introspection.md) | Application Export Introspection and Command Placement | Proposed |
+| [0015](./0015-application-export-introspection.md) | Application Export Introspection and Command Placement | Accepted |
 | [0016](./0016-proxy-domain-wildcard-constraint.md) | Proxy Domain Must Be Multi-Label; Default `localhost.scind.io` | Accepted |
 | [0017](./0017-apex-url-reporting.md) | Reporting Prefers the Apex URL for the Headlining Export | Accepted |
 | [0018](./0018-service-discovery-env-injection.md) | Service-Discovery Environment Variable Injection | Accepted |

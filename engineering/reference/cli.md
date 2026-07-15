@@ -1,6 +1,6 @@
 # CLI Reference
 
-Xcind provides five commands. All are standalone Bash scripts.
+Xcind provides six commands. All are standalone Bash scripts.
 
 ---
 
@@ -84,6 +84,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 | `--generate-docker-wrapper[=FILE]` | Generate a POSIX `docker` wrapper script |
 | `--generate-docker-compose-wrapper[=FILE]` | Generate a POSIX `docker-compose` wrapper script |
 | `--generate-docker-compose-configuration[=FILE]` | Generate resolved compose config |
+| `--generate-starship[=FILE] [--format toml\|nix]` | Generate a Starship `[custom.xcind]` block (TOML default, or Nix Home Manager attrset) |
 | `completion {bash\|zsh}` | Output shell completion script for all xcind commands |
 | `--version`, `-V` | Show version |
 | `--help`, `-h` | Show usage help |
@@ -104,6 +105,8 @@ xcind-config --generate-docker-wrapper=bin/docker   # Generate docker wrapper to
 xcind-config --generate-docker-compose-wrapper     # Generate docker-compose wrapper to stdout
 xcind-config --generate-docker-compose-configuration        # Generate resolved compose config to stdout
 xcind-config --generate-docker-compose-configuration=FILE   # Generate resolved compose config to file
+xcind-config --generate-starship                   # Print a Starship [custom.xcind] block (TOML)
+xcind-config --generate-starship --format nix      # Emit a Nix Home Manager attrset instead
 xcind-config --version                             # Show version
 xcind-config completion bash                       # Output bash completions
 xcind-config completion zsh                        # Output zsh completions
@@ -200,7 +203,7 @@ Manages the shared Traefik reverse proxy infrastructure.
 
 | Option | Config Variable | Default |
 |--------|----------------|---------|
-| `--proxy-domain DOMAIN` | `XCIND_PROXY_DOMAIN` | `localhost` |
+| `--proxy-domain DOMAIN` | `XCIND_PROXY_DOMAIN` | `localhost.scind.io` |
 | `--http-port PORT` | `XCIND_PROXY_HTTP_PORT` | `80` |
 | `--image IMAGE` | `XCIND_PROXY_IMAGE` | `traefik:v3` |
 | `--dashboard BOOL` | `XCIND_PROXY_DASHBOARD` | `false` |
@@ -427,6 +430,50 @@ xcind-app list                                 # Short alias
 > against applications or workspaces you do not control. See
 > [`xcind-workspace`](#xcind-workspace) for a more detailed discussion of
 > the same trust model.
+
+---
+
+## `xcind-prompt`
+
+Emits a compact Xcind context segment for a shell prompt (e.g. Starship). Fast
+enough to run on every prompt render: bare `--detect` is a stat-walk, and even
+the config-sourcing paths avoid `jq`/Docker/hooks and stay within Starship's
+500ms budget. Output has no trailing newline, and is empty when run outside any
+app.
+
+Default output is `<workspace>/<app>` (or `<app>` when workspaceless).
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--print FIELD` | Print one field: `both` (default, byte-identical to no `--print`), `workspace` (empty when workspaceless), `app`, `apex` (the OSC 8-linked apex hostname, or empty when no apex), or `apex-url` (the apex URL as plain text `<scheme>://<hostname>`) |
+| `--apex` | Append the apex hostname as an OSC 8 clickable hyperlink to the name selectors (`both`/`app`/`workspace`); redundant and ignored for `--print apex` / `--print apex-url` |
+| `--no-hyperlink` | Emit plain text (apex hostname, no escape sequences) |
+| `--detect` | Exit `0` inside an app, non-zero outside; no output. With `--print` it probes that field's availability (e.g. `--detect --print workspace` exits `0` only in workspace mode; `--detect --print apex` exits `0` only when an apex resolves) |
+| `--help`, `-h` | Show usage help |
+
+### Environment
+
+| Variable | Effect |
+|----------|--------|
+| `XCIND_PROMPT_HYPERLINKS=0` | Disable OSC 8 hyperlinks (same as `--no-hyperlink`) |
+
+`--print apex-url` emits plain text with no OSC 8 sequence, so `--no-hyperlink`
+and `XCIND_PROMPT_HYPERLINKS=0` have no effect on it.
+
+### Usage
+
+```bash
+xcind-prompt                          # "<workspace>/<app>" (or "<app>")
+xcind-prompt --print app              # Just the app name
+xcind-prompt --print apex-url         # e.g. "https://my-app.localhost.scind.io"
+xcind-prompt --apex                   # Name plus OSC 8-linked apex hostname
+xcind-prompt --detect && echo inside  # Branch on being inside an app
+```
+
+The `xcind-config --generate-starship` flag emits a ready-to-use Starship
+`[custom.xcind]` block (TOML or Nix) that wraps this command.
 
 ---
 

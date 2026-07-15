@@ -1,6 +1,12 @@
 # ADR-0015: Application Export Introspection and Command Placement
 
-**Status**: Proposed
+**Status**: Accepted
+
+> The core decision — the `ports`/`urls`/`exports` subcommands on
+> `xcind-application`, backed by the `xcind-config --json` contract — is
+> implemented and shipped (PR #69). The complementary *global* `xcind-proxy
+> urls` view described under "Follow-up" remains proposed and out of this ADR's
+> accepted scope.
 
 ## Context
 

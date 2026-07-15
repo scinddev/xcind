@@ -83,8 +83,19 @@ Reports:
 - HTTP port
 - Dashboard URL (if enabled)
 - Network existence
+- Assigned ports (the current entries from `assigned-ports.tsv`)
 
-With `--json`: outputs a flat JSON object for machine consumption.
+Stale assigned-port entries (those whose app path no longer exists) are pruned as part of `status`.
+
+With `--json`: outputs a JSON object containing an `assigned_ports` array for machine consumption.
+
+### `xcind-proxy release PORT`
+
+Removes a single assigned-port entry from the state file, freeing the host port for reassignment.
+
+### `xcind-proxy prune`
+
+Removes all assigned-port entries whose app path no longer exists. Pruning also runs automatically as part of `init`, `up`, and `status`.
 
 ### Auto-Start
 
@@ -189,17 +200,28 @@ Certificates are written to `$XCIND_PROXY_STATE_DIR/certs/wildcard.{crt,key}`. A
 
 Wildcard certs cover `*.${XCIND_PROXY_DOMAIN}` and the bare domain, so every generated hostname works over HTTPS without per-app cert management.
 
+### Multi-Label Domain Constraint
+
+`XCIND_PROXY_DOMAIN` must contain at least one dot (be multi-label). A single-label
+domain (e.g. bare `localhost`) produces a wildcard cert `*.localhost` that strict
+TLS clients (macOS curl/Safari, Go) reject. When the proxy sees a single-label
+domain under a non-`disabled` TLS mode, it emits an advisory warning rather than
+failing. This is why the default is `localhost.scind.io` rather than `localhost`.
+See [ADR-0016](../decisions/0016-proxy-domain-wildcard-constraint.md).
+
 ---
 
 ## DNS Configuration
 
-For local development, the default domain `localhost` (and subdomains like `app-web.localhost`) resolves to `127.0.0.1` automatically per RFC 6761 — no DNS configuration needed.
+The default domain `localhost.scind.io` (and subdomains like `app-web.localhost.scind.io`) is a public name whose records resolve to `127.0.0.1`, so it needs no local DNS configuration while still satisfying the [multi-label constraint](#multi-label-domain-constraint).
 
-For custom domains, configure DNS resolution:
+The single-label `localhost` (and subdomains like `app-web.localhost`) resolves to `127.0.0.1` automatically per RFC 6761, but is subject to the wildcard-cert trust limitation above — use it only when TLS is `disabled`.
 
-1. **dnsmasq**: Route all `*.xcind.localhost` to `127.0.0.1`
+For other custom domains, configure DNS resolution:
+
+1. **dnsmasq**: Route all subdomains of your domain to `127.0.0.1`
    ```
-   address=/xcind.localhost/127.0.0.1
+   address=/localhost.scind.io/127.0.0.1
    ```
 2. **/etc/hosts**: Manual entries for each hostname
 3. **Local DNS server**: More complex but flexible

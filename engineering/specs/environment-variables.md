@@ -101,15 +101,15 @@ For each entry in `XCIND_PROXY_EXPORTS`, the proxy hook generates:
 
 | Label | Value |
 |-------|-------|
-| `xcind.export.{name}.host` | Generated hostname (e.g., `myapp-api.localhost`) |
-| `xcind.export.{name}.url` | Full URL (e.g., `http://myapp-api.localhost`) |
+| `xcind.export.{name}.host` | Generated hostname (e.g., `myapp-api.localhost.scind.io`) |
+| `xcind.export.{name}.url` | Full URL (e.g., `http://myapp-api.localhost.scind.io`) |
 
 For the primary (first) export, apex labels are also generated:
 
 | Label | Value |
 |-------|-------|
-| `xcind.apex.host` | Apex hostname (e.g., `myapp.localhost`) |
-| `xcind.apex.url` | Apex URL (e.g., `http://myapp.localhost`) |
+| `xcind.apex.host` | Apex hostname (e.g., `myapp.localhost.scind.io`) |
+| `xcind.apex.url` | Apex URL (e.g., `http://myapp.localhost.scind.io`) |
 
 ## Context Labels
 
@@ -146,6 +146,25 @@ environment to change Xcind's behavior.
 | Variable | Effect |
 |----------|--------|
 | `XCIND_NO_REGISTRY` | When set (non-empty), skip the automatic workspace-registry write during discovery. Discovery, config sourcing, and all `XCIND_*` variable resolution still run unchanged — only the registry write is suppressed. Intended for read-only callers (e.g. the prompt helper) that must not mutate shared state. Unset or empty = register as usual. |
+| `XCIND_INSTANCE` | Per-worktree isolation token folded into the compose project name and workspace network name so multiple git worktrees of one repo don't collide. Empty (the default on a main checkout) leaves naming byte-identical to the un-instanced form. Explicit value wins; otherwise auto-detected from a linked worktree. See [Configuration Reference](../reference/configuration.md#xcind_instance) and [Naming Conventions](./naming-conventions.md). |
+| `XCIND_INSTANCE_AUTO` | Set `0` to disable git-worktree auto-detection of `XCIND_INSTANCE` (default `1`). |
+
+## Host-View Env File (`XCIND_HOST_ENV_FILE`)
+
+The injected discovery variables above are added to *container* `environment:`. To
+mirror the same information for processes running on the **host**, set
+`XCIND_HOST_ENV_FILE` to a path (relative paths resolve against the app root). On
+each `xcind-compose` run an EXECUTE-phase hook (`__xcind-hostenv-execute-hook`)
+writes a host-view dotenv there, reusing the same discovery seam — assigned
+exports use their published `_HOST_PORT`, and `_HOST` reflects the host-reachable
+value. `jq` is required when the app declares any `type=assigned` exports.
+
+`XCIND_HOST_ENV_MODE` selects how the file is written:
+
+| Mode | Behavior |
+|------|----------|
+| `own` (default) | xcind fully owns the file and overwrites it each run. |
+| `block` | xcind rewrites only its managed region, between `# >>> xcind >>>` and `# <<< xcind <<<`, preserving the rest of the file. |
 
 ---
 

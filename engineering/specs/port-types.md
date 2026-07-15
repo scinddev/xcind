@@ -46,9 +46,16 @@ Traffic is routed through Traefik on the HTTP entrypoint (port configurable via 
 | Aspect | Value |
 |--------|-------|
 | Routing | Through Traefik via `Host()` rule |
-| Hostname | Generated from `XCIND_APP_URL_TEMPLATE` (e.g., `myapp-api.localhost`) |
+| Hostname | Generated from `XCIND_APP_URL_TEMPLATE` (e.g., `myapp-api.localhost.scind.io`) |
 | Protocol | HTTP (Traefik `web` entrypoint) |
 | Container port | Specified in the entry or inferred from compose config |
+
+The **first** `proxied` export is additionally designated the app's apex
+(headlining) export and gets a shorter apex hostname (`{app}.{domain}` or
+`{workspace}-{app}.{domain}`). Reporting surfaces (`xcind-application
+urls`/`exports`, `xcind-proxy status`, and `xcind-config --json`) prefer the apex
+URL for that export. See [ADR-0017](../decisions/0017-apex-url-reporting.md) and
+[Docker Labels — Apex Labels](./docker-labels.md).
 
 ## Assigned Ports
 
@@ -60,6 +67,13 @@ The declared port is tried first; if taken, `xcind-assigned-hook` scans upward f
 | State file | `${XDG_STATE_HOME:-~/.local/state}/xcind/proxy/assigned-ports.tsv` |
 | Concurrency | Serialized with `flock(1)` when available |
 | Fallback when declared port is in use | Scan upward up to `XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS` (default 100) |
+
+### Lifecycle
+
+Assignments persist in the state file across restarts. To manage them:
+
+- `xcind-proxy release PORT` removes a single assignment, freeing the host port.
+- `xcind-proxy prune` removes entries whose app path no longer exists. Pruning also runs automatically on `xcind-proxy init`, `up`, and `status`.
 
 ### Port Inference
 
