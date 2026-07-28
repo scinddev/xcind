@@ -4314,7 +4314,12 @@ services:
     image: postgres
 COMPOSEEOF
 
-status_out=$("$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_WS/webapp" 2>&1)
+echo "DEBUG: command -v yq -> $(command -v yq)" >&2
+echo "DEBUG: command -v docker -> $(command -v docker)" >&2
+echo "DEBUG: docker compose config -> $(docker compose config)" >&2
+status_out=$(XCIND_DEBUG=1 "$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_WS/webapp" 2>&1)
+echo "DEBUG: status_out follows:" >&2
+echo "$status_out" >&2
 assert_contains "status text: Application header" "Application: webapp" "$status_out"
 assert_contains "status text: Workspace line" "Workspace:" "$status_out"
 assert_contains "status text: Services header" "Services:" "$status_out"
