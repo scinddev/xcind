@@ -108,6 +108,17 @@ jobs:
           sudo apt-get install -y -qq jq
           pip install --user yq
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: Debug yq resolution (temporary)
+        run: |
+          echo "PATH=$PATH"
+          type -a yq
+          command -v yq
+          yq --version
+          command -v jq
+          jq --version
+          printf 'services:\n  web:\n    image: nginx\n  db:\n    image: postgres\n' >/tmp/dbg.yaml
+          echo "--- yq -r .services keys ---"
+          yq -r '.services // {} | keys | .[]' /tmp/dbg.yaml
       - name: Run core tests
         run: bash test/test-xcind.sh
       - name: Run proxy tests
