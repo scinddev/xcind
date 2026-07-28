@@ -4320,6 +4320,13 @@ echo "DEBUG: docker compose config -> $(docker compose config)" >&2
 status_out=$(XCIND_DEBUG=1 "$XCIND_ROOT/bin/xcind-application" status "$APP_STATUS_WS/webapp" 2>&1)
 echo "DEBUG: status_out follows:" >&2
 echo "$status_out" >&2
+for _dbg_rc in "$APP_STATUS_WS/webapp/.xcind/cache/"*/resolved-config.yaml; do
+  echo "DEBUG: resolved-config.yaml at $_dbg_rc:" >&2
+  cat "$_dbg_rc" >&2
+  _dbg_yq_out=$(yq -r '.services // {} | keys | .[]' "$_dbg_rc" 2>&1) && _dbg_yq_rc=0 || _dbg_yq_rc=$?
+  echo "DEBUG: yq -r services keys on that file -> $_dbg_yq_out (rc=$_dbg_yq_rc)" >&2
+done
+unset _dbg_rc _dbg_yq_out _dbg_yq_rc
 assert_contains "status text: Application header" "Application: webapp" "$status_out"
 assert_contains "status text: Workspace line" "Workspace:" "$status_out"
 assert_contains "status text: Services header" "Services:" "$status_out"
