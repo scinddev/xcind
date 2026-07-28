@@ -2551,6 +2551,14 @@ assert_contains "all deps present: reports no issues" "All dependencies found." 
 assert_contains "all deps present: port-probes section present" "Port probes" "$cdeps_all_out"
 assert_contains "all deps present: port-probes selects ss" "selected: ss" "$cdeps_all_out"
 
+# 1a. kislyuk/yq prints a second jq-version line; dependency check must report
+# only yq's own version.
+printf '#!/bin/sh\necho "yq 4.1.2"\necho "jq-1.8.1"\n' >"$CDEPS_STUBS/yq"
+cdeps_kislyuk_yq_out=$(PATH="$CDEPS_STUBS:$PATH" __xcind-check-deps 2>&1)
+assert_contains "kislyuk yq version: reports yq version" "yq                   4.1.2" "$cdeps_kislyuk_yq_out"
+assert_not_contains "kislyuk yq version: omits jq version line" "jq-1.8.1" "$cdeps_kislyuk_yq_out"
+printf '#!/bin/sh\necho "yq version 4.35.0"\n' >"$CDEPS_STUBS/yq"
+
 # 1b. Port-probe degraded case: hide ss and netstat, leave timeout — the
 # hook would fall back to /dev/tcp-per-port (capped at 1s each), which on
 # WSL2+Docker Desktop can cost multi-minute allocations. --check should
