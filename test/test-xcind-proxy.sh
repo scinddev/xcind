@@ -9,7 +9,7 @@ set -euo pipefail
 for _xcind_required in yq jq; do
   if ! command -v "$_xcind_required" >/dev/null 2>&1; then
     echo "ERROR: $_xcind_required is required to run the xcind test suite." >&2
-    echo "  Install it (e.g. 'apt-get install $_xcind_required' or 'nix-shell -p $_xcind_required-go')." >&2
+    echo "  Install yq and jq (e.g. 'apt-get install yq jq', 'pip install yq', or 'nix-shell -p yq-go jq')." >&2
     exit 1
   fi
 done
@@ -1146,6 +1146,24 @@ assert_eq "PROXY-ROUTING-004: numeric port 8080 exits zero" "0" "$pr004_valid_rc
 pr004_valid_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
 assert_contains "PROXY-ROUTING-004: numeric port 8080 in label" ".server.port=8080" "$pr004_valid_yaml"
 unset pr004_valid_out pr004_valid_rc pr004_valid_yaml
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-proxy-infer-port short-syntax string ports ==="
+
+INFER_SHORT_DIR=$(mktemp_d)
+cat >"$INFER_SHORT_DIR/resolved.yaml" <<'YAML'
+services:
+  api:
+    image: node
+    ports:
+      - "3000:3000"
+YAML
+infer_short=$(__xcind-proxy-infer-port api "$INFER_SHORT_DIR/resolved.yaml") && infer_short_rc=0 || infer_short_rc=$?
+assert_eq "short-syntax infer: exits zero" "0" "$infer_short_rc"
+assert_eq "short-syntax infer: bare numeric port (no JSON quoting)" "3000" "$infer_short"
+rm -rf "$INFER_SHORT_DIR"
+unset infer_short infer_short_rc INFER_SHORT_DIR
 
 # Reset export for remaining hook tests.
 XCIND_PROXY_EXPORTS=("web:3000")

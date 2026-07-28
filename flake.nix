@@ -57,7 +57,10 @@
       #
       # yq is required — the default-registered hooks (proxy, workspace,
       # app-env, app, host-gateway) all need it. We use yq-go (mikefarah) for
-      # a single static binary with no jq propagation.
+      # a single static binary with no jq propagation. Users bringing their
+      # own yq on PATH (e.g. via the unwrapped package below) can also use
+      # kislyuk/yq (the Python jq wrapper) — Xcind's yq usage is compatible
+      # with both.
       #
       # jq is only needed by the JSON-emitting binaries (xcind-config --json,
       # xcind-workspace --json) and for the config.json cache side-effect

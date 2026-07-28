@@ -9,7 +9,7 @@ set -euo pipefail
 for _xcind_required in yq jq; do
   if ! command -v "$_xcind_required" >/dev/null 2>&1; then
     echo "ERROR: $_xcind_required is required to run the xcind test suite." >&2
-    echo "  Install it (e.g. 'apt-get install $_xcind_required' or 'nix-shell -p $_xcind_required-go')." >&2
+    echo "  Install yq and jq (e.g. 'apt-get install yq jq', 'pip install yq', or 'nix-shell -p yq-go jq')." >&2
     exit 1
   fi
 done
@@ -2550,6 +2550,14 @@ assert_eq "all deps present: returns 0" "0" "$cdeps_all_rc"
 assert_contains "all deps present: reports no issues" "All dependencies found." "$cdeps_all_out"
 assert_contains "all deps present: port-probes section present" "Port probes" "$cdeps_all_out"
 assert_contains "all deps present: port-probes selects ss" "selected: ss" "$cdeps_all_out"
+
+# 1a. kislyuk/yq prints a second jq-version line; dependency check must report
+# only yq's own version.
+printf '#!/bin/sh\necho "yq 4.1.2"\necho "jq-1.8.1"\n' >"$CDEPS_STUBS/yq"
+cdeps_kislyuk_yq_out=$(PATH="$CDEPS_STUBS:$PATH" __xcind-check-deps 2>&1)
+assert_contains "kislyuk yq version: reports yq version" "yq                   4.1.2" "$cdeps_kislyuk_yq_out"
+assert_not_contains "kislyuk yq version: omits jq version line" "jq-1.8.1" "$cdeps_kislyuk_yq_out"
+printf '#!/bin/sh\necho "yq version 4.35.0"\n' >"$CDEPS_STUBS/yq"
 
 # 1b. Port-probe degraded case: hide ss and netstat, leave timeout — the
 # hook would fall back to /dev/tcp-per-port (capped at 1s each), which on

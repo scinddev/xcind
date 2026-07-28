@@ -1400,7 +1400,7 @@ __xcind-check-deps-version() {
   docker) docker --version 2>/dev/null | sed 's/Docker version \([^,]*\).*/\1/' ;;
   "docker compose") docker compose version --short 2>/dev/null || echo "?" ;;
   jq) jq --version 2>/dev/null | sed 's/^jq-//' ;;
-  yq) yq --version 2>/dev/null | sed 's/.*version v\{0,1\}//' ;;
+  yq) out=$(yq --version 2>/dev/null) && echo "$out" | head -1 | sed -e 's/.*version v\{0,1\}//' -e 's/^yq \{1,\}//' ;;
   sha256sum) out=$(sha256sum --version 2>/dev/null) && echo "$out" | head -1 | sed 's/.*(GNU coreutils) //' ;;
   shasum) out=$(shasum --version 2>/dev/null) && echo "$out" | head -1 || echo "?" ;;
   *) echo "" ;;

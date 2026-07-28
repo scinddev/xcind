@@ -651,10 +651,10 @@ __xcind-assigned-warn-compose-conflict() {
   local idx=0
   while [[ $idx -lt $port_count ]]; do
     local target
-    target=$(yq ".services.\"$svc\".ports[$idx].target" "$resolved_config" 2>/dev/null)
+    target=$(yq -r ".services.\"$svc\".ports[$idx].target" "$resolved_config" 2>/dev/null)
     if [[ $target == "$cport" ]]; then
       local published
-      published=$(yq ".services.\"$svc\".ports[$idx].published" "$resolved_config" 2>/dev/null)
+      published=$(yq -r ".services.\"$svc\".ports[$idx].published" "$resolved_config" 2>/dev/null)
       if [[ -n $published && $published != "null" ]]; then
         echo "xcind: warning: service '$svc' already maps container port $cport to host port $published" >&2
         echo "xcind: assigned host port $host_port for export '$xport'" >&2
