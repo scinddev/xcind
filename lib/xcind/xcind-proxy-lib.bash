@@ -665,12 +665,12 @@ __xcind-proxy-infer-port() {
 
   # Extract the target (container) port from the single port mapping
   local target
-  target=$(yq ".services.\"$service\".ports[0].target" "$resolved_config" 2>/dev/null)
+  target=$(yq -r ".services.\"$service\".ports[0].target" "$resolved_config" 2>/dev/null)
 
   if [ -z "$target" ] || [ "$target" = "null" ]; then
     # Try published format (string like "80:8080")
     local port_str
-    port_str=$(yq ".services.\"$service\".ports[0]" "$resolved_config" 2>/dev/null)
+    port_str=$(yq -r ".services.\"$service\".ports[0]" "$resolved_config" 2>/dev/null)
     if [[ $port_str == *:* ]]; then
       target="${port_str##*:}"
     else

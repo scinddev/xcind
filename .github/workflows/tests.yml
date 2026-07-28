@@ -93,6 +93,28 @@ jobs:
       - name: Run prompt tests
         run: bash test/test-xcind-prompt.sh
 
+  kislyuk-yq-compat:
+    # Xcind's yq usage is read-only jq-syntax filters, compatible with both
+    # mikefarah/yq-go (the blessed, pinned implementation) and kislyuk/yq
+    # (a common Python alternative on user PATHs). This job locks in that
+    # compatibility by running the full suite set against kislyuk/yq + jq
+    # instead of yq-go.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install kislyuk/yq + jq
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq
+          pip install --user yq
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: Run core tests
+        run: bash test/test-xcind.sh
+      - name: Run proxy tests
+        run: bash test/test-xcind-proxy.sh
+      - name: Run prompt tests
+        run: bash test/test-xcind-prompt.sh
+
   npm-install-test:
     runs-on: ${{ matrix.os }}
     strategy:

@@ -9,7 +9,7 @@ set -euo pipefail
 for _xcind_required in yq jq; do
   if ! command -v "$_xcind_required" >/dev/null 2>&1; then
     echo "ERROR: $_xcind_required is required to run the xcind test suite." >&2
-    echo "  Install it (e.g. 'apt-get install $_xcind_required' or 'nix-shell -p $_xcind_required-go')." >&2
+    echo "  Install yq and jq (e.g. 'apt-get install yq jq', 'pip install yq', or 'nix-shell -p yq-go jq')." >&2
     exit 1
   fi
 done
