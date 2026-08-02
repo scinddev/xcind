@@ -36,6 +36,11 @@ fi
 
 __xcind-proxy-init() {
   # Parse init-specific flags
+  local _flag_mode=""
+  local _flag_network=""
+  local _flag_http_entrypoint=""
+  local _flag_https_entrypoint=""
+  local _flag_certresolver=""
   local _flag_proxy_domain=""
   local _flag_http_port=""
   local _flag_image=""
@@ -55,6 +60,31 @@ __xcind-proxy-init() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+    --mode)
+      __xcind-proxy-init-require-value "$@"
+      _flag_mode="$2"
+      shift 2
+      ;;
+    --network)
+      __xcind-proxy-init-require-value "$@"
+      _flag_network="$2"
+      shift 2
+      ;;
+    --http-entrypoint)
+      __xcind-proxy-init-require-value "$@"
+      _flag_http_entrypoint="$2"
+      shift 2
+      ;;
+    --https-entrypoint)
+      __xcind-proxy-init-require-value "$@"
+      _flag_https_entrypoint="$2"
+      shift 2
+      ;;
+    --certresolver)
+      __xcind-proxy-init-require-value "$@"
+      _flag_certresolver="$2"
+      shift 2
+      ;;
     --proxy-domain)
       __xcind-proxy-init-require-value "$@"
       _flag_proxy_domain="$2"
@@ -111,6 +141,18 @@ __xcind-proxy-init() {
     esac
   done
 
+  # Validate --mode value early — writing an invalid value into config.sh
+  # would produce confusing downstream errors.
+  if [[ -n $_flag_mode ]]; then
+    case "$_flag_mode" in
+    managed | external) ;;
+    *)
+      echo "Error: --mode must be 'managed' or 'external' (got: $_flag_mode)" >&2
+      exit 1
+      ;;
+    esac
+  fi
+
   # Validate --tls-mode value early — writing an invalid value into config.sh
   # would produce confusing downstream errors.
   if [[ -n $_flag_tls_mode ]]; then
@@ -156,6 +198,16 @@ __xcind-proxy-init() {
 
   # Apply CLI flag overrides (variables consumed by __xcind-proxy-write-config)
   # shellcheck disable=SC2034
+  [[ -n $_flag_mode ]] && XCIND_PROXY_MODE="$_flag_mode"
+  # shellcheck disable=SC2034
+  [[ -n $_flag_network ]] && XCIND_PROXY_NETWORK="$_flag_network"
+  # shellcheck disable=SC2034
+  [[ -n $_flag_http_entrypoint ]] && XCIND_PROXY_HTTP_ENTRYPOINT="$_flag_http_entrypoint"
+  # shellcheck disable=SC2034
+  [[ -n $_flag_https_entrypoint ]] && XCIND_PROXY_HTTPS_ENTRYPOINT="$_flag_https_entrypoint"
+  # shellcheck disable=SC2034
+  [[ -n $_flag_certresolver ]] && XCIND_PROXY_CERTRESOLVER="$_flag_certresolver"
+  # shellcheck disable=SC2034
   [[ -n $_flag_proxy_domain ]] && XCIND_PROXY_DOMAIN="$_flag_proxy_domain"
   # shellcheck disable=SC2034
   [[ -n $_flag_http_port ]] && XCIND_PROXY_HTTP_PORT="$_flag_http_port"
@@ -174,6 +226,33 @@ __xcind-proxy-init() {
   # shellcheck disable=SC2034
   [[ -n $_flag_tls_key_file ]] && XCIND_PROXY_TLS_KEY_FILE="$_flag_tls_key_file"
 
+  # Cross-validate the *effective* (merged) values for external mode.
+  if [[ ${XCIND_PROXY_MODE:-managed} == "external" ]]; then
+    # custom TLS configures file-based certs xcind never provisions in
+    # external mode — accepting it would guarantee a broken setup.
+    if [[ ${XCIND_PROXY_TLS_MODE:-auto} == "custom" ]]; then
+      echo "Error: --tls-mode custom cannot be combined with external proxy mode." >&2
+      echo "The external proxy terminates TLS; use --tls-mode auto (emit HTTPS routers)" >&2
+      echo "or disabled (HTTP-only routers), and configure certificates on the proxy itself." >&2
+      exit 1
+    fi
+    # Managed-only flags are persisted (they apply again after switching back
+    # to managed mode) but have no effect while external.
+    local _managed_flag
+    for _managed_flag in \
+      "--image:$_flag_image" \
+      "--dashboard:$_flag_dashboard" \
+      "--dashboard-port:$_flag_dashboard_port" \
+      "--http-port:$_flag_http_port" \
+      "--https-port:$_flag_https_port" \
+      "--tls-cert-file:$_flag_tls_cert_file" \
+      "--tls-key-file:$_flag_tls_key_file"; do
+      if [[ -n ${_managed_flag#*:} ]]; then
+        echo "Warning: ${_managed_flag%%:*} has no effect in external mode; value saved for managed mode." >&2
+      fi
+    done
+  fi
+
   # Write config (always — merges existing + overrides)
   __xcind-proxy-write-config
 
@@ -184,7 +263,20 @@ __xcind-proxy-init() {
   __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
 
   echo "Proxy config at $XCIND_PROXY_CONFIG_DIR"
-  echo "Generated files at $XCIND_PROXY_STATE_DIR"
+  if __xcind-proxy-is-external; then
+    echo "Proxy mode: external — xcind will attach apps to network '$XCIND_PROXY_NETWORK'"
+    echo "  Entrypoints: $XCIND_PROXY_HTTP_ENTRYPOINT / $XCIND_PROXY_HTTPS_ENTRYPOINT"
+    echo "  Certresolver: ${XCIND_PROXY_CERTRESOLVER:-none}"
+    # Migration hint: a previously managed Traefik may still hold ports 80/443.
+    local _leftover
+    _leftover=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
+    if [[ -n $_leftover ]]; then
+      echo "Warning: a xcind-managed Traefik proxy is still running." >&2
+      echo "         Stop it with: xcind-proxy down" >&2
+    fi
+  else
+    echo "Generated files at $XCIND_PROXY_STATE_DIR"
+  fi
 }
 
 __xcind-proxy-up() {
@@ -205,6 +297,27 @@ __xcind-proxy-up() {
       ;;
     esac
   done
+
+  if __xcind-proxy-is-external; then
+    if [[ $force == true ]]; then
+      echo "Error: 'up --force' is not available in external proxy mode." >&2
+      echo "Network '$XCIND_PROXY_NETWORK' is shared with the external proxy and will not be removed." >&2
+      exit 1
+    fi
+    # "up" in external mode means: verify the shared network is in place.
+    __xcind-proxy-ensure-network || exit 1
+    __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
+    echo "Proxy is externally managed — nothing to start."
+    echo "Network: $XCIND_PROXY_NETWORK"
+    local detected=""
+    detected=$(__xcind-proxy-detect-external-container) || true
+    if [[ -n $detected ]]; then
+      echo "Proxy container: $detected (detected)"
+    else
+      echo "Warning: no proxy-like container detected on network '$XCIND_PROXY_NETWORK'." >&2
+    fi
+    return 0
+  fi
 
   if [[ $force == true ]]; then
     # Tear down existing containers so the network can be recreated
@@ -230,6 +343,19 @@ __xcind-proxy-up() {
 __xcind-proxy-down() {
   if [[ $# -gt 0 ]]; then
     echo "Error: Unexpected argument for down: $1" >&2
+    exit 1
+  fi
+
+  if __xcind-proxy-is-external; then
+    # Migration escape hatch: stop a leftover xcind-managed Traefik that is
+    # still running from before the switch to external mode.
+    local leftover
+    leftover=$(docker ps --filter label=xcind.component=proxy --filter status=running -q 2>/dev/null) || true
+    if [[ -n $leftover && -f $XCIND_PROXY_COMPOSE ]]; then
+      docker compose -f "$XCIND_PROXY_COMPOSE" down
+      return 0
+    fi
+    echo "Error: proxy is externally managed — xcind will not stop it." >&2
     exit 1
   fi
 
@@ -286,25 +412,23 @@ __xcind-proxy-status() {
   # orphaned rows from deleted apps.
   __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
 
+  # Config was loaded at dispatch; external mode renders its own report
+  # (there is no managed compose file or Traefik container to inspect).
+  if __xcind-proxy-is-external; then
+    __xcind-proxy-status-external "$json_mode"
+    return 0
+  fi
+
   # Not initialized
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
     if [ "$json_mode" = true ]; then
-      jq -cn '{initialized: false, status: "not_initialized", assigned_ports: []}'
+      jq -cn '{initialized: false, mode: "managed", status: "not_initialized", assigned_ports: []}'
     else
       echo "Status: not initialized"
       echo "Run 'xcind-proxy init' to set up proxy infrastructure."
       __xcind-proxy-status-assigned-text
     fi
     return 0
-  fi
-
-  # Source config for display. The outer check at line 158 guarantees the
-  # compose file exists, but config.sh could still be missing (e.g., after a
-  # manual delete or a partial migration) — fall through with defaults in
-  # that case so status still prints something useful.
-  if [ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" ]; then
-    # shellcheck disable=SC1091
-    source "$XCIND_PROXY_CONFIG_DIR/config.sh"
   fi
 
   # Check if running
@@ -357,9 +481,13 @@ __xcind-proxy-status() {
       --arg dashboard_url "$dashboard_url" \
       --arg network_name "$network_name" \
       --argjson network_exists "$network_exists" \
+      --arg http_entrypoint "$XCIND_PROXY_HTTP_ENTRYPOINT" \
+      --arg https_entrypoint "$XCIND_PROXY_HTTPS_ENTRYPOINT" \
+      --arg certresolver "$XCIND_PROXY_CERTRESOLVER" \
       --argjson assigned_ports "$assigned_json" \
       '{
         initialized: true,
+        mode: "managed",
         status: $status,
         config: $config,
         image: $image,
@@ -371,10 +499,14 @@ __xcind-proxy-status() {
         dashboard_url: $dashboard_url,
         network_name: $network_name,
         network_exists: $network_exists,
+        http_entrypoint: $http_entrypoint,
+        https_entrypoint: $https_entrypoint,
+        certresolver: $certresolver,
         assigned_ports: $assigned_ports
       }'
   else
     echo "Status: $running_status"
+    echo "Mode: managed"
     if [ "$config_status" = "stale" ]; then
       echo "Config: stale (run 'xcind-proxy up' to regenerate)"
     else
@@ -393,6 +525,75 @@ __xcind-proxy-status() {
       echo "Network: $network_name (exists)"
     else
       echo "Network: $network_name (missing)"
+    fi
+    __xcind-proxy-status-assigned-text
+  fi
+}
+
+# Render `xcind-proxy status` for external proxy mode. There is no managed
+# container to inspect; report the shared network, label configuration, and
+# a best-effort detection of the external proxy container.
+__xcind-proxy-status-external() {
+  local json_mode="$1"
+
+  local initialized=false
+  [ -f "$XCIND_PROXY_CONFIG_DIR/config.sh" ] && initialized=true
+
+  local network_exists=false
+  if docker network inspect "$XCIND_PROXY_NETWORK" &>/dev/null; then
+    network_exists=true
+  fi
+
+  local proxy_container=""
+  proxy_container=$(__xcind-proxy-detect-external-container) || true
+
+  local domain="${XCIND_PROXY_DOMAIN:-localhost.scind.io}"
+  local tls_mode="${XCIND_PROXY_TLS_MODE:-auto}"
+
+  if [ "$json_mode" = true ]; then
+    local assigned_json
+    assigned_json=$(__xcind-proxy-status-assigned-json)
+    jq -cn \
+      --argjson initialized "$initialized" \
+      --arg network_name "$XCIND_PROXY_NETWORK" \
+      --argjson network_exists "$network_exists" \
+      --arg http_entrypoint "$XCIND_PROXY_HTTP_ENTRYPOINT" \
+      --arg https_entrypoint "$XCIND_PROXY_HTTPS_ENTRYPOINT" \
+      --arg certresolver "$XCIND_PROXY_CERTRESOLVER" \
+      --arg tls_mode "$tls_mode" \
+      --arg domain "$domain" \
+      --arg proxy_container "$proxy_container" \
+      --argjson assigned_ports "$assigned_json" \
+      '{
+        initialized: $initialized,
+        mode: "external",
+        status: "external",
+        network_name: $network_name,
+        network_exists: $network_exists,
+        http_entrypoint: $http_entrypoint,
+        https_entrypoint: $https_entrypoint,
+        certresolver: $certresolver,
+        tls_mode: $tls_mode,
+        domain: $domain,
+        proxy_container: $proxy_container,
+        assigned_ports: $assigned_ports
+      }'
+  else
+    echo "Status: external"
+    echo "Mode: external"
+    if [ "$network_exists" = true ]; then
+      echo "Network: $XCIND_PROXY_NETWORK (exists)"
+    else
+      echo "Network: $XCIND_PROXY_NETWORK (missing)"
+    fi
+    echo "Entrypoints: $XCIND_PROXY_HTTP_ENTRYPOINT / $XCIND_PROXY_HTTPS_ENTRYPOINT"
+    echo "Certresolver: ${XCIND_PROXY_CERTRESOLVER:-none}"
+    echo "Domain: $domain"
+    echo "TLS mode: $tls_mode"
+    if [[ -n $proxy_container ]]; then
+      echo "Proxy container: $proxy_container (detected)"
+    else
+      echo "Warning: no proxy-like container detected on network '$XCIND_PROXY_NETWORK'." >&2
     fi
     __xcind-proxy-status-assigned-text
   fi
@@ -486,6 +687,13 @@ __xcind-proxy-prune() {
 }
 
 __xcind-proxy-logs() {
+  if __xcind-proxy-is-external; then
+    local detected=""
+    detected=$(__xcind-proxy-detect-external-container) || true
+    echo "Error: proxy is externally managed — try: docker logs ${detected:-<your proxy container>}" >&2
+    exit 1
+  fi
+
   if [ ! -f "$XCIND_PROXY_COMPOSE" ]; then
     echo "Proxy not initialized. Run 'xcind-proxy init' to set up proxy infrastructure." >&2
     exit 1
@@ -504,6 +712,11 @@ __xcind-proxy-init-help() {
   echo "Create proxy infrastructure files (config.sh, compose.yaml, Traefik config)."
   echo ""
   echo "Options:"
+  echo "  --mode MODE               Proxy mode: managed, external (default: managed)"
+  echo "  --network NAME            Shared proxy Docker network (default: xcind-proxy)"
+  echo "  --http-entrypoint NAME    HTTP entrypoint name in router labels (default: web)"
+  echo "  --https-entrypoint NAME   HTTPS entrypoint name in router labels (default: websecure)"
+  echo "  --certresolver NAME       ACME certresolver added to HTTPS routers (default: none)"
   echo "  --proxy-domain DOMAIN     Set domain suffix (default: localhost.scind.io)"
   echo "  --http-port PORT          Set HTTP port (default: 80)"
   echo "  --image IMAGE             Set Traefik Docker image (default: traefik:v3)"
@@ -514,6 +727,13 @@ __xcind-proxy-init-help() {
   echo "  --tls-cert-file PATH      Custom cert file (only used when --tls-mode custom)"
   echo "  --tls-key-file PATH       Custom key file (only used when --tls-mode custom)"
   echo "  --help, -h                Show this help"
+  cat <<'HELPEOF'
+
+External mode (--mode external) attaches apps to an existing proxy's
+network instead of running a managed Traefik. Example (Coolify host):
+  xcind-proxy init --mode external --network coolify \
+    --http-entrypoint http --https-entrypoint https --certresolver letsencrypt
+HELPEOF
 }
 
 __xcind-proxy-help() {
@@ -528,7 +748,15 @@ __xcind-proxy-help() {
   echo "  release PORT       Release an assigned port from the state file"
   echo "  prune              Remove assigned-port entries whose app path no longer exists"
   echo ""
+  echo "In external proxy mode (init --mode external), 'up' only verifies the"
+  echo "shared network, and 'down'/'logs' refuse — the proxy is not xcind-managed."
+  echo ""
   echo "Init options:"
+  echo "  --mode MODE               Proxy mode: managed, external (default: managed)"
+  echo "  --network NAME            Shared proxy Docker network (default: xcind-proxy)"
+  echo "  --http-entrypoint NAME    HTTP entrypoint name in router labels (default: web)"
+  echo "  --https-entrypoint NAME   HTTPS entrypoint name in router labels (default: websecure)"
+  echo "  --certresolver NAME       ACME certresolver added to HTTPS routers (default: none)"
   echo "  --proxy-domain DOMAIN     Set domain suffix (default: localhost.scind.io)"
   echo "  --http-port PORT          Set HTTP port (default: 80)"
   echo "  --image IMAGE             Set Traefik Docker image (default: traefik:v3)"
@@ -554,6 +782,11 @@ __xcind-proxy-help() {
 if [[ ${1:-} != "--help" && ${1:-} != "-h" ]]; then
   __xcind-maybe-warn-deps
 fi
+
+# Load the effective proxy config before dispatch so every subcommand sees
+# the configured mode and network name — notably `up --force`, which would
+# otherwise remove the default network instead of the configured one.
+__xcind-proxy-load-config
 
 case "${1:-}" in
 init)
