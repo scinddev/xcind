@@ -197,6 +197,11 @@ _xcind-proxy() {
   case "${words[CURRENT - 1]}" in
   init)
     local -a init_opts=(
+      '--mode:Proxy mode (managed, external)'
+      '--network:Shared proxy Docker network name'
+      '--http-entrypoint:HTTP entrypoint name in router labels'
+      '--https-entrypoint:HTTPS entrypoint name in router labels'
+      '--certresolver:ACME certresolver for HTTPS routers'
       '--proxy-domain:Set domain suffix for hostnames'
       '--http-port:Set HTTP port'
       '--image:Set Traefik Docker image'
@@ -210,6 +215,11 @@ _xcind-proxy() {
       '-h:Show help'
     )
     _describe 'init option' init_opts
+    return
+    ;;
+  --mode)
+    local -a proxy_modes=('managed:xcind runs its own Traefik' 'external:Use an existing host proxy')
+    _describe 'proxy mode' proxy_modes
     return
     ;;
   --dashboard)
