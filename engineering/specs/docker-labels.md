@@ -97,17 +97,20 @@ Generated automatically by `xcind-proxy-hook` based on `XCIND_PROXY_EXPORTS`. Th
 | Label | Description | Example |
 |-------|-------------|---------|
 | `traefik.enable` | Exposes container to Traefik | `true` |
-| `traefik.docker.network` | Network for Traefik to reach this container | `xcind-proxy` |
+| `traefik.docker.network` | Network for Traefik to reach this container (`XCIND_PROXY_NETWORK`) | `xcind-proxy` |
 | `traefik.http.routers.{name}.rule` | Routing rule (Host matcher) | ``Host(`myapp-api.localhost`)`` |
-| `traefik.http.routers.{name}.entrypoints` | Entry points to use | `web` / `websecure` |
+| `traefik.http.routers.{name}.entrypoints` | Entry points to use (`XCIND_PROXY_HTTP_ENTRYPOINT` / `XCIND_PROXY_HTTPS_ENTRYPOINT`) | `web` / `websecure` |
 | `traefik.http.routers.{name}.tls` | Enable TLS termination (HTTPS routers) | `true` |
+| `traefik.http.routers.{name}.tls.certresolver` | ACME resolver for HTTPS routers; only when `XCIND_PROXY_CERTRESOLVER` is set | `letsencrypt` |
 | `traefik.http.routers.{name}.service` | Service name for load balancer | `myapp-api-http` |
 | `traefik.http.routers.{name}.middlewares` | Attached middlewares (redirect) | `xcind-redirect-to-https@docker` |
 | `traefik.http.services.{name}.loadbalancer.server.port` | Container port | `3000` |
 
+The network name and entrypoint names are configuration-driven (defaults shown) so the labels can target an external proxy's Docker provider — see [ADR-0022](../decisions/0022-external-proxy-mode.md).
+
 ### Router Naming
 
-An export can produce up to two routers — `-http` (entrypoint `web`) and `-https` (entrypoint `websecure`, `tls=true`). The suffix is part of the router **name**, not the entrypoint, so existing `-http` routers keep their names when HTTPS is added alongside.
+An export can produce up to two routers — `-http` (HTTP entrypoint, default `web`) and `-https` (HTTPS entrypoint, default `websecure`, `tls=true`). The suffix is part of the router **name**, not the entrypoint, so existing `-http` routers keep their names when HTTPS is added alongside.
 
 | Mode | Pattern | Example (HTTP / HTTPS) |
 |------|---------|------------------------|

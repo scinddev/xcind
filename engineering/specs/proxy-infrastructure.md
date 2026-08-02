@@ -26,11 +26,15 @@ See [ADR-0008: Traefik for Reverse Proxy](../decisions/0008-traefik-reverse-prox
 
 | Entrypoint | Port | Purpose |
 |------------|------|---------|
-| `web` | Configurable (`XCIND_PROXY_HTTP_PORT`, default `80`) | HTTP traffic |
-| `websecure` | Configurable (`XCIND_PROXY_HTTPS_PORT`, default `443`) | HTTPS traffic (only when `XCIND_PROXY_TLS_MODE != disabled`) |
+| `XCIND_PROXY_HTTP_ENTRYPOINT` (default `web`) | Configurable (`XCIND_PROXY_HTTP_PORT`, default `80`) | HTTP traffic |
+| `XCIND_PROXY_HTTPS_ENTRYPOINT` (default `websecure`) | Configurable (`XCIND_PROXY_HTTPS_PORT`, default `443`) | HTTPS traffic (only when `XCIND_PROXY_TLS_MODE != disabled`) |
+
+Entrypoint *names* are configurable so generated router labels can target an
+external proxy's entrypoints (see [External Proxy Mode](#external-proxy-mode));
+the managed defaults are `web`/`websecure`.
 
 The dashboard entrypoint is only added when `XCIND_PROXY_DASHBOARD=true`.
-The `websecure` entrypoint and a `file` provider (watching `$XCIND_PROXY_STATE_DIR/dynamic/`) are only emitted when TLS is enabled.
+The HTTPS entrypoint and a `file` provider (watching `$XCIND_PROXY_STATE_DIR/dynamic/`) are only emitted when TLS is enabled.
 
 ### Dynamic Routing
 
@@ -59,7 +63,10 @@ Steps:
 6. Generates `traefik.yaml` (always regenerated) in state dir; includes `websecure` entrypoint and file provider when TLS is enabled
 7. Generates `dynamic/tls.yaml` pointing at the wildcard cert (TLS-enabled modes only)
 8. Removes any stale generated files from legacy locations — `docker-compose.yaml` / `traefik.yaml` in the config dir (pre-config/state split) and `docker-compose.yaml` in the state dir (pre-rename to Compose-Specification-standard `compose.yaml`)
-9. Creates `xcind-proxy` Docker network if it doesn't exist
+9. Creates the configured proxy Docker network (`XCIND_PROXY_NETWORK`, default `xcind-proxy`) if it doesn't exist
+
+In external mode (`XCIND_PROXY_MODE=external`) steps 5–7 are skipped and stale
+managed artifacts are removed instead — see [External Proxy Mode](#external-proxy-mode).
 
 `xcind-proxy init` rewrites `config.sh` on each invocation using the current known proxy values plus any provided flags. The lower-level auto-init path used by hooks only creates `config.sh` when it is missing, but still regenerates the state files from the current config.
 
@@ -78,12 +85,16 @@ Stops the Traefik container via `docker compose down`.
 ### `xcind-proxy status [--json]`
 
 Reports:
-- Running/stopped state
+- Running/stopped state and proxy mode
 - Traefik image version
 - HTTP port
 - Dashboard URL (if enabled)
 - Network existence
 - Assigned ports (the current entries from `assigned-ports.tsv`)
+
+In external mode a mode-specific report is rendered instead — see
+[External Proxy Mode](#external-proxy-mode). JSON output carries a `mode`
+field in both modes.
 
 Stale assigned-port entries (those whose app path no longer exists) are pruned as part of `status`.
 
@@ -105,6 +116,46 @@ Set `XCIND_PROXY_AUTO_START=0` to disable auto-start (the network is still creat
 
 ---
 
+## External Proxy Mode
+
+See [ADR-0022](../decisions/0022-external-proxy-mode.md). When
+`XCIND_PROXY_MODE=external`, a proxy that xcind does not manage (e.g. a
+Coolify host's Traefik) serves the apps: xcind only attaches app containers to
+the configured shared network (`XCIND_PROXY_NETWORK`, pointed at the external
+proxy's network) and emits router labels using the configured entrypoint names
+and optional `tls.certresolver`. No `compose.yaml`/`traefik.yaml` are
+generated, no certificates are provisioned (the external proxy terminates
+TLS), and `--tls-mode custom` is rejected at `init`.
+
+Typical initialization for a Coolify host:
+
+```bash
+xcind-proxy init --mode external --network coolify \
+  --http-entrypoint http --https-entrypoint https \
+  --certresolver letsencrypt --proxy-domain apps.example.com
+```
+
+Command behavior in external mode:
+
+| Command | Behavior | Exit |
+|---------|----------|------|
+| `init` | Writes config, removes stale managed artifacts, verifies/creates the network | 0 |
+| `up` | Verifies the network; reports a detected proxy-like container; starts nothing | 0 |
+| `up --force` | Refuses (would remove a network shared with the external proxy) | 1 |
+| `down` | Refuses; exception: stops a leftover xcind-managed Traefik when the old managed compose file still exists (migration escape hatch) | 1 / 0 |
+| `logs` | Refuses, with a `docker logs <container>` hint | 1 |
+| `status [--json]` | External report: mode, network existence, entrypoints, certresolver, detected proxy container, assigned ports | 0 |
+| `release` / `prune` | Unchanged (assigned ports are orthogonal to proxy mode) | 0 |
+
+`__xcind-proxy-ensure-running` (the EXECUTE-hook path) reduces to "ensure the
+configured network exists" — it never starts Traefik and never matches on
+`xcind.component=proxy` containers.
+
+Auto-start via `XCIND_PROXY_AUTO_START=0` and external mode converge on the
+same behavior (network only); they do not conflict.
+
+---
+
 ## Traefik Configuration
 
 For complete configuration examples, see the [Proxy Infrastructure Appendix](./appendices/proxy-infrastructure/).
@@ -113,15 +164,15 @@ For complete configuration examples, see the [Proxy Infrastructure Appendix](./a
 
 ```yaml
 entryPoints:
-  web:
+  web:                    # name from XCIND_PROXY_HTTP_ENTRYPOINT
     address: ":80"
-  websecure:              # only when TLS is enabled
+  websecure:              # name from XCIND_PROXY_HTTPS_ENTRYPOINT; only when TLS is enabled
     address: ":443"
 
 providers:
   docker:
     exposedByDefault: false
-    network: xcind-proxy
+    network: xcind-proxy  # from XCIND_PROXY_NETWORK
   file:                   # only when TLS is enabled
     directory: /etc/traefik/dynamic
     watch: true
@@ -233,6 +284,7 @@ For other custom domains, configure DNS resolution:
 - [ADR-0002: Two-Layer Networking](../decisions/0002-two-layer-networking.md)
 - [ADR-0008: Traefik for Reverse Proxy](../decisions/0008-traefik-reverse-proxy.md)
 - [ADR-0009: Flexible TLS Configuration](../decisions/0009-flexible-tls-configuration.md)
+- [ADR-0022: External Proxy Mode](../decisions/0022-external-proxy-mode.md)
 
 ## Related Documents
 

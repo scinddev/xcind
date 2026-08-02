@@ -203,6 +203,11 @@ Manages the shared Traefik reverse proxy infrastructure.
 
 | Option | Config Variable | Default |
 |--------|----------------|---------|
+| `--mode MODE` | `XCIND_PROXY_MODE` | `managed` (`managed` \| `external`) |
+| `--network NAME` | `XCIND_PROXY_NETWORK` | `xcind-proxy` |
+| `--http-entrypoint NAME` | `XCIND_PROXY_HTTP_ENTRYPOINT` | `web` |
+| `--https-entrypoint NAME` | `XCIND_PROXY_HTTPS_ENTRYPOINT` | `websecure` |
+| `--certresolver NAME` | `XCIND_PROXY_CERTRESOLVER` | Empty |
 | `--proxy-domain DOMAIN` | `XCIND_PROXY_DOMAIN` | `localhost.scind.io` |
 | `--http-port PORT` | `XCIND_PROXY_HTTP_PORT` | `80` |
 | `--image IMAGE` | `XCIND_PROXY_IMAGE` | `traefik:v3` |
@@ -214,6 +219,13 @@ Manages the shared Traefik reverse proxy infrastructure.
 | `--tls-key-file PATH` | `XCIND_PROXY_TLS_KEY_FILE` | Empty |
 
 Flags set-and-persist: values are merged with any existing `config.sh` and written back.
+
+In external mode (`--mode external`, see [ADR-0022](../decisions/0022-external-proxy-mode.md)):
+`--tls-mode custom` is a hard error, managed-only flags (`--image`,
+`--dashboard*`, `--http-port`, `--https-port`, `--tls-cert-file`,
+`--tls-key-file`) warn but are still persisted, `up` only verifies the shared
+network (`--force` refuses), and `down`/`logs` refuse since the proxy is not
+xcind-managed.
 
 ### Options
 
@@ -229,6 +241,8 @@ xcind-proxy init          # Create proxy config with defaults
 xcind-proxy init --proxy-domain xcind.localhost  # Set domain
 xcind-proxy init --http-port 8081 --dashboard true  # Multiple flags
 xcind-proxy init --tls-mode custom --tls-cert-file cert.pem --tls-key-file key.pem
+xcind-proxy init --mode external --network coolify \
+  --http-entrypoint http --https-entrypoint https --certresolver letsencrypt
 xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy

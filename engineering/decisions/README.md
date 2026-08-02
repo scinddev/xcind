@@ -28,6 +28,8 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0018](./0018-service-discovery-env-injection.md) | Service-Discovery Environment Variable Injection | Accepted |
 | [0019](./0019-worktree-instance-isolation.md) | Per-Worktree Instance Isolation (`XCIND_INSTANCE`) | Accepted |
 | [0020](./0020-host-env-symmetry.md) | Host/Container Environment Symmetry (`XCIND_HOST_ENV_FILE`) | Accepted |
+| [0021](./0021-cross-repo-adr-cross-referencing.md) | Cross-Repo ADR Numbering & Cross-Referencing (Scind ↔ Xcind) | Accepted |
+| [0022](./0022-external-proxy-mode.md) | External Proxy Mode | Accepted |
 
 ## ADR Format
 
