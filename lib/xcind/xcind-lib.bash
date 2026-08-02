@@ -1790,6 +1790,15 @@ __xcind-doctor() {
   local has_assigned_hook=false
   __xcind-doctor-has-assigned-hook && has_assigned_hook=true
 
+  # Effective proxy mode/network (config.sh wins) — external mode's routing
+  # depends entirely on the shared network existing, so surface it here.
+  __xcind-proxy-load-config
+  local proxy_network_exists=""
+  if __xcind-proxy-is-external; then
+    proxy_network_exists=false
+    docker network inspect "$XCIND_PROXY_NETWORK" &>/dev/null && proxy_network_exists=true
+  fi
+
   # Scratch run stays the same format for both modes; we parse it into
   # sections with awk for the JSON shape.
   local scratch_output
@@ -1801,6 +1810,17 @@ __xcind-doctor() {
     echo "App root:        $app_root"
     echo "Generated dir:   ${XCIND_GENERATED_DIR:-<unset>}"
     echo "Assigned TSV:    $XCIND_ASSIGNED_PORTS_FILE"
+    echo "Proxy mode:      $XCIND_PROXY_MODE"
+    if __xcind-proxy-is-external; then
+      if [[ $proxy_network_exists == true ]]; then
+        echo "Proxy network:   $XCIND_PROXY_NETWORK (exists)"
+      else
+        echo "Proxy network:   $XCIND_PROXY_NETWORK (missing)"
+        echo "  ! external proxy network not found — app overlays will fail to start."
+      fi
+    else
+      echo "Proxy network:   $XCIND_PROXY_NETWORK"
+    fi
     echo ""
 
     echo "Hooks (XCIND_HOOKS_GENERATE):"
@@ -1965,9 +1985,13 @@ __xcind-doctor() {
       --argjson pp_netstat "$pp_nt_b" \
       --argjson pp_timeout "$pp_to_b" \
       --argjson pp_degraded "$pp_degraded" \
+      --arg proxy_mode "$XCIND_PROXY_MODE" \
+      --arg proxy_network "$XCIND_PROXY_NETWORK" \
+      --argjson proxy_network_exists "${proxy_network_exists:-null}" \
       '{
         version: $version,
         app_root: $app_root,
+        proxy: {mode: $proxy_mode, network: $proxy_network, network_exists: $proxy_network_exists},
         generated_dir: {path: $generated_dir, exists: $generated_dir_exists},
         assigned_tsv: {path: $assigned_tsv_path, exists: $assigned_tsv_exists, rows: $tsv_rows},
         hooks: {generate: $hooks, has_assigned_hook: $has_assigned_hook},
