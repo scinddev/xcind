@@ -159,14 +159,20 @@ _xcind_proxy_completions() {
 
   # After "init", offer init-specific flags
   if [[ $prev == "init" ]] || [[ " ${COMP_WORDS[*]} " == *" init "* && $cur == -* ]]; then
-    COMPREPLY=($(compgen -W "--proxy-domain --http-port --image --dashboard --dashboard-port --tls-mode --https-port --tls-cert-file --tls-key-file --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "--mode --network --http-entrypoint --https-entrypoint --certresolver --proxy-domain --http-port --image --dashboard --dashboard-port --tls-mode --https-port --tls-cert-file --tls-key-file --help -h" -- "$cur"))
     return
   fi
 
   # After init flag names, complete values (directories for some, free text for others)
-  if [[ $prev == "--proxy-domain" || $prev == "--http-port" || $prev == "--image" ||
+  if [[ $prev == "--network" || $prev == "--http-entrypoint" ||
+    $prev == "--https-entrypoint" || $prev == "--certresolver" ||
+    $prev == "--proxy-domain" || $prev == "--http-port" || $prev == "--image" ||
     $prev == "--dashboard-port" || $prev == "--https-port" ||
     $prev == "--tls-cert-file" || $prev == "--tls-key-file" ]]; then
+    return
+  fi
+  if [[ $prev == "--mode" ]]; then
+    COMPREPLY=($(compgen -W "managed external" -- "$cur"))
     return
   fi
   if [[ $prev == "--dashboard" ]]; then

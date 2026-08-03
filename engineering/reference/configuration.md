@@ -276,7 +276,7 @@ XCIND_PROXY_EXPORTS=(
 )
 ```
 
-When the port is omitted, it is inferred from the compose service's port mapping (requires exactly one port mapping). When the port is specified explicitly, no compose `ports:` entry is required — Traefik reaches the container over the `xcind-proxy` network on the given target port. `yq` is required whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
+When the port is omitted, it is inferred from the compose service's port mapping (requires exactly one port mapping). When the port is specified explicitly, no compose `ports:` entry is required — Traefik reaches the container over the shared proxy network (`XCIND_PROXY_NETWORK`, default `xcind-proxy`) on the given target port. `yq` is required whenever `XCIND_PROXY_EXPORTS` is configured, not only for port inference.
 
 Multiple exports may target the same compose service with different ports, which is useful for attaching additional hostnames to ad-hoc processes running inside a service. For example, to expose a `vitest --ui` dev server on port 51204 that lives inside an existing `app` container:
 
@@ -408,6 +408,11 @@ With `APP_ENV=dev`, xcind checks for `compose.dev.yaml` and `compose.dev.overrid
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `XCIND_PROXY_MODE` | `"managed"` | `managed` (xcind runs its own Traefik) or `external` (an existing host proxy serves the apps) — see [ADR-0022](../decisions/0022-external-proxy-mode.md) |
+| `XCIND_PROXY_NETWORK` | `"xcind-proxy"` | Docker network the proxy and apps share; in external mode, set to the existing proxy's network (e.g. `coolify`) |
+| `XCIND_PROXY_HTTP_ENTRYPOINT` | `"web"` | Entrypoint name used in generated HTTP router labels |
+| `XCIND_PROXY_HTTPS_ENTRYPOINT` | `"websecure"` | Entrypoint name used in generated HTTPS router labels |
+| `XCIND_PROXY_CERTRESOLVER` | `""` | When set, adds `tls.certresolver=<name>` to every HTTPS router (e.g. `letsencrypt`) |
 | `XCIND_PROXY_DOMAIN` | `"localhost.scind.io"` | Domain suffix for hostnames (and wildcard cert `*.${XCIND_PROXY_DOMAIN}`); must be multi-label — see [ADR-0016](../decisions/0016-proxy-domain-wildcard-constraint.md) |
 | `XCIND_PROXY_IMAGE` | `"traefik:v3"` | Traefik Docker image |
 | `XCIND_PROXY_HTTP_PORT` | `"80"` | Host port for HTTP traffic |

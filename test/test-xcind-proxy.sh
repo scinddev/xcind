@@ -83,6 +83,12 @@ assert_contains "config TLS defaults to auto" 'XCIND_PROXY_TLS_MODE="auto"' "$co
 assert_contains "config has XCIND_PROXY_HTTPS_PORT" 'XCIND_PROXY_HTTPS_PORT="443"' "$config_content"
 assert_contains "config has XCIND_PROXY_TLS_CERT_FILE" "XCIND_PROXY_TLS_CERT_FILE" "$config_content"
 assert_contains "config has XCIND_PROXY_TLS_KEY_FILE" "XCIND_PROXY_TLS_KEY_FILE" "$config_content"
+# External-proxy-mode keys default to managed-mode values (ADR-0022)
+assert_contains "config mode defaults to managed" 'XCIND_PROXY_MODE="managed"' "$config_content"
+assert_contains "config network defaults to xcind-proxy" 'XCIND_PROXY_NETWORK="xcind-proxy"' "$config_content"
+assert_contains "config http entrypoint defaults to web" 'XCIND_PROXY_HTTP_ENTRYPOINT="web"' "$config_content"
+assert_contains "config https entrypoint defaults to websecure" 'XCIND_PROXY_HTTPS_ENTRYPOINT="websecure"' "$config_content"
+assert_contains "config certresolver defaults to empty" 'XCIND_PROXY_CERTRESOLVER=""' "$config_content"
 
 # Verify compose.yaml contents
 compose_content=$(<"$PROXY_STATE_DIR/compose.yaml")
@@ -1352,10 +1358,222 @@ assert_contains "hook: invalid tls message" "invalid XCIND_PROXY_EXPORTS tls 'bo
 
 unset XCIND_PROXY_TLS_MODE
 
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy-hook external proxy mode (ADR-0022) ==="
+
+# config.sh drives network name, entrypoint names, and certresolver labels.
+mkdir -p "$XCIND_PROXY_CONFIG_DIR"
+cat >"$XCIND_PROXY_CONFIG_DIR/config.sh" <<'CFG'
+XCIND_PROXY_MODE="external"
+XCIND_PROXY_NETWORK="coolify"
+XCIND_PROXY_HTTP_ENTRYPOINT="http"
+XCIND_PROXY_HTTPS_ENTRYPOINT="https"
+XCIND_PROXY_CERTRESOLVER="letsencrypt"
+CFG
+
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+ext_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "external: docker network label uses coolify" "traefik.docker.network=coolify" "$ext_yaml"
+assert_contains "external: service attaches coolify network" "coolify: {}" "$ext_yaml"
+assert_contains "external: footer declares coolify network" $'networks:\n  coolify:\n    external: true' "$ext_yaml"
+assert_not_contains "external: no xcind-proxy network reference" "xcind-proxy" "$ext_yaml"
+assert_contains "external: HTTP router uses http entrypoint" "myapp-web-http.entrypoints=http" "$ext_yaml"
+assert_contains "external: HTTPS router uses https entrypoint" "myapp-web-https.entrypoints=https" "$ext_yaml"
+assert_not_contains "external: no websecure entrypoint" "websecure" "$ext_yaml"
+assert_contains "external: HTTPS router keeps tls=true" "myapp-web-https.tls=true" "$ext_yaml"
+assert_contains "external: HTTPS router has certresolver" "myapp-web-https.tls.certresolver=letsencrypt" "$ext_yaml"
+assert_contains "external: apex HTTPS router has certresolver" "myapp-https.tls.certresolver=letsencrypt" "$ext_yaml"
+
+# tls=require still emits redirect router + middleware (pure docker-provider
+# labels — they work on any host Traefik with the docker provider enabled).
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web;tls=require")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+ext_req_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "external tls=require: redirect router on http entrypoint" \
+  "myapp-web-http.entrypoints=http" "$ext_req_yaml"
+assert_contains "external tls=require: redirect middleware attached" \
+  "myapp-web-http.middlewares=xcind-redirect-to-https@docker" "$ext_req_yaml"
+assert_contains "external tls=require: HTTPS router has certresolver" \
+  "myapp-web-https.tls.certresolver=letsencrypt" "$ext_req_yaml"
+
+# Empty certresolver → no certresolver labels at all.
+cat >"$XCIND_PROXY_CONFIG_DIR/config.sh" <<'CFG'
+XCIND_PROXY_MODE="external"
+XCIND_PROXY_NETWORK="coolify"
+XCIND_PROXY_HTTP_ENTRYPOINT="http"
+XCIND_PROXY_HTTPS_ENTRYPOINT="https"
+XCIND_PROXY_CERTRESOLVER=""
+CFG
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+ext_nocr_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_not_contains "external no certresolver: no certresolver label" "tls.certresolver" "$ext_nocr_yaml"
+
+# TLS mode disabled in external config → HTTP-only routers on the http entrypoint.
+cat >"$XCIND_PROXY_CONFIG_DIR/config.sh" <<'CFG'
+XCIND_PROXY_MODE="external"
+XCIND_PROXY_NETWORK="coolify"
+XCIND_PROXY_HTTP_ENTRYPOINT="http"
+XCIND_PROXY_HTTPS_ENTRYPOINT="https"
+XCIND_PROXY_CERTRESOLVER="letsencrypt"
+XCIND_PROXY_TLS_MODE="disabled"
+CFG
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("web")
+xcind-proxy-hook "$HOOK_APP" >/dev/null
+ext_tlsoff_yaml=$(<"$XCIND_GENERATED_DIR/compose.proxy.yaml")
+assert_contains "external tls disabled: HTTP router on http entrypoint" \
+  "myapp-web-http.entrypoints=http" "$ext_tlsoff_yaml"
+assert_not_contains "external tls disabled: no HTTPS router" "myapp-web-https" "$ext_tlsoff_yaml"
+assert_not_contains "external tls disabled: no certresolver label" "tls.certresolver" "$ext_tlsoff_yaml"
+
+# __xcind-proxy-ensure-running in external mode: ensures only the configured
+# network, never inspects xcind-labeled containers or composes anything up.
+cat >"$XCIND_PROXY_CONFIG_DIR/config.sh" <<'CFG'
+XCIND_PROXY_MODE="external"
+XCIND_PROXY_NETWORK="coolify"
+CFG
+ext_docker_log="$HOME/ensure-running-docker.log"
+: >"$ext_docker_log"
+# shellcheck disable=SC2317  # invoked indirectly via ensure-running
+docker() {
+  echo "$*" >>"$ext_docker_log"
+  return 0
+}
+XCIND_PROXY_AUTO_START=1 __xcind-proxy-ensure-running
+ext_log_content=$(<"$ext_docker_log")
+assert_contains "external ensure-running: inspects configured network" \
+  "network inspect coolify" "$ext_log_content"
+assert_not_contains "external ensure-running: never runs compose" "compose" "$ext_log_content"
+assert_not_contains "external ensure-running: never lists containers" "ps " "$ext_log_content"
+
+# Reset external-mode state so later blocks see managed defaults again.
+rm -f "$XCIND_PROXY_CONFIG_DIR/config.sh"
+unset XCIND_PROXY_MODE XCIND_PROXY_HTTP_ENTRYPOINT XCIND_PROXY_HTTPS_ENTRYPOINT
+unset XCIND_PROXY_CERTRESOLVER XCIND_PROXY_TLS_MODE
+XCIND_PROXY_NETWORK="xcind-proxy"
+
 unset -f docker
 rm -rf "$HOOK_APP" "$HOME"
 HOME="$_orig_HOME"
 unset XCIND_PROXY_CONFIG_DIR XCIND_PROXY_STATE_DIR XCIND_PROXY_DIR XCIND_PROXY_COMPOSE _orig_HOME
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-proxy external mode CLI (ADR-0022) ==="
+
+EXT_HOME=$(mktemp_d)
+_orig_HOME="$HOME"
+_orig_PATH="$PATH"
+export HOME="$EXT_HOME"
+export PATH="$EXT_HOME/bin:$PATH"
+mkdir -p "$EXT_HOME/bin"
+EXT_DOCKER_LOG="$EXT_HOME/docker.log"
+cat >"$EXT_HOME/bin/docker" <<MOCKEOF
+#!/bin/sh
+echo "\$@" >>"$EXT_DOCKER_LOG"
+exit 0
+MOCKEOF
+chmod +x "$EXT_HOME/bin/docker"
+
+EXT_CONFIG_DIR="${EXT_HOME}/.config/xcind/proxy"
+EXT_STATE_DIR="${EXT_HOME}/.local/state/xcind/proxy"
+
+# Managed init first: creates the managed artifacts and reports its mode.
+"$XCIND_ROOT/bin/xcind-proxy" init >/dev/null
+assert_file_exists "pre-switch: compose.yaml exists" "$EXT_STATE_DIR/compose.yaml"
+assert_file_exists "pre-switch: traefik.yaml exists" "$EXT_STATE_DIR/traefik.yaml"
+managed_status=$("$XCIND_ROOT/bin/xcind-proxy" status 2>/dev/null)
+assert_contains "managed status: reports mode" "Mode: managed" "$managed_status"
+managed_json=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>/dev/null)
+assert_eq "managed status json: mode field" "managed" "$(echo "$managed_json" | jq -r '.mode')"
+assert_eq "managed status json: http entrypoint" "web" "$(echo "$managed_json" | jq -r '.http_entrypoint')"
+
+# Invalid --mode value is rejected before anything is written.
+invalid_mode_rc=$(capture_status "$XCIND_ROOT/bin/xcind-proxy" init --mode weird)
+assert_eq "init --mode weird rejected" "1" "$invalid_mode_rc"
+
+# external + custom TLS is a hard error (xcind never provisions certs in
+# external mode, so custom cert files could never be honored).
+custom_err=$("$XCIND_ROOT/bin/xcind-proxy" init --mode external --tls-mode custom 2>&1) && custom_rc=0 || custom_rc=$?
+assert_eq "init external + tls-mode custom rejected" "1" "$custom_rc"
+assert_contains "init external + custom error message" "cannot be combined with external proxy mode" "$custom_err"
+
+# Managed-only flags warn (values are still persisted for a switch back).
+warn_out=$("$XCIND_ROOT/bin/xcind-proxy" init --mode external --network coolify \
+  --http-entrypoint http --https-entrypoint https --certresolver letsencrypt \
+  --proxy-domain apps.example.com --image traefik:v2 2>&1)
+assert_contains "init external: managed-only flag warns" "--image has no effect in external mode" "$warn_out"
+assert_contains "init external: reports external mode" "Proxy mode: external" "$warn_out"
+
+# Config records all five keys; managed artifacts are cleaned up on switch.
+ext_config=$(<"$EXT_CONFIG_DIR/config.sh")
+assert_contains "external config: mode" 'XCIND_PROXY_MODE="external"' "$ext_config"
+assert_contains "external config: network" 'XCIND_PROXY_NETWORK="coolify"' "$ext_config"
+assert_contains "external config: http entrypoint" 'XCIND_PROXY_HTTP_ENTRYPOINT="http"' "$ext_config"
+assert_contains "external config: https entrypoint" 'XCIND_PROXY_HTTPS_ENTRYPOINT="https"' "$ext_config"
+assert_contains "external config: certresolver" 'XCIND_PROXY_CERTRESOLVER="letsencrypt"' "$ext_config"
+assert_contains "external config: managed image preserved" 'XCIND_PROXY_IMAGE="traefik:v2"' "$ext_config"
+assert_file_missing "mode switch: compose.yaml removed" "$EXT_STATE_DIR/compose.yaml"
+assert_file_missing "mode switch: traefik.yaml removed" "$EXT_STATE_DIR/traefik.yaml"
+assert_file_missing "mode switch: dynamic/tls.yaml removed" "$EXT_STATE_DIR/dynamic/tls.yaml"
+
+# status renders the external report (text + JSON).
+ext_status=$("$XCIND_ROOT/bin/xcind-proxy" status 2>/dev/null)
+assert_contains "external status: status line" "Status: external" "$ext_status"
+assert_contains "external status: mode line" "Mode: external" "$ext_status"
+assert_contains "external status: network line" "Network: coolify (exists)" "$ext_status"
+assert_contains "external status: entrypoints line" "Entrypoints: http / https" "$ext_status"
+assert_contains "external status: certresolver line" "Certresolver: letsencrypt" "$ext_status"
+ext_json=$("$XCIND_ROOT/bin/xcind-proxy" status --json 2>/dev/null)
+assert_eq "external json: initialized" "true" "$(echo "$ext_json" | jq -r '.initialized')"
+assert_eq "external json: mode" "external" "$(echo "$ext_json" | jq -r '.mode')"
+assert_eq "external json: network_name" "coolify" "$(echo "$ext_json" | jq -r '.network_name')"
+assert_eq "external json: http_entrypoint" "http" "$(echo "$ext_json" | jq -r '.http_entrypoint')"
+assert_eq "external json: https_entrypoint" "https" "$(echo "$ext_json" | jq -r '.https_entrypoint')"
+assert_eq "external json: certresolver" "letsencrypt" "$(echo "$ext_json" | jq -r '.certresolver')"
+
+# up verifies the network and never composes anything up.
+: >"$EXT_DOCKER_LOG"
+up_out=$("$XCIND_ROOT/bin/xcind-proxy" up 2>&1) && up_rc=0 || up_rc=$?
+assert_eq "external up: exits 0" "0" "$up_rc"
+assert_contains "external up: externally managed message" "externally managed" "$up_out"
+ext_up_log=$(<"$EXT_DOCKER_LOG")
+assert_contains "external up: inspects network" "network inspect coolify" "$ext_up_log"
+assert_not_contains "external up: never runs compose" "compose" "$ext_up_log"
+
+# up --force refuses to remove the shared network.
+force_err=$("$XCIND_ROOT/bin/xcind-proxy" up --force 2>&1) && force_rc=0 || force_rc=$?
+assert_eq "external up --force: exits 1" "1" "$force_rc"
+assert_contains "external up --force: refusal message" "not available in external proxy mode" "$force_err"
+
+# down and logs refuse — the proxy is not xcind-managed.
+down_err=$("$XCIND_ROOT/bin/xcind-proxy" down 2>&1) && down_rc=0 || down_rc=$?
+assert_eq "external down: exits 1" "1" "$down_rc"
+assert_contains "external down: refusal message" "externally managed" "$down_err"
+logs_err=$("$XCIND_ROOT/bin/xcind-proxy" logs 2>&1) && logs_rc=0 || logs_rc=$?
+assert_eq "external logs: exits 1" "1" "$logs_rc"
+assert_contains "external logs: hint message" "externally managed" "$logs_err"
+
+# Switching back to managed regenerates the managed artifacts.
+"$XCIND_ROOT/bin/xcind-proxy" init --mode managed --network xcind-proxy \
+  --http-entrypoint web --https-entrypoint websecure --certresolver "" >/dev/null 2>&1
+assert_file_exists "switch back: compose.yaml regenerated" "$EXT_STATE_DIR/compose.yaml"
+assert_file_exists "switch back: traefik.yaml regenerated" "$EXT_STATE_DIR/traefik.yaml"
+
+export HOME="$_orig_HOME"
+export PATH="$_orig_PATH"
+rm -rf "$EXT_HOME"
+unset EXT_HOME EXT_CONFIG_DIR EXT_STATE_DIR EXT_DOCKER_LOG _orig_HOME _orig_PATH
 
 # ======================================================================
 echo ""

@@ -54,7 +54,9 @@ XCIND_PROXY_EXPORTS=(
 )
 ```
 
-Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
+Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md). To serve
+apps through a Traefik that already runs on the host (e.g. Coolify's), see
+[Use an existing Traefik (external mode)](../guides/proxy-setup.md#use-an-existing-traefik-external-mode).
 
 ## Hooks
 
