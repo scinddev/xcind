@@ -180,6 +180,44 @@ unset APP_ENV
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-populate-cache resolved Compose artifacts ==="
+
+CACHE_APP=$(mktemp_d)
+export XCIND_CACHE_DIR="$CACHE_APP/.xcind/cache/test-sha"
+XCIND_DOCKER_COMPOSE_OPTS=("-f" "$CACHE_APP/compose.yaml" "--project-directory" "$CACHE_APP")
+cache_calls=""
+
+docker() {
+  cache_calls+="$*"$'\n'
+  case " $* " in
+  *" --format json "*)
+    printf '%s\n' '{"name":"demo","services":{"web":{"image":"nginx"}},"volumes":{"data":{"name":"demo_data"}}}'
+    ;;
+  *)
+    printf '%s\n' 'name: demo' 'services:' '  web:' '    image: nginx'
+    ;;
+  esac
+}
+
+__xcind-populate-cache "$CACHE_APP"
+
+assert_file_exists "populate cache: writes resolved-config.yaml" \
+  "$XCIND_CACHE_DIR/resolved-config.yaml"
+assert_file_exists "populate cache: writes resolved-config.json" \
+  "$XCIND_CACHE_DIR/resolved-config.json"
+assert_contains "populate cache: requests JSON from Compose" \
+  "config --format json" "$cache_calls"
+assert_eq "populate cache: JSON keeps project name" "demo" \
+  "$(jq -r '.name' "$XCIND_CACHE_DIR/resolved-config.json")"
+assert_eq "populate cache: JSON keeps resolved volume name" "demo_data" \
+  "$(jq -r '.volumes.data.name' "$XCIND_CACHE_DIR/resolved-config.json")"
+
+unset -f docker
+unset XCIND_CACHE_DIR
+rm -rf "$CACHE_APP"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-load-config defaults ==="
 
 # Set up an application with standard Docker Compose files and a minimal .xcind.sh

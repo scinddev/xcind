@@ -1327,7 +1327,8 @@ __xcind-compute-sha() {
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
-# Populate the cache directory with resolved-config.yaml.
+# Populate the cache directory with resolved-config.yaml and
+# resolved-config.json.
 # Runs docker compose config so hooks that need the resolved service
 # enumeration can read it. config.json is written separately, after hooks
 # run, by __xcind-write-cache-config-json.
@@ -1339,13 +1340,21 @@ __xcind-populate-cache() {
 
   mkdir -p "$XCIND_CACHE_DIR"
 
-  # Write resolved-config.yaml via docker compose config (use temp file to avoid
-  # leaving a corrupt cache file if the command fails)
+  # Write both resolved Compose representations via temp files so a failed
+  # compose invocation never leaves a corrupt cache artifact.
   local _resolved_tmp="$XCIND_CACHE_DIR/resolved-config.yaml.tmp"
   if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$_resolved_tmp"; then
     mv -- "$_resolved_tmp" "$XCIND_CACHE_DIR/resolved-config.yaml"
   else
     rm -f -- "$_resolved_tmp"
+    return 1
+  fi
+
+  local _resolved_json_tmp="$XCIND_CACHE_DIR/resolved-config.json.tmp"
+  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config --format json >"$_resolved_json_tmp"; then
+    mv -- "$_resolved_json_tmp" "$XCIND_CACHE_DIR/resolved-config.json"
+  else
+    rm -f -- "$_resolved_json_tmp"
     return 1
   fi
 }
