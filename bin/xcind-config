@@ -62,6 +62,10 @@ HELPEOF
 }
 
 __xcind_config_die() {
+  if [[ ${_do_resolve:-false} == true ]]; then
+    echo "xcind-config: $1" >&2
+    exit 64
+  fi
   echo "Error: $1" >&2
   echo "Run 'xcind-config --help' for usage." >&2
   exit 1
@@ -86,6 +90,7 @@ _do_resolve=false
 _resolve_path=""
 _resolve_cached=false
 _resolve_hooks_ttl_arg=""
+_resolve_hooks_ttl_set=false
 _do_json=false
 _do_preview=false
 _do_gen_docker_wrapper=false
@@ -122,6 +127,7 @@ while [[ $# -gt 0 ]]; do
     ;;
   --hooks-ttl=*)
     _resolve_hooks_ttl_arg="${1#*=}"
+    _resolve_hooks_ttl_set=true
     ;;
   --json)
     _do_json=true
@@ -325,12 +331,16 @@ if [[ $_resolve_cached == true && $_do_resolve != true ]]; then
   echo "xcind-config: --cached is only valid with resolve" >&2
   exit 64
 fi
-if [[ -n $_resolve_hooks_ttl_arg && $_do_resolve != true ]]; then
+if [[ $_resolve_hooks_ttl_set == true && $_do_resolve != true ]]; then
   echo "xcind-config: --hooks-ttl is only valid with resolve" >&2
   exit 64
 fi
 
-_resolve_hooks_ttl="${_resolve_hooks_ttl_arg:-${XCIND_HOOKS_TTL:-5}}"
+if [[ $_resolve_hooks_ttl_set == true ]]; then
+  _resolve_hooks_ttl="$_resolve_hooks_ttl_arg"
+else
+  _resolve_hooks_ttl="${XCIND_HOOKS_TTL:-5}"
+fi
 if [[ $_do_resolve == true && ! $_resolve_hooks_ttl =~ ^[0-9]+$ ]]; then
   echo "xcind-config: hooks TTL must be a non-negative integer" >&2
   exit 64
@@ -448,6 +458,10 @@ __xcind_config_resolve() {
     source_file="$XCIND_CACHE_DIR/resolved-config.json"
   fi
 
+  if [[ -z $path && $compose_mode == false ]]; then
+    echo "xcind-config: invalid resolve path: $1" >&2
+    return 64
+  fi
   if [[ -n $path && ! $path =~ ^[A-Za-z_][A-Za-z0-9_-]*(\[[0-9]+\])*(\.[A-Za-z_][A-Za-z0-9_-]*(\[[0-9]+\])*)*$ ]]; then
     echo "xcind-config: invalid resolve path: $1" >&2
     return 64

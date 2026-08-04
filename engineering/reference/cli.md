@@ -78,6 +78,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 |------|--------|
 | *(none)* | Show usage help |
 | `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `tools`) |
+| `resolve <path> [--cached] [--hooks-ttl=N]` | One value from the resolved xcind or Compose configuration |
 | `--preview [-- ARGS...]` | The `docker compose` command line that would run |
 | `--check` | Check whether required and optional dependencies are available |
 | `doctor [--json]` | Diagnose `XCIND_PROXY_EXPORTS` and assigned-port hook state |
@@ -96,6 +97,8 @@ Multiple `--generate-*` flags may be combined in a single invocation when each s
 ```bash
 xcind-config                                       # Show help
 xcind-config --json                                # JSON output
+xcind-config resolve metadata.app                  # Raw xcind scalar
+xcind-config resolve compose.volumes.data.name     # Resolved Compose volume name
 xcind-config --preview                             # Show the docker compose command line
 xcind-config --check                               # Check dependencies
 xcind-config doctor                                # Diagnose proxy export and assigned-port state
@@ -111,6 +114,32 @@ xcind-config --version                             # Show version
 xcind-config completion bash                       # Output bash completions
 xcind-config completion zsh                        # Output zsh completions
 ```
+
+### Single-value resolution
+
+`xcind-config resolve` uses one root. A path that starts with `compose.`
+reads `.xcind/cache/{sha}/resolved-config.json`. All other paths read the
+xcind `config.json` contract. The contract reserves `compose` as a
+top-level key.
+
+The path grammar permits dotted keys with optional numeric array indexes. One
+leading dot is accepted and removed. Arbitrary jq programs are not accepted.
+Scalars print as raw values. Objects and arrays print as compact JSON.
+
+The command exits with status `0` when it finds a non-null value, `1` when
+the path is missing or null, `2` when resolved state or jq is unavailable,
+and `64` for usage errors.
+
+The default hook TTL is five seconds. During that window, repeated resolution
+skips the complete cache-refresh leg. Set `XCIND_HOOKS_TTL=0` or pass
+`--hooks-ttl=0` to disable TTL reuse. `--cached` does not run Docker or
+hooks and exits with status `2` when current-SHA artifacts are unavailable.
+
+The curated Compose paths are `compose.project.name`,
+`compose.volumes.<key>.name`, and `compose.networks.<key>.name`. Explicit
+names win. Missing volume or network names fall back to
+`{project}_{key}`. Other `compose.*` paths are direct lookups. The JSON
+cache command requires Docker Compose 2.6 or newer.
 
 ### JSON Output Contract
 

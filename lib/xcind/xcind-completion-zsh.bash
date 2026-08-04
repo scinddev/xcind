@@ -128,6 +128,7 @@ _xcind-config() {
     '-V:Show version'
     '--check:Check required/optional dependencies'
     'doctor:Diagnose XCIND_PROXY_EXPORTS / assigned-hook state'
+    'resolve:Get one resolved configuration value'
     '--json:Output resolved config as JSON'
     '--preview:Show docker compose command'
     '--generate-docker-wrapper:Generate docker wrapper script'
@@ -148,6 +149,14 @@ _xcind-config() {
   doctor)
     local -a doctor_opts=('--json:Emit structured JSON report')
     _describe 'doctor option' doctor_opts
+    return
+    ;;
+  resolve)
+    local -a resolve_opts=(
+      '--cached:Read current-SHA cache without Docker or hooks'
+      '--hooks-ttl=:Set cache-refresh TTL in seconds'
+    )
+    _describe 'resolve option' resolve_opts
     return
     ;;
   --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration)

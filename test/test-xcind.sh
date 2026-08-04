@@ -187,6 +187,7 @@ export XCIND_CACHE_DIR="$CACHE_APP/.xcind/cache/test-sha"
 XCIND_DOCKER_COMPOSE_OPTS=("-f" "$CACHE_APP/compose.yaml" "--project-directory" "$CACHE_APP")
 cache_calls=""
 
+# shellcheck disable=SC2329 # invoked indirectly by __xcind-populate-cache
 docker() {
   cache_calls+="$*"$'\n'
   case " $* " in
@@ -3031,6 +3032,16 @@ resolve_bad_ttl_rc=0
 (cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --hooks-ttl=nope >/dev/null 2>&1) || resolve_bad_ttl_rc=$?
 assert_eq "resolve: invalid hooks TTL exits 64" "64" "$resolve_bad_ttl_rc"
 
+resolve_empty_ttl_rc=0
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --hooks-ttl= >/dev/null 2>&1) || resolve_empty_ttl_rc=$?
+assert_eq "resolve: empty hooks TTL exits 64" "64" "$resolve_empty_ttl_rc"
+
+resolve_conflict_rc=0
+resolve_conflict_err=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --json 2>&1) || resolve_conflict_rc=$?
+assert_eq "resolve: action conflict exits 64" "64" "$resolve_conflict_rc"
+assert_eq "resolve: action conflict is one-line stderr" "1" \
+  "$(printf '%s\n' "$resolve_conflict_err" | wc -l | tr -d ' ')"
+
 resolve_calls_after_first=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
 (cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app >/dev/null)
 resolve_calls_after_fresh=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
@@ -3107,6 +3118,10 @@ assert_contains "completion bash: lists --generate-starship" \
   "--generate-starship" "$comp_bash_result"
 assert_contains "completion bash: lists --format" \
   "--format" "$comp_bash_result"
+assert_contains "completion bash: lists resolve" \
+  "resolve" "$comp_bash_result"
+assert_contains "completion bash: lists --cached" \
+  "--cached" "$comp_bash_result"
 assert_contains "completion bash: --format offers toml nix" \
   'compgen -W "toml nix"' "$comp_bash_result"
 
@@ -3128,6 +3143,10 @@ assert_contains "completion zsh: lists --generate-starship" \
   "--generate-starship" "$comp_zsh_result"
 assert_contains "completion zsh: lists --format" \
   "--format:Output format" "$comp_zsh_result"
+assert_contains "completion zsh: lists resolve" \
+  "resolve:Get one resolved" "$comp_zsh_result"
+assert_contains "completion zsh: lists --cached" \
+  "--cached:Read current-SHA" "$comp_zsh_result"
 assert_contains "completion zsh: --format offers nix value" \
   "nix:Nix Home Manager attrset" "$comp_zsh_result"
 

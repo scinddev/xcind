@@ -33,6 +33,8 @@ Inspect what Xcind resolved.
 
 ```bash
 xcind-config --json                     # machine-readable resolved config (used by JetBrains plugin)
+xcind-config resolve metadata.app       # read one resolved xcind value
+xcind-config resolve compose.project.name  # read one resolved Compose value
 xcind-config --preview                  # show the resolved docker compose command line
 xcind-config doctor                     # diagnose discovery / config issues
 xcind-config --check                    # check system dependencies (yq, docker, ...)
@@ -40,6 +42,18 @@ xcind-config --version                  # version + build provenance
 xcind-config completion bash            # bash completions
 xcind-config completion zsh             # zsh completions
 ```
+
+`resolve` accepts dotted keys and array indexes such as `configFiles[0]`.
+One leading dot is optional. Scalar values are raw, and objects or arrays are
+compact JSON. Use `--cached` to prohibit Docker and hook execution. Use
+`--hooks-ttl=N` or `XCIND_HOOKS_TTL` to change the five-second refresh
+window; a value of `0` disables the window.
+
+The `compose.project.name`, `compose.volumes.<key>.name`, and
+`compose.networks.<key>.name` paths provide stable name lookups. An explicit
+Compose `name:` wins. Otherwise, volume and network names use
+`{project}_{key}`. Compose-backed lookups require Docker Compose 2.6 or
+newer.
 
 Code generators:
 

@@ -119,6 +119,11 @@ _xcind_config_completions() {
     return
   fi
 
+  if [[ " ${COMP_WORDS[*]} " == *" resolve "* && $cur == -* ]]; then
+    COMPREPLY=($(compgen -W "--cached --hooks-ttl=" -- "$cur"))
+    return
+  fi
+
   # After --generate-docker-wrapper, --generate-docker-compose-wrapper, or
   # --generate-docker-compose-configuration, complete files (optional output path)
   if [[ $prev == "--generate-docker-wrapper" ]] ||
@@ -144,7 +149,7 @@ _xcind_config_completions() {
   local opts="--help -h --version -V --check --json --preview
     --generate-docker-wrapper --generate-docker-compose-wrapper
     --generate-docker-compose-configuration --generate-starship --format
-    completion doctor"
+    completion doctor resolve"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 
