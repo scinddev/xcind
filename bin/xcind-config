@@ -33,12 +33,16 @@ source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
 __xcind_config_usage() {
   cat <<'HELPEOF'
 Usage: xcind-config [OPTIONS]
+       xcind-config resolve <path> [--cached] [--hooks-ttl=N]
 
 Options:
   --help, -h                            Show this help
   --version, -V                         Show version
   --check                               Check required/optional dependencies
   doctor [--json]                       Diagnose XCIND_PROXY_EXPORTS / assigned-hook state
+  resolve <path>                        Get one resolved configuration value
+    --cached                            Read current-SHA cache only
+    --hooks-ttl=N                       Reuse refreshed cache for N seconds (default: 5)
 
   --json                                Output resolved config as JSON
   --preview [-- ARGS...]                Show docker compose command
@@ -78,6 +82,10 @@ _do_version=false
 _do_check=false
 _do_doctor=false
 _doctor_mode="text"
+_do_resolve=false
+_resolve_path=""
+_resolve_cached=false
+_resolve_hooks_ttl_arg=""
 _do_json=false
 _do_preview=false
 _do_gen_docker_wrapper=false
@@ -108,6 +116,12 @@ while [[ $# -gt 0 ]]; do
   --check)
     _do_check=true
     _action_count=$((_action_count + 1))
+    ;;
+  --cached)
+    _resolve_cached=true
+    ;;
+  --hooks-ttl=*)
+    _resolve_hooks_ttl_arg="${1#*=}"
     ;;
   --json)
     _do_json=true
@@ -230,6 +244,17 @@ while [[ $# -gt 0 ]]; do
       _doctor_mode="json"
     fi
     ;;
+  resolve)
+    _do_resolve=true
+    _action_count=$((_action_count + 1))
+    if [[ $# -lt 2 ]]; then
+      echo "xcind-config: resolve requires a path" >&2
+      exit 64
+    fi
+    shift
+    _resolve_path="$1"
+    __xcind_config_claim_stdout "resolve"
+    ;;
   --)
     shift
     PREVIEW_EXTRA_ARGS=("$@")
@@ -274,6 +299,10 @@ fi
 if [[ $_do_doctor == true && $_action_count -gt 1 ]]; then
   __xcind_config_die "doctor cannot be combined with other options"
 fi
+if [[ $_do_resolve == true && $_action_count -gt 1 ]]; then
+  echo "xcind-config: resolve cannot be combined with other actions" >&2
+  exit 64
+fi
 if [[ $_do_preview == true && $_action_count -gt 1 ]]; then
   __xcind_config_die "--preview cannot be combined with other options"
 fi
@@ -290,6 +319,21 @@ if [[ $_format_set == true && $_do_gen_starship != true ]]; then
   echo "Error: --format is only valid with --generate-starship." >&2
   echo "Run 'xcind-config --help' for usage." >&2
   exit 2
+fi
+
+if [[ $_resolve_cached == true && $_do_resolve != true ]]; then
+  echo "xcind-config: --cached is only valid with resolve" >&2
+  exit 64
+fi
+if [[ -n $_resolve_hooks_ttl_arg && $_do_resolve != true ]]; then
+  echo "xcind-config: --hooks-ttl is only valid with resolve" >&2
+  exit 64
+fi
+
+_resolve_hooks_ttl="${_resolve_hooks_ttl_arg:-${XCIND_HOOKS_TTL:-5}}"
+if [[ $_do_resolve == true && ! $_resolve_hooks_ttl =~ ^[0-9]+$ ]]; then
+  echo "xcind-config: hooks TTL must be a non-negative integer" >&2
+  exit 64
 fi
 
 # Validate the --format value (D5): only toml and nix are supported.
@@ -350,12 +394,118 @@ fi
 # Gentle nudge if jq/yq aren't on PATH (silent in scripts and CI).
 __xcind-maybe-warn-deps
 
+if [[ $_do_resolve == true ]]; then
+  if ! command -v jq &>/dev/null; then
+    echo "xcind-config: jq is required for resolve" >&2
+    exit 2
+  fi
+  export XCIND_PREPARE_USE_HOOKS_TTL=1
+  export XCIND_HOOKS_TTL="$_resolve_hooks_ttl"
+  if [[ $_resolve_cached == true ]]; then
+    export XCIND_PREPARE_CACHED_ONLY=1
+  fi
+fi
+
 # --- Main pipeline (shared with xcind-compose) ---
 
 # Runs in the current shell so XCIND_DOCKER_COMPOSE_OPTS and related
 # globals are visible to the action handlers below.
-__xcind-prepare-app || exit 1
+_prepare_rc=0
+if [[ $_do_resolve == true ]]; then
+  __xcind-prepare-app 2>/dev/null || _prepare_rc=$?
+else
+  __xcind-prepare-app || _prepare_rc=$?
+fi
+if [[ $_prepare_rc -ne 0 ]]; then
+  if [[ $_do_resolve == true ]]; then
+    echo "xcind-config: resolved state unavailable" >&2
+    exit 2
+  fi
+  exit "$_prepare_rc"
+fi
 app_root="$XCIND_APP_ROOT"
+
+__xcind_config_resolve() {
+  local path="$1"
+  if [[ -z ${XCIND_CACHE_DIR:-} ]]; then
+    echo "xcind-config: resolved state unavailable" >&2
+    return 2
+  fi
+
+  local source_file="$XCIND_CACHE_DIR/config.json"
+  local compose_mode=false
+
+  if [[ $path == .* ]]; then
+    path="${path#.}"
+  fi
+  if [[ $path == "compose" ]]; then
+    compose_mode=true
+    path=""
+    source_file="$XCIND_CACHE_DIR/resolved-config.json"
+  elif [[ $path == compose.* ]]; then
+    compose_mode=true
+    path="${path#compose.}"
+    source_file="$XCIND_CACHE_DIR/resolved-config.json"
+  fi
+
+  if [[ -n $path && ! $path =~ ^[A-Za-z_][A-Za-z0-9_-]*(\[[0-9]+\])*(\.[A-Za-z_][A-Za-z0-9_-]*(\[[0-9]+\])*)*$ ]]; then
+    echo "xcind-config: invalid resolve path: $1" >&2
+    return 64
+  fi
+  if [[ ! -f $source_file ]]; then
+    echo "xcind-config: resolved state unavailable" >&2
+    return 2
+  fi
+
+  local path_json="["
+  local separator=""
+  local segment key remainder index
+  local segments=()
+  if [[ -n $path ]]; then
+    IFS='.' read -r -a segments <<<"$path"
+  fi
+  for segment in "${segments[@]+"${segments[@]}"}"; do
+    key="${segment%%\[*}"
+    path_json+="$separator\"$key\""
+    separator=","
+    remainder="${segment#"$key"}"
+    while [[ -n $remainder ]]; do
+      index="${remainder%%\]*}"
+      index="${index#\[}"
+      path_json+="$separator$index"
+      remainder="${remainder#*\]}"
+    done
+  done
+  path_json+="]"
+
+  # shellcheck disable=SC2016 # jq program; $path and $value are jq variables
+  local filter='
+    def emit:
+      if type == "array" or type == "object" then tojson else . end;
+    getpath($path) as $value |
+    if $value == null then halt_error(1) else $value | emit end
+  '
+  if [[ $compose_mode == true ]]; then
+    # shellcheck disable=SC2016 # jq program; dollar-prefixed names are jq variables
+    filter='
+      def names($project):
+        (. // {}) | with_entries(.key as $key | .value.name //= ($project + "_" + $key));
+      def compose_view:
+        . as $compose |
+        . + {
+          project: {name: $compose.name},
+          volumes: ($compose.volumes | names($compose.name)),
+          networks: ($compose.networks | names($compose.name))
+        };
+      def emit:
+        if type == "array" or type == "object" then tojson else . end;
+      compose_view | getpath($path) as $value |
+      if $value == null then halt_error(1) else $value | emit end
+    '
+  fi
+
+  jq -r --argjson path "$path_json" "$filter" "$source_file" 2>/dev/null
+}
 
 # Resolve the xcind bin directory as seen by the current shell.
 # This captures the user-facing path (e.g. ~/.nix-profile/bin) rather than
@@ -371,6 +521,12 @@ __xcind_bin_dir() {
 }
 
 # --- Execute actions ---
+
+if [[ $_do_resolve == true ]]; then
+  _resolve_rc=0
+  __xcind_config_resolve "$_resolve_path" || _resolve_rc=$?
+  exit "$_resolve_rc"
+fi
 
 if [[ $_do_preview == true ]]; then
   __xcind-preview-command "$app_root" "${PREVIEW_EXTRA_ARGS[@]}"

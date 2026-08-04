@@ -2953,6 +2953,114 @@ assert_contains "empty --generate-docker-compose-configuration=: error message" 
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-config resolve ==="
+
+RESOLVE_APP=$(mktemp_d)
+RESOLVE_BIN="$RESOLVE_APP/bin"
+RESOLVE_DOCKER_CALLS="$RESOLVE_APP/docker-calls"
+mkdir -p "$RESOLVE_BIN"
+: >"$RESOLVE_DOCKER_CALLS"
+
+cat >"$RESOLVE_APP/.xcind.sh" <<'EOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_HOOKS_GENERATE=("resolve_test_hook")
+XCIND_HOOKS_ALWAYS=()
+XCIND_HOOKS_EXECUTE=()
+resolve_test_hook() { return 0; }
+EOF
+cat >"$RESOLVE_APP/compose.yaml" <<'EOF'
+services:
+  web:
+    image: nginx
+volumes:
+  data: {}
+EOF
+cat >"$RESOLVE_BIN/docker" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_TEST_DOCKER_CALLS"
+case " $* " in
+*" --format json "*)
+  printf '%s\n' '{"name":"demo","services":{"web":{"image":"nginx"}},"volumes":{"data":{},"uploads":{"name":"shared_uploads"}},"networks":{"default":{}}}'
+  ;;
+*)
+  printf '%s\n' 'name: demo' 'services:' '  web:' '    image: nginx'
+  ;;
+esac
+EOF
+chmod +x "$RESOLVE_BIN/docker"
+export XCIND_TEST_DOCKER_CALLS="$RESOLVE_DOCKER_CALLS"
+resolve_path="$RESOLVE_BIN:$XCIND_ROOT/bin:$PATH"
+
+resolve_app=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app)
+assert_eq "resolve: xcind scalar is raw" "$(basename "$RESOLVE_APP")" "$resolve_app"
+
+resolve_false=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve .apex.enabled)
+assert_eq "resolve: false scalar exits successfully and is raw" "false" "$resolve_false"
+
+resolve_project=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.project.name)
+assert_eq "resolve: curated Compose project name" "demo" "$resolve_project"
+
+resolve_volume=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.volumes.data.name)
+assert_eq "resolve: Compose volume name fallback" "demo_data" "$resolve_volume"
+
+resolve_named_volume=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.volumes.uploads.name)
+assert_eq "resolve: explicit Compose volume name wins" "shared_uploads" "$resolve_named_volume"
+
+resolve_network=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.networks.default.name)
+assert_eq "resolve: Compose network name fallback" "demo_default" "$resolve_network"
+
+resolve_service=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.services.web.image)
+assert_eq "resolve: raw Compose lookup" "nginx" "$resolve_service"
+
+resolve_object=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.services.web)
+assert_eq "resolve: object is compact JSON" '{"image":"nginx"}' "$resolve_object"
+
+resolve_config_file=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve 'configFiles[0]')
+assert_eq "resolve: array index grammar" "$RESOLVE_APP/.xcind.sh" "$resolve_config_file"
+
+resolve_missing_rc=0
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.missing >/dev/null 2>&1) || resolve_missing_rc=$?
+assert_eq "resolve: missing path exits 1" "1" "$resolve_missing_rc"
+
+resolve_invalid_rc=0
+resolve_invalid_err=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve 'metadata | keys' 2>&1) || resolve_invalid_rc=$?
+assert_eq "resolve: invalid grammar exits 64" "64" "$resolve_invalid_rc"
+assert_contains "resolve: usage error has command prefix" "xcind-config: " "$resolve_invalid_err"
+
+resolve_bad_ttl_rc=0
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --hooks-ttl=nope >/dev/null 2>&1) || resolve_bad_ttl_rc=$?
+assert_eq "resolve: invalid hooks TTL exits 64" "64" "$resolve_bad_ttl_rc"
+
+resolve_calls_after_first=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app >/dev/null)
+resolve_calls_after_fresh=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
+assert_eq "resolve: fresh stamp skips full refresh leg" \
+  "$((resolve_calls_after_first + 1))" "$resolve_calls_after_fresh"
+
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --hooks-ttl=0 >/dev/null)
+resolve_calls_after_disabled=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
+assert_eq "resolve: TTL zero refreshes both Compose artifacts" \
+  "$((resolve_calls_after_fresh + 3))" "$resolve_calls_after_disabled"
+
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --cached >/dev/null)
+resolve_calls_after_cached=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
+assert_eq "resolve: --cached does not run Docker" \
+  "$resolve_calls_after_disabled" "$resolve_calls_after_cached"
+
+resolve_cache_dir=$(dirname "$(find "$RESOLVE_APP/.xcind/cache" -name resolved-config.json -print -quit)")
+rm -f "$resolve_cache_dir/resolved-config.json"
+resolve_cached_missing_rc=0
+(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --cached >/dev/null 2>&1) || resolve_cached_missing_rc=$?
+assert_eq "resolve: --cached missing artifact exits 2" "2" "$resolve_cached_missing_rc"
+resolve_calls_after_missing=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
+assert_eq "resolve: --cached missing artifact still avoids Docker" \
+  "$resolve_calls_after_cached" "$resolve_calls_after_missing"
+
+unset XCIND_TEST_DOCKER_CALLS
+rm -rf "$RESOLVE_APP"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-preview-command quoting ==="
 
 # Call __xcind-preview-command directly (xcind-lib.bash is already sourced

@@ -543,6 +543,31 @@ __xcind-build-compose-opts() {
 # Usage:
 #   __xcind-prepare-app || exit 1
 #   # ... use "$XCIND_APP_ROOT" and "${XCIND_DOCKER_COMPOSE_OPTS[@]}"
+__xcind-cache-artifacts-current() {
+  [[ -f $XCIND_CACHE_DIR/config.json && -f $XCIND_CACHE_DIR/resolved-config.json ]]
+}
+
+__xcind-hooks-stamp-fresh() {
+  local ttl="${XCIND_HOOKS_TTL:-5}"
+  [[ $ttl != "0" && -f $XCIND_CACHE_DIR/.hooks-stamp ]] || return 1
+
+  local stamp now
+  stamp=$(<"$XCIND_CACHE_DIR/.hooks-stamp")
+  [[ $stamp =~ ^[0-9]+$ ]] || return 1
+  now=$(date +%s)
+  ((now - stamp < ttl))
+}
+
+__xcind-write-hooks-stamp() {
+  local _stamp_tmp
+  _stamp_tmp=$(mktemp "${XCIND_CACHE_DIR}/.hooks-stamp.XXXXXX") || return 1
+  if date +%s >"$_stamp_tmp" && mv -- "$_stamp_tmp" "$XCIND_CACHE_DIR/.hooks-stamp"; then
+    return 0
+  fi
+  rm -f -- "$_stamp_tmp"
+  return 1
+}
+
 __xcind-prepare-app() {
   local app_root
   # shellcheck disable=SC2119  # intentionally called with no args
@@ -589,6 +614,14 @@ __xcind-prepare-app() {
 
   # Cache + GENERATE hooks only when hooks are registered
   if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
+    local _host_gateway_cache="$app_root/.xcind/cache/.host-gateway-detected"
+    if [[ ${XCIND_PREPARE_CACHED_ONLY:-0} == "1" ]]; then
+      [[ -f $_host_gateway_cache ]] || return 2
+      __XCIND_HOST_GATEWAY_DETECTED=$(<"$_host_gateway_cache")
+    else
+      __XCIND_HOST_GATEWAY_DETECTED=$(__xcind-detect-host-gateway 2>/dev/null)
+    fi
+
     XCIND_SHA=$(__xcind-compute-sha "$app_root")
     export XCIND_SHA
     export XCIND_CACHE_DIR="$app_root/.xcind/cache/$XCIND_SHA"
@@ -596,6 +629,21 @@ __xcind-prepare-app() {
     export XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_INSTANCE
     export XCIND_APP_URL_TEMPLATE XCIND_ROUTER_TEMPLATE XCIND_WORKSPACE_SERVICE_TEMPLATE
     export XCIND_APP_APEX_URL_TEMPLATE XCIND_APEX_ROUTER_TEMPLATE
+
+    if [[ ${XCIND_PREPARE_CACHED_ONLY:-0} == "1" ]]; then
+      if __xcind-cache-artifacts-current; then
+        __xcind-debug "prepare-app: using current-SHA cached artifacts"
+        return 0
+      fi
+      return 2
+    fi
+
+    if [[ ${XCIND_PREPARE_USE_HOOKS_TTL:-0} == "1" ]] &&
+      __xcind-cache-artifacts-current &&
+      __xcind-hooks-stamp-fresh; then
+      __xcind-debug "prepare-app: hooks stamp is fresh; skipping cache refresh leg"
+      return 0
+    fi
 
     # Explicit || return 1 because `set -e` does not propagate out of a
     # function called in a conditional context (`__xcind-prepare-app || exit 1`).
@@ -607,6 +655,8 @@ __xcind-prepare-app() {
     # `xcind-config --json` reports. resolved-config.yaml stays in
     # __xcind-populate-cache because hooks consume it for service enumeration.
     __xcind-write-cache-config-json "$app_root" || return 1
+    __xcind-write-hooks-stamp || return 1
+    printf '%s' "$__XCIND_HOST_GATEWAY_DETECTED" >"$_host_gateway_cache" || return 1
   else
     __xcind-debug "prepare-app: skipping hooks — XCIND_HOOKS_GENERATE is empty"
   fi
@@ -1320,7 +1370,13 @@ __xcind-compute-sha() {
   # changes invalidate the cache (e.g. WSL2 mirrored mode LAN IP changing
   # after DHCP renewal or VPN toggle).
   if [[ ${XCIND_HOST_GATEWAY_ENABLED:-1} != "0" ]]; then
-    sha_input+="XCIND_HOST_GATEWAY_DETECTED=$(__xcind-detect-host-gateway 2>/dev/null)
+    local _detected_host_gateway
+    if [[ -n ${__XCIND_HOST_GATEWAY_DETECTED+set} ]]; then
+      _detected_host_gateway="$__XCIND_HOST_GATEWAY_DETECTED"
+    else
+      _detected_host_gateway=$(__xcind-detect-host-gateway 2>/dev/null)
+    fi
+    sha_input+="XCIND_HOST_GATEWAY_DETECTED=$_detected_host_gateway
 "
   fi
 
