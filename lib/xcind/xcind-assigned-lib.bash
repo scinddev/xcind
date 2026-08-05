@@ -554,6 +554,21 @@ __xcind-assigned-keep-not-entry() {
   return 0
 }
 
+# Remove every entry for an application path. No-op if no matching rows exist.
+# Call only while holding the assigned-ports lock.
+__xcind-assigned-remove-by-path() {
+  local app_path="$1"
+  [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 0
+  __xcind-assigned-rewrite __xcind-assigned-keep-not-path "$app_path"
+}
+
+__xcind-assigned-keep-not-path() {
+  local L_path="$6"
+  local target_path="$8"
+  [[ $L_path == "$target_path" ]] && return 1
+  return 0
+}
+
 # Remove a single entry by host port. Returns 0 if an entry was removed,
 # 1 if the port was not found in the state file.
 __xcind-assigned-remove-port() {

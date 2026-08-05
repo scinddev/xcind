@@ -930,6 +930,140 @@ __xcind-workspace-forget() {
 }
 
 # --------------------------------------------------------------------------
+# Dispose
+# --------------------------------------------------------------------------
+
+__xcind-workspace-dispose() {
+  local dir="."
+  local dir_set=false
+  local volumes=false
+  local remove_dir=false
+  local yes=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --volumes)
+      volumes=true
+      shift
+      ;;
+    --rm)
+      remove_dir=true
+      shift
+      ;;
+    --yes | -y)
+      yes=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-workspace dispose [DIR] [OPTIONS]"
+      echo ""
+      echo "Tear down every application in the workspace at DIR (default: walk up"
+      echo "from the current directory), remove the workspace Docker network,"
+      echo "forget the workspace from the registry, and optionally remove the"
+      echo "workspace directory."
+      echo ""
+      echo "Options:"
+      echo "  --volumes      Forwarded to each application dispose (down -v)"
+      echo "  --rm           Also remove the workspace directory itself"
+      echo "  --yes, -y      Skip the confirmation prompt"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for dispose: $1" >&2
+      return 1
+      ;;
+    *)
+      if [[ $dir_set == true ]]; then
+        echo "Error: Unexpected argument for dispose: $1" >&2
+        return 1
+      fi
+      dir="$1"
+      dir_set=true
+      shift
+      ;;
+    esac
+  done
+
+  if [[ ! -d $dir ]]; then
+    if [[ $dir_set == true ]]; then
+      __xcind-workspace-forget "$dir"
+      return 0
+    fi
+    echo "Error: Directory not found: $dir" >&2
+    return 1
+  fi
+
+  local ws_root
+  ws_root=$(__xcind-workspace-find-root "$dir") || return 1
+  [[ $ws_root != / && -n $ws_root ]] || {
+    echo "Error: Refusing to dispose an unsafe workspace path." >&2
+    return 1
+  }
+
+  XCIND_WORKSPACE=""
+  # shellcheck disable=SC1090,SC1091
+  source "$ws_root/.xcind.sh"
+  local ws_default
+  ws_default=$(basename "$ws_root")
+  local ws_name="${XCIND_WORKSPACE:-$ws_default}"
+  XCIND_WORKSPACE="$ws_name"
+  local network_name
+  network_name=$(__xcind-workspace-network-name)
+  local -a app_dirs=()
+  local subdir
+  for subdir in "$ws_root"/*/; do
+    [[ -d $subdir ]] || continue
+    subdir="${subdir%/}"
+    [[ -f $subdir/.xcind.sh ]] || continue
+    __xcind-is-workspace-dir "$subdir" || app_dirs+=("$subdir")
+  done
+
+  if [[ $yes != true && ($volumes == true || $remove_dir == true) ]]; then
+    local prompt="Dispose workspace \"$ws_name\" at $ws_root:"
+    local app_dir
+    for app_dir in "${app_dirs[@]+"${app_dirs[@]}"}"; do
+      prompt+=$'\n'"  - dispose application $(basename "$app_dir")"
+    done
+    prompt+=$'\n'"  - remove Docker network $network_name"
+    prompt+=$'\n'"  - forget workspace registry entry"
+    [[ $remove_dir == true ]] && prompt+=$'\n'"  - remove directory $ws_root and all of its contents (--rm)"
+    __xcind-confirm "$prompt" || return 1
+  fi
+
+  local -a app_args=(dispose --yes)
+  [[ $volumes == true ]] && app_args+=(--volumes)
+  local -a failed_apps=()
+  local app_dir
+  for app_dir in "${app_dirs[@]+"${app_dirs[@]}"}"; do
+    if ! "$XCIND_ROOT/bin/xcind-application" "${app_args[@]}" "$app_dir"; then
+      failed_apps+=("$app_dir")
+    fi
+  done
+
+  if [[ ${#failed_apps[@]} -gt 0 ]]; then
+    echo "Error: Could not dispose ${#failed_apps[@]} application(s); workspace remains intact:" >&2
+    printf '  %s\n' "${failed_apps[@]}" >&2
+    return 1
+  fi
+
+  local network_err=""
+  if ! network_err=$(docker network rm "$network_name" 2>&1); then
+    if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
+      printf '%s\n' "$network_err" >&2
+      echo "Error: Could not remove workspace network $network_name." >&2
+      return 1
+    fi
+  fi
+
+  __xcind-workspace-forget "$ws_root" || return 1
+  if [[ $remove_dir == true ]]; then
+    rm -rf "$ws_root"
+    echo "Workspace directory removed: $ws_root"
+  fi
+  echo "Workspace disposed at $ws_root"
+}
+
+# --------------------------------------------------------------------------
 # Help
 # --------------------------------------------------------------------------
 
@@ -938,6 +1072,7 @@ __xcind-workspace-help() {
   echo ""
   echo "Subcommands:"
   echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
+  echo "  dispose [DIR] [OPTIONS]  Tear down a workspace"
   echo "  status [DIR] [OPTIONS]   Show workspace-wide status"
   echo "  list [OPTIONS]           List all known workspaces"
   echo "  register PATH            Add an existing workspace to the registry"
@@ -946,6 +1081,11 @@ __xcind-workspace-help() {
   echo "Init options:"
   echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
   echo "  --proxy-domain DOMAIN    Set XCIND_PROXY_DOMAIN in workspace config"
+  echo ""
+  echo "Dispose options:"
+  echo "  --volumes                Also remove each application's Docker volumes"
+  echo "  --rm                     Also remove the workspace directory"
+  echo "  --yes, -y                Skip the confirmation prompt"
   echo ""
   echo "Status options:"
   echo "  --json                   Output structured JSON"
@@ -980,6 +1120,10 @@ case "${1:-}" in
 init)
   shift
   __xcind-workspace-init "$@"
+  ;;
+dispose)
+  shift
+  __xcind-workspace-dispose "$@"
   ;;
 status)
   shift

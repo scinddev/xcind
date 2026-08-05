@@ -381,6 +381,80 @@ __xcind-proxy-down() {
   docker compose -f "$compose_file" down
 }
 
+__xcind-proxy-dispose() {
+  local purge=false
+  local yes=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --purge)
+      purge=true
+      shift
+      ;;
+    --yes | -y)
+      yes=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-proxy dispose [OPTIONS]"
+      echo ""
+      echo "Stop the shared Traefik proxy, remove the xcind-proxy network, and"
+      echo "remove generated proxy state. Keeps config.sh unless --purge."
+      echo ""
+      echo "Options:"
+      echo "  --purge        Also remove ~/.config/xcind/proxy (config.sh)"
+      echo "  --yes, -y      Skip the confirmation prompt"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for dispose: $1" >&2
+      return 1
+      ;;
+    *)
+      echo "Error: Unexpected argument for dispose: $1" >&2
+      return 1
+      ;;
+    esac
+  done
+
+  local assignment_count=0
+  if [[ -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
+    assignment_count=$(awk '$1 !~ /^#/ { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE")
+  fi
+  if [[ $yes != true ]]; then
+    local prompt="Dispose proxy:"
+    prompt+=$'\n'"  - stop the managed proxy"
+    prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
+    prompt+=$'\n'"  - remove generated state $XCIND_PROXY_STATE_DIR"
+    [[ $assignment_count -gt 0 ]] && prompt+=$'\n'"  - forget $assignment_count assigned-port binding(s); apps receive new ports on next up"
+    [[ $purge == true ]] && prompt+=$'\n'"  - remove configuration $XCIND_PROXY_CONFIG_DIR (--purge)"
+    __xcind-confirm "$prompt" || return 1
+  fi
+
+  if [[ ! -f $XCIND_PROXY_COMPOSE ]]; then
+    [[ $purge == true ]] && rm -rf "$XCIND_PROXY_CONFIG_DIR"
+    echo "Proxy already disposed."
+    return 0
+  fi
+
+  if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
+    echo "Error: Could not stop the proxy compose project." >&2
+    return 1
+  fi
+
+  local network_err=""
+  if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
+    if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
+      printf '%s\n' "$network_err" >&2
+      echo "Error: Could not remove proxy network $XCIND_PROXY_NETWORK; apps may still be attached." >&2
+      return 1
+    fi
+  fi
+
+  rm -rf "$XCIND_PROXY_STATE_DIR"
+  [[ $purge == true ]] && rm -rf "$XCIND_PROXY_CONFIG_DIR"
+  echo "Proxy disposed."
+}
+
 __xcind-proxy-status() {
   local json_mode=false
   while [[ $# -gt 0 ]]; do
@@ -741,12 +815,17 @@ __xcind-proxy-help() {
   echo ""
   echo "Subcommands:"
   echo "  init [OPTIONS]     Create proxy infrastructure files"
+  echo "  dispose [OPTIONS]  Stop proxy and remove generated state"
   echo "  up [--force]       Start the shared Traefik proxy (--force recreates network)"
   echo "  down               Stop the shared Traefik proxy"
   echo "  status [--json]    Show proxy state (running/stopped, image, port, network, assigned ports)"
   echo "  logs [OPTS]        Show Traefik proxy logs (supports docker compose logs flags)"
   echo "  release PORT       Release an assigned port from the state file"
   echo "  prune              Remove assigned-port entries whose app path no longer exists"
+  echo ""
+  echo "Dispose options:"
+  echo "  --purge            Also remove the proxy configuration directory"
+  echo "  --yes, -y          Skip the confirmation prompt"
   echo ""
   echo "In external proxy mode (init --mode external), 'up' only verifies the"
   echo "shared network, and 'down'/'logs' refuse — the proxy is not xcind-managed."
@@ -792,6 +871,10 @@ case "${1:-}" in
 init)
   shift
   __xcind-proxy-init "$@"
+  ;;
+dispose)
+  shift
+  __xcind-proxy-dispose "$@"
   ;;
 up)
   shift

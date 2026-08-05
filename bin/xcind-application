@@ -142,6 +142,123 @@ __xcind-application-init() {
 }
 
 # --------------------------------------------------------------------------
+# Dispose
+# --------------------------------------------------------------------------
+
+__xcind-application-dispose() {
+  local dir="."
+  local dir_set=false
+  local volumes=false
+  local remove_dir=false
+  local yes=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --volumes)
+      volumes=true
+      shift
+      ;;
+    --rm)
+      remove_dir=true
+      shift
+      ;;
+    --yes | -y)
+      yes=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-application dispose [DIR] [OPTIONS]"
+      echo ""
+      echo "Tear down the application at DIR (default: current directory):"
+      echo "stop and remove its compose project, release its assigned ports,"
+      echo "and remove Xcind-generated state."
+      echo ""
+      echo "Options:"
+      echo "  --volumes      Also remove Docker volumes (docker compose down -v)"
+      echo "  --rm           Also remove the application directory itself"
+      echo "  --yes, -y      Skip the confirmation prompt"
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for dispose: $1" >&2
+      return 1
+      ;;
+    *)
+      if [[ $dir_set == true ]]; then
+        echo "Error: Unexpected argument for dispose: $1" >&2
+        return 1
+      fi
+      dir="$1"
+      dir_set=true
+      shift
+      ;;
+    esac
+  done
+
+  if [[ ! -d $dir ]]; then
+    echo "Application already disposed: $dir"
+    return 0
+  fi
+
+  local target_dir
+  target_dir=$(cd "$dir" && pwd)
+  if __xcind-is-workspace-dir "$target_dir"; then
+    echo "Error: $target_dir is a workspace directory; use 'xcind-workspace dispose'." >&2
+    return 1
+  fi
+
+  if [[ $remove_dir == true && ! -f $target_dir/.xcind.sh ]]; then
+    echo "Error: $target_dir is not an application directory; refusing --rm." >&2
+    return 1
+  fi
+
+  local app_root
+  if ! app_root=$(__xcind-application-find-root "$target_dir" 2>/dev/null); then
+    echo "Application already disposed: $target_dir"
+    return 0
+  fi
+
+  if [[ $app_root == / || -z $app_root ]]; then
+    echo "Error: Refusing to dispose an unsafe application path." >&2
+    return 1
+  fi
+
+  local compose_args=(down --remove-orphans)
+  [[ $volumes == true ]] && compose_args+=(-v)
+
+  if [[ $yes != true && ($volumes == true || $remove_dir == true) ]]; then
+    local port_count
+    port_count=$(awk -F $'\t' -v path="$app_root" '$1 !~ /^#/ && $6 == path { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE" 2>/dev/null || true)
+    local prompt
+    prompt="Dispose application \"$(basename "$app_root")\" at $app_root:"
+    prompt+=$'\n'"  - docker compose down --remove-orphans"
+    [[ $volumes == true ]] && prompt+=" -v"
+    prompt+=$'\n'"  - release $port_count assigned port(s)"
+    prompt+=$'\n'"  - remove $app_root/.xcind"
+    [[ $remove_dir == true ]] && prompt+=$'\n'"  - remove directory $app_root (--rm)"
+    __xcind-confirm "$prompt" || return 1
+  fi
+
+  if ! (cd "$app_root" && "$XCIND_ROOT/bin/xcind-compose" "${compose_args[@]}"); then
+    echo "Error: Could not tear down application compose project at $app_root." >&2
+    return 1
+  fi
+
+  if ! __xcind-with-assigned-lock __xcind-assigned-remove-by-path "$app_root"; then
+    echo "Error: Could not release assigned ports for $app_root." >&2
+    return 1
+  fi
+
+  rm -rf "$app_root/.xcind"
+  echo "Application disposed at $app_root"
+
+  if [[ $remove_dir == true ]]; then
+    rm -rf "$app_root"
+    echo "Application directory removed: $app_root"
+  fi
+}
+
+# --------------------------------------------------------------------------
 # Status helpers
 # --------------------------------------------------------------------------
 
@@ -992,6 +1109,7 @@ __xcind-application-help() {
   echo ""
   echo "Subcommands:"
   echo "  init [DIR] [OPTIONS]            Initialize an application directory"
+  echo "  dispose [DIR] [OPTIONS]         Tear down an application"
   echo "  status [DIR] [OPTIONS]         Show status for a single application"
   echo "  list [DIR] [OPTIONS]           List applications in the enclosing workspace"
   echo "  ports [SERVICE] [DIR] [OPTS]   Show assigned host ports"
@@ -1000,6 +1118,11 @@ __xcind-application-help() {
   echo ""
   echo "Init options:"
   echo "  --name NAME              Set XCIND_APP explicitly (default: directory name)"
+  echo ""
+  echo "Dispose options:"
+  echo "  --volumes                Also remove Docker volumes"
+  echo "  --rm                     Also remove the application directory"
+  echo "  --yes, -y                Skip the confirmation prompt"
   echo ""
   echo "Status / list / ports / urls / exports options:"
   echo "  --json                   Output structured JSON"
@@ -1029,6 +1152,10 @@ case "${1:-}" in
 init)
   shift
   __xcind-application-init "$@"
+  ;;
+dispose)
+  shift
+  __xcind-application-dispose "$@"
   ;;
 status)
   shift

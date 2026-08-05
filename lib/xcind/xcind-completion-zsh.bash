@@ -181,6 +181,7 @@ _xcind-config() {
 _xcind-proxy() {
   local -a main_commands=(
     'init:Create proxy infrastructure files'
+    'dispose:Stop proxy and remove generated state'
     'up:Start the shared Traefik proxy'
     'down:Stop the shared Traefik proxy'
     'status:Show proxy state and configuration'
@@ -237,6 +238,15 @@ _xcind-proxy() {
     _describe 'up option' up_opts
     return
     ;;
+  dispose)
+    local -a dispose_opts=(
+      '--purge:Also remove proxy configuration'
+      '--yes:Skip confirmation prompt'
+      '-y:Skip confirmation prompt'
+    )
+    _describe 'dispose option' dispose_opts
+    return
+    ;;
   status)
     local -a status_opts=('--json:Output status as JSON')
     _describe 'status option' status_opts
@@ -268,6 +278,7 @@ _xcind-proxy() {
 _xcind-workspace() {
   local -a main_commands=(
     'init:Initialize a workspace directory'
+    'dispose:Tear down a workspace'
     'status:Show workspace-wide status'
     'list:List all known workspaces'
     'register:Add an existing workspace to the registry'
@@ -295,6 +306,17 @@ _xcind-workspace() {
     _files -/
     return
     ;;
+  dispose)
+    local -a dispose_opts=(
+      '--volumes:Also remove Docker volumes'
+      '--rm:Also remove the workspace directory'
+      '--yes:Skip confirmation prompt'
+      '-y:Skip confirmation prompt'
+    )
+    _describe 'dispose option' dispose_opts
+    _files -/
+    return
+    ;;
   list)
     local -a list_opts=(
       '--json:Output structured JSON'
@@ -319,6 +341,7 @@ _xcind-workspace() {
 _xcind-application() {
   local -a main_commands=(
     'init:Initialize an application directory'
+    'dispose:Tear down an application'
     'status:Show status for a single application'
     'list:List applications in the enclosing workspace'
     'ports:Show assigned host ports'
@@ -337,6 +360,17 @@ _xcind-application() {
       '--name:Set XCIND_APP explicitly'
     )
     _describe 'init option' init_opts
+    _files -/
+    return
+    ;;
+  dispose)
+    local -a dispose_opts=(
+      '--volumes:Also remove Docker volumes'
+      '--rm:Also remove the application directory'
+      '--yes:Skip confirmation prompt'
+      '-y:Skip confirmation prompt'
+    )
+    _describe 'dispose option' dispose_opts
     _files -/
     return
     ;;

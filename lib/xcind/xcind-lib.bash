@@ -147,6 +147,30 @@ __xcind-debug() {
   printf 'xcind: debug: %s\n' "$*" >&2
 }
 
+# Ask the user to confirm a destructive action. Callers provide the action
+# summary so every command can explain its own consequences consistently.
+# Refuse rather than blocking when stdin is not interactive.
+__xcind-confirm() {
+  local message="$1"
+  local answer=""
+
+  if [[ ! -t 0 ]]; then
+    echo "Error: Destructive operation requires --yes when stdin is not a TTY." >&2
+    return 1
+  fi
+
+  printf '%s\n' "$message"
+  printf 'Proceed? [y/N] '
+  IFS= read -r answer
+  case "$answer" in
+  y | Y | yes | YES | Yes) return 0 ;;
+  *)
+    echo "Canceled."
+    return 1
+    ;;
+  esac
+}
+
 # --------------------------------------------------------------------------
 # Workspace Detection
 # --------------------------------------------------------------------------
