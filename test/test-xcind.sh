@@ -4801,6 +4801,13 @@ dispose_docker=$(<"$DISPOSE_LOG")
 assert_contains "dispose: down includes remove-orphans and volumes" "down --remove-orphans -v" "$dispose_docker"
 assert_file_exists "dispose: keeps app config" "$DISPOSE_APP/.xcind.sh"
 
+dispose_prompt_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP" --rm)
+assert_eq "dispose --rm: non-interactive prompt refuses" "1" "$dispose_prompt_status"
+assert_eq "dispose --rm: prompt refusal keeps app directory" "true" \
+  "$([ -d "$DISPOSE_APP" ] && echo true || echo false)"
+
 dispose_missing_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
   XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
   capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_ROOT/missing")

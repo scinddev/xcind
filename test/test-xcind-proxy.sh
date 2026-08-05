@@ -3735,6 +3735,10 @@ mkdir -p "$DISPOSE_PROXY_BIN" "$DISPOSE_PROXY_CONFIG" "$DISPOSE_PROXY_STATE"
 cat >"$DISPOSE_PROXY_BIN/docker" <<'MOCKEOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$XCIND_DISPOSE_PROXY_LOG"
+if [ "${XCIND_DISPOSE_PROXY_FAIL_NETWORK:-0}" = "1" ] && [ "$1" = "network" ]; then
+  echo "network has active endpoints" >&2
+  exit 1
+fi
 exit 0
 MOCKEOF
 chmod +x "$DISPOSE_PROXY_BIN/docker"
@@ -3759,6 +3763,15 @@ touch "$DISPOSE_PROXY_STATE/compose.yaml"
 "$XCIND_ROOT/bin/xcind-proxy" dispose --purge --yes
 assert_eq "proxy dispose --purge: removes config directory" "false" \
   "$([ -d "$DISPOSE_PROXY_CONFIG" ] && echo true || echo false)"
+
+mkdir -p "$DISPOSE_PROXY_CONFIG" "$DISPOSE_PROXY_STATE"
+printf '%s\n' 'XCIND_PROXY_NETWORK="dispose-proxy"' >"$DISPOSE_PROXY_CONFIG/config.sh"
+touch "$DISPOSE_PROXY_STATE/compose.yaml"
+dispose_proxy_failure_status=$(XCIND_DISPOSE_PROXY_FAIL_NETWORK=1 \
+  capture_status "$XCIND_ROOT/bin/xcind-proxy" dispose --yes)
+assert_eq "proxy dispose: active network exits non-zero" "1" "$dispose_proxy_failure_status"
+assert_eq "proxy dispose: active network keeps generated state" "true" \
+  "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
 
 export HOME="$DISPOSE_PROXY_OLD_HOME"
 export PATH="$DISPOSE_PROXY_OLD_PATH"
