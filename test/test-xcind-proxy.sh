@@ -3814,15 +3814,16 @@ assert_eq "proxy dispose external: removes generated state" "false" \
 assert_file_exists "proxy dispose external: keeps config" \
   "$DISPOSE_PROXY_CONFIG/config.sh"
 
-# The retained compose file is the artifact dispose exists to clear, so a
-# project that no longer resolves must not block the cleanup.
+# When the retained project cannot be stopped, preserve state so the
+# xcind-managed proxy can still be stopped after the underlying failure is
+# corrected.
 mkdir -p "$DISPOSE_PROXY_STATE"
 touch "$DISPOSE_PROXY_STATE/compose.yaml"
 dispose_proxy_broken_status=$(XCIND_DISPOSE_PROXY_FAIL_COMPOSE=1 \
   capture_status "$XCIND_ROOT/bin/xcind-proxy" dispose --yes)
-assert_eq "proxy dispose external: broken compose project still exits zero" "0" \
+assert_eq "proxy dispose external: compose failure exits non-zero" "1" \
   "$dispose_proxy_broken_status"
-assert_eq "proxy dispose external: broken compose project still removes state" "false" \
+assert_eq "proxy dispose external: compose failure keeps state" "true" \
   "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
 
 mkdir -p "$DISPOSE_PROXY_STATE"

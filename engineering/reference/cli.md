@@ -228,9 +228,8 @@ In external mode (`--mode external`, see [ADR-0022](../decisions/0022-external-p
 network (`--force` refuses), and `down`/`logs` refuse since the proxy is not
 xcind-managed. `dispose` never removes the shared external network; during a
 migration, it can stop a retained xcind-managed proxy before it removes its
-generated state. That stop is best-effort, so a compose project that no
-longer resolves cannot block removal of the artifact `dispose` is clearing.
-In managed mode the same failure is fatal and leaves state intact for a retry.
+generated state. If that teardown fails, `dispose` leaves generated state
+intact for a retry.
 
 ### Options
 

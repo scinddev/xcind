@@ -452,13 +452,14 @@ __xcind-proxy-dispose() {
 
   if [[ $proxy_present == true ]]; then
     # An external-mode config can retain compose.yaml while a former
-    # xcind-managed proxy is still running. Stop that known leftover on a
-    # best-effort basis, the way `up` does: the file is a migration artifact
-    # this command exists to clear, so a broken or already-gone project must
-    # not block the cleanup. Never remove the shared network in external
-    # mode — it belongs to the external proxy, not to xcind.
+    # xcind-managed proxy is still running. Stop that known leftover before
+    # removing its state. Never remove the shared network in external mode —
+    # it belongs to the external proxy, not to xcind.
     if [[ $external == true ]]; then
-      docker compose -f "$XCIND_PROXY_COMPOSE" down 2>/dev/null || true
+      if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
+        echo "Error: Could not stop the retained xcind-managed proxy." >&2
+        return 1
+      fi
     else
       if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
         echo "Error: Could not stop the proxy compose project." >&2
