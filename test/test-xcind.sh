@@ -2957,6 +2957,10 @@ assert_contains "completion bash: registers xcind-workspace" \
   "complete -F _xcind_workspace_completions xcind-workspace" "$comp_bash_result"
 assert_contains "completion bash: has proxy init flags" \
   "--proxy-domain" "$comp_bash_result"
+assert_contains "completion bash: lists application dispose" \
+  "init dispose status list ports urls exports" "$comp_bash_result"
+assert_contains "completion bash: lists dispose safety flags" \
+  "--volumes --rm --yes -y" "$comp_bash_result"
 assert_contains "completion bash: lists --generate-starship" \
   "--generate-starship" "$comp_bash_result"
 assert_contains "completion bash: lists --format" \
@@ -2978,6 +2982,10 @@ assert_contains "completion zsh: registers xcind-workspace" \
   "compdef _xcind-workspace xcind-workspace" "$comp_zsh_result"
 assert_contains "completion zsh: has workspace init command" \
   "init:Initialize a workspace directory" "$comp_zsh_result"
+assert_contains "completion zsh: has application dispose command" \
+  "dispose:Tear down an application" "$comp_zsh_result"
+assert_contains "completion zsh: has proxy purge flag" \
+  "--purge:Also remove proxy configuration" "$comp_zsh_result"
 assert_contains "completion zsh: lists --generate-starship" \
   "--generate-starship" "$comp_zsh_result"
 assert_contains "completion zsh: lists --format" \
