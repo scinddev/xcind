@@ -686,14 +686,22 @@ __xcind-prepare-app() {
     if [[ ${XCIND_PREPARE_CACHED_ONLY:-0} == "1" ]]; then
       if __xcind-cache-artifacts-current; then
         __xcind-debug "prepare-app: using current-SHA cached artifacts"
+        # Best-effort: --cached must not run hooks, but a successful replay
+        # gives downstream consumers the full post-hook compose opts.
+        __xcind-replay-hook-outputs ||
+          __xcind-debug "prepare-app: cached replay unavailable; opts lack hook overlays"
         return 0
       fi
       return 2
     fi
 
+    # The TTL fast path additionally requires a hook-output replay so
+    # XCIND_DOCKER_COMPOSE_OPTS includes every generated overlay; a failed
+    # replay falls through to the full refresh leg below.
     if [[ ${XCIND_PREPARE_USE_HOOKS_TTL:-0} == "1" ]] &&
       __xcind-cache-artifacts-current &&
-      __xcind-hooks-stamp-fresh; then
+      __xcind-hooks-stamp-fresh &&
+      __xcind-replay-hook-outputs; then
       __xcind-debug "prepare-app: hooks stamp is fresh; skipping cache refresh leg"
       return 0
     fi
@@ -702,11 +710,14 @@ __xcind-prepare-app() {
     # function called in a conditional context (`__xcind-prepare-app || exit 1`).
     __xcind-populate-cache "$app_root" || return 1
     __xcind-run-hooks "$app_root" || return 1
-    # config.json must reflect post-hook state (e.g. assignedExports updated
-    # by xcind-assigned-hook). Writing it after hooks ensures direct readers
-    # of .xcind/cache/{sha}/config.json see the same resolved state that
-    # `xcind-config --json` reports. resolved-config.yaml stays in
-    # __xcind-populate-cache because hooks consume it for service enumeration.
+    # The resolved compose artifacts and config.json must reflect post-hook
+    # state (workspace naming, discovery env, assignedExports updated by
+    # xcind-assigned-hook, ...). Rewriting them after hooks ensures direct
+    # readers of .xcind/cache/{sha}/ see the same resolved state that
+    # `xcind-compose config` and `xcind-config --json` report. The pre-hook
+    # resolved-config.yaml written by __xcind-populate-cache exists only so
+    # hooks can consume it for service enumeration.
+    __xcind-refresh-resolved-cache || return 1
     __xcind-write-cache-config-json "$app_root" || return 1
     if [[ ${XCIND_HOST_GATEWAY_ENABLED:-1} != "0" ]]; then
       __xcind-write-cache-file "$_host_gateway_cache" \
@@ -1417,6 +1428,13 @@ __xcind-compute-sha() {
 "
   fi
 
+  # Cache artifact schema. Bump when the meaning of a cached artifact
+  # changes, so pre-existing cache dirs (whose artifacts would pass the
+  # cached/TTL existence checks but hold stale-format content) are abandoned.
+  # Schema 2: resolved-config.{yaml,json} include post-hook overlays.
+  sha_input+="XCIND_CACHE_SCHEMA=2
+"
+
   # Add host-gateway variables so env changes invalidate the cache
   sha_input+="XCIND_HOST_GATEWAY_ENABLED=${XCIND_HOST_GATEWAY_ENABLED:-}
 "
@@ -1440,11 +1458,32 @@ __xcind-compute-sha() {
   printf '%s' "$sha_input" | __xcind-sha256 | cut -d' ' -f1
 }
 
-# Populate the cache directory with resolved-config.yaml and
-# resolved-config.json.
+# Run `docker compose config` with the current XCIND_DOCKER_COMPOSE_OPTS and
+# write the result to $1 via a temp file, so a failed compose invocation
+# never leaves a corrupt cache artifact. Extra arguments after the
+# destination are passed through to `config` (e.g. --format json).
+#
+# Usage:
+#   __xcind-write-compose-config /path/to/dest [--format json]
+__xcind-write-compose-config() {
+  local dest="$1"
+  shift
+  local _tmp="${dest}.tmp"
+  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config "$@" >"$_tmp"; then
+    mv -- "$_tmp" "$dest"
+  else
+    rm -f -- "$_tmp"
+    return 1
+  fi
+}
+
+# Populate the cache directory with the pre-hook resolved-config.yaml.
 # Runs docker compose config so hooks that need the resolved service
-# enumeration can read it. config.json is written separately, after hooks
-# run, by __xcind-write-cache-config-json.
+# enumeration can read it. This snapshot reflects only the app's own compose
+# files; __xcind-refresh-resolved-cache rewrites it (plus
+# resolved-config.json) after hooks run so the persisted artifacts include
+# every hook-generated overlay. config.json is written separately, after
+# hooks run, by __xcind-write-cache-config-json.
 #
 # Usage:
 #   __xcind-populate-cache /path/to/app/root
@@ -1453,23 +1492,19 @@ __xcind-populate-cache() {
 
   mkdir -p "$XCIND_CACHE_DIR"
 
-  # Write both resolved Compose representations via temp files so a failed
-  # compose invocation never leaves a corrupt cache artifact.
-  local _resolved_tmp="$XCIND_CACHE_DIR/resolved-config.yaml.tmp"
-  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config >"$_resolved_tmp"; then
-    mv -- "$_resolved_tmp" "$XCIND_CACHE_DIR/resolved-config.yaml"
-  else
-    rm -f -- "$_resolved_tmp"
-    return 1
-  fi
+  __xcind-write-compose-config "$XCIND_CACHE_DIR/resolved-config.yaml"
+}
 
-  local _resolved_json_tmp="$XCIND_CACHE_DIR/resolved-config.json.tmp"
-  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config --format json >"$_resolved_json_tmp"; then
-    mv -- "$_resolved_json_tmp" "$XCIND_CACHE_DIR/resolved-config.json"
-  else
-    rm -f -- "$_resolved_json_tmp"
-    return 1
-  fi
+# Rewrite resolved-config.yaml and resolved-config.json from the post-hook
+# XCIND_DOCKER_COMPOSE_OPTS, so the cached artifacts match what
+# `xcind-compose config` produces (workspace naming, discovery env, labels,
+# proxy routing, assigned ports). Must run after __xcind-run-hooks.
+#
+# Usage:
+#   __xcind-refresh-resolved-cache
+__xcind-refresh-resolved-cache() {
+  __xcind-write-compose-config "$XCIND_CACHE_DIR/resolved-config.yaml" || return 1
+  __xcind-write-compose-config "$XCIND_CACHE_DIR/resolved-config.json" --format json
 }
 
 # Write .xcind/cache/{sha}/config.json from the current resolved state.
@@ -2197,6 +2232,37 @@ __xcind-hook-is-always() {
 #
 # Usage:
 #   __xcind-run-hooks /path/to/app/root
+# Replay persisted GENERATE-hook output into XCIND_DOCKER_COMPOSE_OPTS
+# without executing any hook (not even XCIND_HOOKS_ALWAYS ones). Used by the
+# cached/TTL fast paths in __xcind-prepare-app, which previously returned
+# with app-only compose opts. Fails (and restores the opts array untouched)
+# when the generated dir is incomplete or any persisted output references a
+# missing file — callers fall back to the full hook leg or proceed without.
+#
+# Usage:
+#   __xcind-replay-hook-outputs || ...
+__xcind-replay-hook-outputs() {
+  local marker_file="$XCIND_GENERATED_DIR/.complete"
+  [ -d "$XCIND_GENERATED_DIR" ] && [ -f "$marker_file" ] || return 1
+
+  local _opts_len=${#XCIND_DOCKER_COMPOSE_OPTS[@]}
+  local hook_name output_file output
+  for hook_name in "${XCIND_HOOKS_GENERATE[@]}"; do
+    output_file="$XCIND_GENERATED_DIR/.hook-output-$hook_name"
+    if [ ! -f "$output_file" ]; then
+      XCIND_DOCKER_COMPOSE_OPTS=("${XCIND_DOCKER_COMPOSE_OPTS[@]:0:_opts_len}")
+      return 1
+    fi
+    output=$(<"$output_file")
+    [ -z "$output" ] && continue
+    if ! __xcind-validate-hook-output "$output"; then
+      XCIND_DOCKER_COMPOSE_OPTS=("${XCIND_DOCKER_COMPOSE_OPTS[@]:0:_opts_len}")
+      return 1
+    fi
+    __xcind-append-hook-output-to-opts "$output"
+  done
+}
+
 __xcind-run-hooks() {
   local app_root="$1"
 

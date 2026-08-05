@@ -72,3 +72,20 @@ fresh-on-write. Worth fixing before external integrations land.
 - Regression test reads the cache file directly after a cache-miss
   invocation and asserts the `assignedExports.<name>.host_port` matches
   the TSV row just written.
+
+## Follow-up (2026-08-05)
+
+The same staleness pattern hit the resolved compose artifacts once
+`xcind-config resolve compose.*` (#85) started reading
+`resolved-config.json`: both `resolved-config.yaml` and
+`resolved-config.json` were written pre-hook by `__xcind-populate-cache`,
+so they never contained hook overlays (workspace naming, discovery env,
+labels, proxy routing, assigned ports). Fixed by the same pattern as
+`config.json`: `__xcind-populate-cache` now writes only the pre-hook
+`resolved-config.yaml` that hooks enumerate services from, and
+`__xcind-refresh-resolved-cache` rewrites `resolved-config.yaml` plus
+`resolved-config.json` after `__xcind-run-hooks`, before
+`__xcind-write-cache-config-json`. A cache-schema line in
+`__xcind-compute-sha` (`XCIND_CACHE_SCHEMA=2`) abandons pre-fix cache dirs
+whose artifacts would otherwise pass the cached/TTL existence checks with
+stale pre-hook content.
