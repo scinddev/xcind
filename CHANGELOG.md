@@ -60,6 +60,10 @@ All notable changes to this project will be documented in this file.
 - Generalize build provenance across install channels (#61) by @simensen in [#61](https://github.com/scinddev/xcind/pull/61)
 ## [Unreleased]
 
+### Added
+
+- Add `dispose` subcommands for applications, workspaces, and the shared proxy.
+
 ### Changed
 
 - **Breaking**: Unified `XCIND_PROXY_EXPORTS` and `XCIND_ASSIGNED_EXPORTS`

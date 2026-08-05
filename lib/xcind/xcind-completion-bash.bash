@@ -201,6 +201,11 @@ _xcind_proxy_completions() {
     return
   fi
 
+  if [[ $prev == "dispose" ]]; then
+    COMPREPLY=($(compgen -W "--purge --yes -y" -- "$cur"))
+    return
+  fi
+
   # After "status", offer --json
   if [[ $prev == "status" ]]; then
     COMPREPLY=($(compgen -W "--json" -- "$cur"))
@@ -213,7 +218,7 @@ _xcind_proxy_completions() {
     return
   fi
 
-  local opts="init up down status logs release prune --help -h --version -V"
+  local opts="init up down dispose status logs release prune --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 
@@ -243,6 +248,15 @@ _xcind_workspace_completions() {
     return
   fi
 
+  if [[ $prev == "dispose" ]]; then
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--volumes --rm --yes -y" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--volumes --rm --yes -y" -- "$cur") $(compgen -d -- "$cur"))
+    fi
+    return
+  fi
+
   # After "list", offer list-specific flags
   if [[ $prev == "list" ]] || [[ " ${COMP_WORDS[*]} " == *" list "* && $cur == -* ]]; then
     COMPREPLY=($(compgen -W "--json --prune" -- "$cur"))
@@ -255,7 +269,7 @@ _xcind_workspace_completions() {
     return
   fi
 
-  local opts="init status list register forget --help -h --version -V"
+  local opts="init dispose status list register forget --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 
@@ -286,6 +300,15 @@ _xcind_application_completions() {
     return
   fi
 
+  if [[ $prev == "dispose" ]]; then
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--volumes --rm --yes -y" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--volumes --rm --yes -y" -- "$cur") $(compgen -d -- "$cur"))
+    fi
+    return
+  fi
+
   # After "status", "list", "ports", "urls", or "exports", offer --json plus
   # directory completion. (ports/urls/exports also take a SERVICE positional,
   # but the completion script stays self-contained and cannot enumerate it.)
@@ -298,7 +321,7 @@ _xcind_application_completions() {
     return
   fi
 
-  local opts="init status list ports urls exports --help -h --version -V"
+  local opts="init dispose status list ports urls exports --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

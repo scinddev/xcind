@@ -43,6 +43,16 @@ XCIND_PROXY_DOMAIN="xcind.localhost"
 
 That's it. Each app's `.xcind.sh` works as before — when Xcind discovers an app inside a workspace, it sources the workspace's `.xcind.sh` first to set group-level defaults, then the app's `.xcind.sh` for app-specific overrides.
 
+## Dispose a workspace
+
+To remove a workspace and its runtime state in one command, run:
+
+```bash
+xcind-workspace dispose "$ws" --rm --volumes --yes
+```
+
+The command disposes each application, removes the workspace network, forgets the workspace registry entry, and then removes the directory. It replaces a manual `xcind-compose down -v`, `xcind-workspace forget`, and `rm -rf` sequence.
+
 ## What changes in workspace mode
 
 | Variable | Value |
@@ -95,6 +105,8 @@ For example, `git worktree add ../myapp-perf` gives an app named
 `myapp-perf` (or `dev-perf-myapp` in the `dev` workspace, on a
 `dev-perf-internal` network), running alongside the main checkout without
 collisions.
+
+`xcind-worktree teardown` is for a temporary worktree lifecycle; `dispose` permanently removes an initialized application, workspace, or proxy state.
 
 Two knobs override the default:
 

@@ -285,6 +285,7 @@ Manages the shared Traefik reverse proxy infrastructure.
 | `init [OPTIONS]` | Create proxy infrastructure files (with optional configuration) |
 | `up [--force]` | Start the shared Traefik proxy (`--force` recreates the network) |
 | `down` | Stop the shared Traefik proxy |
+| `dispose [--purge] [--yes]` | Stop the proxy, remove its network and generated state |
 | `status [--json]` | Show proxy state (running/stopped, image, port, network, assigned ports) |
 | `logs [OPTS]` | Show Traefik proxy logs (supports `docker compose logs` flags) |
 | `release PORT` | Release an assigned port from the state file |
@@ -316,7 +317,14 @@ In external mode (`--mode external`, see [ADR-0022](../decisions/0022-external-p
 `--dashboard*`, `--http-port`, `--https-port`, `--tls-cert-file`,
 `--tls-key-file`) warn but are still persisted, `up` only verifies the shared
 network (`--force` refuses), and `down`/`logs` refuse since the proxy is not
-xcind-managed.
+xcind-managed. `dispose` never removes the shared external network; during a
+migration, it can stop a retained xcind-managed proxy before it removes its
+generated state. If that teardown fails, `dispose` leaves generated state
+intact for a retry, because `compose.yaml` is the only remaining handle for
+stopping that proxy. When the teardown can never succeed — a corrupt
+`compose.yaml`, for example — stop the container by hand and then remove
+`${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy` yourself; no CLI path removes state that
+`dispose` still needs.
 
 ### Options
 
@@ -337,12 +345,20 @@ xcind-proxy init --mode external --network coolify \
 xcind-proxy up            # Start the proxy
 xcind-proxy up --force    # Recreate network and restart
 xcind-proxy down          # Stop the proxy
+xcind-proxy dispose        # Remove generated state but preserve config.sh
+xcind-proxy dispose --purge --yes  # Also remove config.sh
 xcind-proxy status        # Show proxy state
 xcind-proxy status --json # Show proxy state as JSON
 xcind-proxy logs          # Show logs
 xcind-proxy logs -f       # Follow logs
 xcind-proxy --version     # Show version
 ```
+
+### Dispose Behavior
+
+- `dispose` removes the whole generated state directory, which holds `assigned-ports.tsv`. Every application therefore loses its port assignments and receives new host ports on the next `up`. The confirmation prompt counts the bindings it is about to forget; `--yes` skips that prompt, so scripted disposal drops them silently.
+- `--purge` also removes the config directory (`config.sh`). Without it, configuration survives so a later `init` keeps the user's settings.
+- When the proxy is already disposed, `dispose` exits 0 without prompting. With `--purge` and a surviving config directory, it prompts for the purge alone.
 
 ### Auto-Start Behavior
 
@@ -382,6 +398,7 @@ Manages xcind workspaces.
 | `list [OPTIONS]` | List all workspaces the registry knows about |
 | `register PATH` | Add an existing workspace directory to the registry |
 | `forget PATH` | Remove a workspace from the registry |
+| `dispose [DIR] [--volumes] [--rm] [--yes]` | Dispose applications, network, registry entry, and optionally the directory |
 
 ### Init Options
 
@@ -417,6 +434,7 @@ xcind-workspace list --json                  # JSON list
 xcind-workspace list --prune                 # Drop stale registry entries
 xcind-workspace register ~/code/acme         # Register an existing workspace
 xcind-workspace forget ~/code/old-project    # Drop a registry entry
+xcind-workspace dispose ~/code/acme --rm --volumes --yes
 ```
 
 ### Behavior
@@ -443,6 +461,13 @@ xcind-workspace forget ~/code/old-project    # Drop a registry entry
 - `forget PATH` removes the entry whose absolute path matches. The directory does not need to exist — use this to drop entries for moved or deleted workspaces.
 - Workspaces are also auto-registered on every runtime discovery (any `xcind-compose` or `xcind-config` invocation inside a workspace). Registry write failures are silent so state-home issues never break compose runs.
 
+**Dispose:**
+
+- Disposes each immediate application by calling `xcind-application dispose`; `--volumes` and `--yes` are forwarded, while workspace `--rm` removes the root only after every application succeeds.
+- If any application fails, the workspace network, registry entry, and directory remain intact. A missing explicit workspace path is an idempotent cleanup that only forgets the registry entry.
+- Every form of `dispose` confirms first. Supply `--yes` to skip the prompt; a non-interactive session without `--yes` refuses instead of blocking.
+- `--rm` refuses paths that are unsafe to remove recursively: the filesystem root, `$HOME`, and single-component paths such as `/srv`.
+
 > **Trust boundary:** unlike `xcind-compose` and `xcind-config`, which walk
 > *upward* from `$PWD` (so the user has already chosen to `cd` into the
 > directory whose `.xcind.sh` is sourced), `xcind-workspace status` walks
@@ -468,6 +493,7 @@ Manages individual xcind applications. Also available as `xcind-app`.
 | Subcommand | Description |
 |------------|-------------|
 | `init [DIR] [OPTIONS]` | Initialize an application directory (scaffold `.xcind.sh`) |
+| `dispose [DIR] [--volumes] [--rm] [--yes]` | Tear down runtime state and release assigned ports |
 | `status [DIR] [OPTIONS]` | Show resolved configuration and container status for a single application |
 | `list [DIR] [OPTIONS]` | List applications inside the enclosing workspace |
 | `ports [SERVICE] [DIR] [--json]` | Show the host port assigned to each `type=assigned` export |
@@ -498,6 +524,7 @@ Manages individual xcind applications. Also available as `xcind-app`.
 xcind-application init                         # Initialize current directory
 xcind-application init ./webapp                # Initialize a subdirectory
 xcind-application init ./webapp --name api     # With explicit app name
+xcind-application dispose ./webapp --volumes --yes
 xcind-application status                       # Show status for the current app
 xcind-application status ./webapp              # Show status for a specific app
 xcind-application status --json                # JSON output
@@ -522,6 +549,12 @@ xcind-app list                                 # Short alias
 - Invokes `xcind-config --json` against the resolved app to discover compose files, env files, workspace membership, and defined services (requires `jq` and `yq`).
 - Queries Docker for containers labeled with `xcind.app.name` (and, in workspace mode, `xcind.workspace.name`) to report per-service status.
 - With `--json`, outputs a structured object with `app`, `path`, `workspace`, `composeFiles`, `composeEnvFiles`, `definedServices`, `services`, `urls`, `total`, and `running`. The `urls` array is scraped from the running containers' `xcind.export.*.host` labels; when an apex template is set, the headlining (first proxied) export's per-export host is swapped for the apex host, matching `urls`/`exports`.
+
+**Dispose:**
+
+- Runs `xcind-compose down --remove-orphans`, adding `-v` only with `--volumes`; only after successful runtime teardown does it release assigned ports and remove `.xcind/` generated state.
+- Every form of `dispose` confirms first, including the default one that keeps the directory. Supply `--yes` to skip the prompt; a non-interactive session without `--yes` refuses instead of blocking. The prompt names the resolved application root, which matters because `DIR` walks upward the way `xcind-compose` does.
+- `--rm` requires a recognized application directory and refuses paths that are unsafe to remove recursively: the filesystem root, `$HOME`, and single-component paths such as `/srv`. Missing or already-disposed paths succeed without changes.
 
 **List:**
 

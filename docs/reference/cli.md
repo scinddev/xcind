@@ -23,6 +23,7 @@ Manage app-level metadata.
 
 ```bash
 xcind-application init [DIR] [--name NAME]    # scaffold .xcind.sh
+xcind-application dispose [DIR] [--volumes] [--rm] [--yes]
 xcind-application status [DIR] [--json]       # status of one app
 xcind-application list [DIR] [--json]         # list apps in the enclosing workspace
 ```
@@ -88,6 +89,7 @@ xcind-proxy init                  # one-time setup
 xcind-proxy up                    # start the proxy
 xcind-proxy up --force            # recreate proxy container + network
 xcind-proxy down                  # stop the proxy
+xcind-proxy dispose [--purge] [--yes]  # remove generated state; keep config by default
 xcind-proxy status [--json]       # is it running?
 xcind-proxy logs [-f]             # tail Traefik logs
 xcind-proxy --version
@@ -97,7 +99,7 @@ Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
 
 ## `xcind-workspace`
 
-Manage workspace-level operations. See `xcind-workspace --help` for subcommands; the workspace concept itself is in [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
+Manage workspace-level operations. `xcind-workspace dispose DIR --rm --volumes --yes` tears down every application, removes the workspace network and registry entry, then removes the directory. See `xcind-workspace --help` for subcommands; the workspace concept itself is in [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
 
 ## Environment overrides
 

@@ -147,6 +147,43 @@ __xcind-debug() {
   printf 'xcind: debug: %s\n' "$*" >&2
 }
 
+# Report whether a path is too dangerous to remove recursively. Rejects the
+# empty string, relative paths, the filesystem root, the user's home
+# directory, and any single-component path such as /opt or /srv. Returns 0
+# when the path is unsafe so callers can read it as a refusal test.
+__xcind-is-unsafe-removal-path() {
+  local path="$1"
+  [[ -z $path || $path != /* || $path == / ]] && return 0
+  [[ -n ${HOME:-} && $path == "$HOME" ]] && return 0
+  local below_root="${path#/}"
+  [[ $below_root != */* ]] && return 0
+  return 1
+}
+
+# Ask the user to confirm a destructive action. Callers provide the action
+# summary so every command can explain its own consequences consistently.
+# Refuse rather than blocking when stdin is not interactive.
+__xcind-confirm() {
+  local message="$1"
+  local answer=""
+
+  if [[ ! -t 0 ]]; then
+    echo "Error: Destructive operation requires --yes when stdin is not a TTY." >&2
+    return 1
+  fi
+
+  printf '%s\n' "$message"
+  printf 'Proceed? [y/N] '
+  IFS= read -r answer
+  case "$answer" in
+  y | Y | yes | YES | Yes) return 0 ;;
+  *)
+    echo "Canceled."
+    return 1
+    ;;
+  esac
+}
+
 # --------------------------------------------------------------------------
 # Workspace Detection
 # --------------------------------------------------------------------------

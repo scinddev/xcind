@@ -3264,6 +3264,10 @@ assert_contains "completion bash: registers xcind-workspace" \
   "complete -F _xcind_workspace_completions xcind-workspace" "$comp_bash_result"
 assert_contains "completion bash: has proxy init flags" \
   "--proxy-domain" "$comp_bash_result"
+assert_contains "completion bash: lists application dispose" \
+  "init dispose status list ports urls exports" "$comp_bash_result"
+assert_contains "completion bash: lists dispose safety flags" \
+  "--volumes --rm --yes -y" "$comp_bash_result"
 assert_contains "completion bash: lists --generate-starship" \
   "--generate-starship" "$comp_bash_result"
 assert_contains "completion bash: lists --format" \
@@ -3307,6 +3311,10 @@ assert_contains "completion zsh: registers xcind-workspace" \
   "compdef _xcind-workspace xcind-workspace" "$comp_zsh_result"
 assert_contains "completion zsh: has workspace init command" \
   "init:Initialize a workspace directory" "$comp_zsh_result"
+assert_contains "completion zsh: has application dispose command" \
+  "dispose:Tear down an application" "$comp_zsh_result"
+assert_contains "completion zsh: has proxy purge flag" \
+  "--purge:Also remove proxy configuration" "$comp_zsh_result"
 assert_contains "completion zsh: lists --generate-starship" \
   "--generate-starship" "$comp_zsh_result"
 assert_contains "completion zsh: lists --format" \
@@ -5083,6 +5091,204 @@ for bin in xcind-compose xcind-config xcind-proxy xcind-application xcind-worksp
   assert_contains "$bin --version contains XCIND_VERSION" "$XCIND_VERSION" "$out"
   assert_contains "$bin --version names the binary" "$bin" "$out"
 done
+
+# ======================================================================
+# xcind-application dispose CLI
+
+echo ""
+echo "=== Test: xcind-application dispose CLI ==="
+
+DISPOSE_ROOT=$(mktemp_d)
+DISPOSE_APP="$DISPOSE_ROOT/app"
+DISPOSE_STATE="$DISPOSE_ROOT/state"
+DISPOSE_BIN="$DISPOSE_ROOT/bin"
+DISPOSE_LOG="$DISPOSE_ROOT/docker.log"
+mkdir -p "$DISPOSE_APP/.xcind" "$DISPOSE_STATE/xcind/proxy" "$DISPOSE_BIN"
+touch "$DISPOSE_APP/.xcind/generated-marker"
+cat >"$DISPOSE_APP/.xcind.sh" <<'CFGEOF'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_COMPOSE_FILES=("compose.yaml")
+CFGEOF
+cat >"$DISPOSE_APP/compose.yaml" <<'COMPOSEEOF'
+services: {}
+COMPOSEEOF
+printf '%s\n' '# port	workspace	application	service	container_port	app_path	assigned_at' \
+  >"$DISPOSE_STATE/xcind/proxy/assigned-ports.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  "3306" "" "app" "db" "3306" "$DISPOSE_APP" "2026-01-01T00:00:00Z" \
+  >>"$DISPOSE_STATE/xcind/proxy/assigned-ports.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  "6379" "" "other" "redis" "6379" "$DISPOSE_ROOT/other" "2026-01-01T00:00:00Z" \
+  >>"$DISPOSE_STATE/xcind/proxy/assigned-ports.tsv"
+cat >"$DISPOSE_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_DISPOSE_DOCKER_LOG"
+exit 0
+MOCKEOF
+chmod +x "$DISPOSE_BIN/docker"
+
+# The default form is destructive too, so it must confirm before acting.
+dispose_default_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP")
+assert_eq "dispose: default form prompts without --yes" "1" "$dispose_default_status"
+assert_file_exists "dispose: prompt refusal keeps generated state" \
+  "$DISPOSE_APP/.xcind/generated-marker"
+
+dispose_out=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP" --volumes --yes)
+assert_contains "dispose: reports success" "Application disposed" "$dispose_out"
+assert_file_missing "dispose: removes generated state" "$DISPOSE_APP/.xcind/generated-marker"
+assert_eq "dispose: generated directory removed" "false" \
+  "$([ -d "$DISPOSE_APP/.xcind" ] && echo true || echo false)"
+dispose_tsv=$(<"$DISPOSE_STATE/xcind/proxy/assigned-ports.tsv")
+assert_not_contains "dispose: removes matching assigned port" "$DISPOSE_APP" "$dispose_tsv"
+assert_contains "dispose: keeps other assigned ports" "$DISPOSE_ROOT/other" "$dispose_tsv"
+dispose_docker=$(<"$DISPOSE_LOG")
+assert_contains "dispose: down includes remove-orphans and volumes" "down --remove-orphans -v" "$dispose_docker"
+assert_file_exists "dispose: keeps app config" "$DISPOSE_APP/.xcind.sh"
+
+dispose_prompt_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP" --rm)
+assert_eq "dispose --rm: non-interactive prompt refuses" "1" "$dispose_prompt_status"
+assert_eq "dispose --rm: prompt refusal keeps app directory" "true" \
+  "$([ -d "$DISPOSE_APP" ] && echo true || echo false)"
+
+dispose_missing_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_ROOT/missing")
+assert_eq "dispose: missing app is idempotent" "0" "$dispose_missing_status"
+
+mkdir -p "$DISPOSE_ROOT/not-an-app"
+dispose_refuse_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_ROOT/not-an-app" --rm --yes)
+assert_eq "dispose --rm: refuses non-app directory" "1" "$dispose_refuse_status"
+dispose_home_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" HOME="$DISPOSE_APP" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP" --rm --yes)
+assert_eq "dispose --rm: refuses the home directory" "1" "$dispose_home_status"
+assert_eq "dispose --rm: home refusal keeps the directory" "true" \
+  "$([ -d "$DISPOSE_APP" ] && echo true || echo false)"
+assert_eq "dispose --rm: preserves non-app directory" "true" \
+  "$([ -d "$DISPOSE_ROOT/not-an-app" ] && echo true || echo false)"
+
+rm -rf "$DISPOSE_ROOT"
+
+# ======================================================================
+# xcind-workspace dispose CLI
+
+echo ""
+echo "=== Test: xcind-workspace dispose CLI ==="
+
+WORKSPACE_DISPOSE_ROOT=$(mktemp_d)
+WORKSPACE_DISPOSE_WS="$WORKSPACE_DISPOSE_ROOT/workspace"
+WORKSPACE_DISPOSE_APP="$WORKSPACE_DISPOSE_WS/api"
+WORKSPACE_DISPOSE_STATE="$WORKSPACE_DISPOSE_ROOT/state"
+WORKSPACE_DISPOSE_BIN="$WORKSPACE_DISPOSE_ROOT/bin"
+WORKSPACE_DISPOSE_LOG="$WORKSPACE_DISPOSE_ROOT/docker.log"
+mkdir -p "$WORKSPACE_DISPOSE_APP/.xcind" "$WORKSPACE_DISPOSE_STATE/xcind" \
+  "$WORKSPACE_DISPOSE_BIN"
+cat >"$WORKSPACE_DISPOSE_WS/.xcind.sh" <<'CFGEOF'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_IS_WORKSPACE=1
+XCIND_WORKSPACE="dispose-ws"
+CFGEOF
+cat >"$WORKSPACE_DISPOSE_APP/.xcind.sh" <<'CFGEOF'
+# shellcheck shell=bash
+# shellcheck disable=SC2034
+XCIND_COMPOSE_FILES=("compose.yaml")
+CFGEOF
+cat >"$WORKSPACE_DISPOSE_APP/compose.yaml" <<'COMPOSEEOF'
+services: {}
+COMPOSEEOF
+printf '%s\n' '# path	registered_at' >"$WORKSPACE_DISPOSE_STATE/xcind/workspaces.tsv"
+printf '%s\t%s\n' "$WORKSPACE_DISPOSE_WS" "2026-01-01T00:00:00Z" \
+  >>"$WORKSPACE_DISPOSE_STATE/xcind/workspaces.tsv"
+cat >"$WORKSPACE_DISPOSE_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_WORKSPACE_DISPOSE_DOCKER_LOG"
+exit 0
+MOCKEOF
+chmod +x "$WORKSPACE_DISPOSE_BIN/docker"
+
+workspace_dispose_prompt_status=$(PATH="$WORKSPACE_DISPOSE_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_DISPOSE_STATE" \
+  XCIND_WORKSPACE_DISPOSE_DOCKER_LOG="$WORKSPACE_DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" dispose "$WORKSPACE_DISPOSE_WS")
+assert_eq "workspace dispose: default form prompts without --yes" "1" \
+  "$workspace_dispose_prompt_status"
+assert_eq "workspace dispose: prompt refusal keeps workspace" "true" \
+  "$([ -d "$WORKSPACE_DISPOSE_WS" ] && echo true || echo false)"
+
+PATH="$WORKSPACE_DISPOSE_BIN:$PATH" XDG_STATE_HOME="$WORKSPACE_DISPOSE_STATE" \
+  XCIND_WORKSPACE_DISPOSE_DOCKER_LOG="$WORKSPACE_DISPOSE_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" dispose "$WORKSPACE_DISPOSE_WS" --rm --volumes --yes
+assert_eq "workspace dispose --rm: removes workspace directory" "false" \
+  "$([ -d "$WORKSPACE_DISPOSE_WS" ] && echo true || echo false)"
+workspace_dispose_log=$(<"$WORKSPACE_DISPOSE_LOG")
+assert_contains "workspace dispose: delegates application down" "down --remove-orphans" \
+  "$workspace_dispose_log"
+assert_contains "workspace dispose: forwards --volumes to applications" \
+  "down --remove-orphans -v" "$workspace_dispose_log"
+assert_contains "workspace dispose: removes workspace network" "network rm dispose-ws-internal" \
+  "$workspace_dispose_log"
+workspace_registry=$(<"$WORKSPACE_DISPOSE_STATE/xcind/workspaces.tsv")
+assert_not_contains "workspace dispose: removes registry entry" "$WORKSPACE_DISPOSE_WS" \
+  "$workspace_registry"
+
+rm -rf "$WORKSPACE_DISPOSE_ROOT"
+
+# A failed child dispose keeps all workspace-level breadcrumbs intact.
+WORKSPACE_FAIL_ROOT=$(mktemp_d)
+WORKSPACE_FAIL_WS="$WORKSPACE_FAIL_ROOT/workspace"
+WORKSPACE_FAIL_STATE="$WORKSPACE_FAIL_ROOT/state"
+WORKSPACE_FAIL_BIN="$WORKSPACE_FAIL_ROOT/bin"
+WORKSPACE_FAIL_LOG="$WORKSPACE_FAIL_ROOT/docker.log"
+mkdir -p "$WORKSPACE_FAIL_WS/good" "$WORKSPACE_FAIL_WS/broken" \
+  "$WORKSPACE_FAIL_STATE/xcind" "$WORKSPACE_FAIL_BIN"
+cat >"$WORKSPACE_FAIL_WS/.xcind.sh" <<'CFGEOF'
+XCIND_IS_WORKSPACE=1
+XCIND_WORKSPACE="failed-ws"
+CFGEOF
+for workspace_fail_app in good broken; do
+  cat >"$WORKSPACE_FAIL_WS/$workspace_fail_app/.xcind.sh" <<'CFGEOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+CFGEOF
+  printf '%s\n' 'services: {}' >"$WORKSPACE_FAIL_WS/$workspace_fail_app/compose.yaml"
+done
+printf '%s\n' '# path	registered_at' >"$WORKSPACE_FAIL_STATE/xcind/workspaces.tsv"
+printf '%s\t%s\n' "$WORKSPACE_FAIL_WS" "2026-01-01T00:00:00Z" \
+  >>"$WORKSPACE_FAIL_STATE/xcind/workspaces.tsv"
+cat >"$WORKSPACE_FAIL_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_WORKSPACE_FAIL_DOCKER_LOG"
+case "$*" in
+*"/broken/"*" down "*) exit 1 ;;
+esac
+exit 0
+MOCKEOF
+chmod +x "$WORKSPACE_FAIL_BIN/docker"
+
+workspace_fail_status=$(PATH="$WORKSPACE_FAIL_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_FAIL_STATE" \
+  XCIND_WORKSPACE_FAIL_DOCKER_LOG="$WORKSPACE_FAIL_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" dispose "$WORKSPACE_FAIL_WS" --rm --yes)
+assert_eq "workspace dispose: child failure exits non-zero" "1" "$workspace_fail_status"
+assert_eq "workspace dispose: child failure keeps workspace directory" "true" \
+  "$([ -d "$WORKSPACE_FAIL_WS" ] && echo true || echo false)"
+workspace_fail_log=$(<"$WORKSPACE_FAIL_LOG")
+assert_not_contains "workspace dispose: child failure keeps network" \
+  "network rm failed-ws-internal" "$workspace_fail_log"
+workspace_fail_registry=$(<"$WORKSPACE_FAIL_STATE/xcind/workspaces.tsv")
+assert_contains "workspace dispose: child failure keeps registry entry" \
+  "$WORKSPACE_FAIL_WS" "$workspace_fail_registry"
+
+rm -rf "$WORKSPACE_FAIL_ROOT"
 
 # ======================================================================
 # Cleanup
