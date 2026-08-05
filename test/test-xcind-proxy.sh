@@ -3722,6 +3722,51 @@ XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-proxy dispose ==="
+
+DISPOSE_PROXY_HOME=$(mktemp_d)
+DISPOSE_PROXY_BIN="$DISPOSE_PROXY_HOME/bin"
+DISPOSE_PROXY_LOG="$DISPOSE_PROXY_HOME/docker.log"
+DISPOSE_PROXY_CONFIG="$DISPOSE_PROXY_HOME/.config/xcind/proxy"
+DISPOSE_PROXY_STATE="$DISPOSE_PROXY_HOME/.local/state/xcind/proxy"
+DISPOSE_PROXY_OLD_HOME="$HOME"
+DISPOSE_PROXY_OLD_PATH="$PATH"
+mkdir -p "$DISPOSE_PROXY_BIN" "$DISPOSE_PROXY_CONFIG" "$DISPOSE_PROXY_STATE"
+cat >"$DISPOSE_PROXY_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_DISPOSE_PROXY_LOG"
+exit 0
+MOCKEOF
+chmod +x "$DISPOSE_PROXY_BIN/docker"
+cat >"$DISPOSE_PROXY_CONFIG/config.sh" <<'CFGEOF'
+XCIND_PROXY_NETWORK="dispose-proxy"
+CFGEOF
+touch "$DISPOSE_PROXY_STATE/compose.yaml" "$DISPOSE_PROXY_STATE/assigned-ports.tsv"
+
+export HOME="$DISPOSE_PROXY_HOME"
+export PATH="$DISPOSE_PROXY_BIN:$PATH"
+export XCIND_DISPOSE_PROXY_LOG="$DISPOSE_PROXY_LOG"
+"$XCIND_ROOT/bin/xcind-proxy" dispose --yes
+assert_eq "proxy dispose: removes state directory" "false" \
+  "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
+assert_file_exists "proxy dispose: keeps config by default" "$DISPOSE_PROXY_CONFIG/config.sh"
+dispose_proxy_log=$(<"$DISPOSE_PROXY_LOG")
+assert_contains "proxy dispose: tears down compose project" "compose -f" "$dispose_proxy_log"
+assert_contains "proxy dispose: removes configured network" "network rm dispose-proxy" "$dispose_proxy_log"
+
+mkdir -p "$DISPOSE_PROXY_STATE"
+touch "$DISPOSE_PROXY_STATE/compose.yaml"
+"$XCIND_ROOT/bin/xcind-proxy" dispose --purge --yes
+assert_eq "proxy dispose --purge: removes config directory" "false" \
+  "$([ -d "$DISPOSE_PROXY_CONFIG" ] && echo true || echo false)"
+
+export HOME="$DISPOSE_PROXY_OLD_HOME"
+export PATH="$DISPOSE_PROXY_OLD_PATH"
+unset XCIND_DISPOSE_PROXY_LOG
+rm -rf "$DISPOSE_PROXY_HOME"
+
+# ======================================================================
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
