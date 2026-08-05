@@ -229,7 +229,11 @@ network (`--force` refuses), and `down`/`logs` refuse since the proxy is not
 xcind-managed. `dispose` never removes the shared external network; during a
 migration, it can stop a retained xcind-managed proxy before it removes its
 generated state. If that teardown fails, `dispose` leaves generated state
-intact for a retry.
+intact for a retry, because `compose.yaml` is the only remaining handle for
+stopping that proxy. When the teardown can never succeed — a corrupt
+`compose.yaml`, for example — stop the container by hand and then remove
+`~/.local/state/xcind/proxy` yourself; no CLI path removes state that
+`dispose` still needs.
 
 ### Options
 

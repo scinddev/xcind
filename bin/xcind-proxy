@@ -455,17 +455,14 @@ __xcind-proxy-dispose() {
     # xcind-managed proxy is still running. Stop that known leftover before
     # removing its state. Never remove the shared network in external mode —
     # it belongs to the external proxy, not to xcind.
-    if [[ $external == true ]]; then
-      if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
-        echo "Error: Could not stop the retained xcind-managed proxy." >&2
-        return 1
-      fi
-    else
-      if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
-        echo "Error: Could not stop the proxy compose project." >&2
-        return 1
-      fi
+    local stop_err="Error: Could not stop the proxy compose project."
+    [[ $external == true ]] && stop_err="Error: Could not stop the retained xcind-managed proxy."
+    if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
+      echo "$stop_err" >&2
+      return 1
+    fi
 
+    if [[ $external != true ]]; then
       local network_err=""
       if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
         if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
