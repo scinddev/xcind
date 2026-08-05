@@ -119,9 +119,14 @@ _xcind_config_completions() {
     return
   fi
 
-  # The first argument after resolve is always the required path.
+  # The first argument after resolve is always the required path. Offer the
+  # top-level keys. Keep this list in step with __xcind_config_resolve_usage in
+  # bin/xcind-config and with the zsh completion.
   if [[ $prev == "resolve" ]]; then
-    COMPREPLY=()
+    local resolve_keys="metadata appRoot configFiles composeFiles
+      composeEnvFiles appEnvFiles bakeFiles tools assignedExports
+      proxiedExports apex compose. --help"
+    COMPREPLY=($(compgen -W "$resolve_keys" -- "$cur"))
     return
   fi
 

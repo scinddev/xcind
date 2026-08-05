@@ -139,8 +139,11 @@ _xcind-config() {
     'completion:Output shell completion script'
   )
 
-  # The first argument after resolve is the required path. After that path,
-  # offer only resolve modifiers when the caller starts an option.
+  # The first argument after resolve is the required path, so offer the
+  # top-level keys there. After that path, offer only resolve modifiers when
+  # the caller starts an option. Keep the key list in step with
+  # __xcind_config_resolve_usage in bin/xcind-config and with the bash
+  # completion.
   local resolve_seen=false
   local word
   for word in "${words[@]}"; do
@@ -151,7 +154,24 @@ _xcind-config() {
   done
 
   if [[ $resolve_seen == true ]]; then
-    if [[ ${words[CURRENT - 1]} != "resolve" ]]; then
+    if [[ ${words[CURRENT - 1]} == "resolve" ]]; then
+      local -a resolve_keys=(
+        'metadata:Workspace, app and workspaceless flags'
+        'appRoot:Absolute path to the application root'
+        'configFiles:Sourced .xcind.sh configuration files'
+        'composeFiles:Compose files passed to docker compose'
+        'composeEnvFiles:Env files passed to docker compose'
+        'appEnvFiles:Env files exported into the app environment'
+        'bakeFiles:Bake files passed to docker buildx bake'
+        'tools:Resolved tool paths and versions'
+        'assignedExports:Ports assigned to this app'
+        'proxiedExports:Proxied exports with computed URLs'
+        'apex:Apex hostname, URL and scheme'
+        'compose.:Resolved Compose values (needs the cache)'
+        '--help:Show resolve paths and path syntax'
+      )
+      _describe 'resolve path' resolve_keys
+    else
       local -a resolve_opts=(
         '--cached:Read current-SHA cache without Docker or hooks'
         '--hooks-ttl=:Set cache-refresh TTL in seconds'

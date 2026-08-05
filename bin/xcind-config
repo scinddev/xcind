@@ -43,6 +43,7 @@ Options:
   resolve <path>                        Get one resolved configuration value
     --cached                            Read current-SHA cache only
     --hooks-ttl=N                       Reuse refreshed cache for N seconds (default: 5)
+    --help                              Show resolve paths and path syntax
 
   --json                                Output resolved config as JSON
   --preview [-- ARGS...]                Show docker compose command
@@ -58,6 +59,52 @@ Multiple --generate-* flags may be combined when each specifies a file.
 Combine with --json to also output JSON to stdout.
 
 Set XCIND_DEBUG=1 to enable trace logging throughout the hook pipeline.
+HELPEOF
+}
+
+# Detailed help for the `resolve` subcommand. Writes to stdout; callers that
+# report a usage error redirect it to stderr.
+#
+# The "Xcind keys" block is a static copy of the top-level contract built by
+# `__xcind-resolve-json` (lib/xcind/xcind-lib.bash). Update both together, plus
+# the key list in lib/xcind/xcind-completion-{bash,zsh}.bash.
+__xcind_config_resolve_usage() {
+  cat <<'HELPEOF'
+Usage: xcind-config resolve <path> [--cached] [--hooks-ttl=N]
+
+Options:
+  --cached          Read the current-SHA cache only; never run hooks or Docker
+  --hooks-ttl=N     Reuse a refreshed cache for N seconds (default: 5, 0 disables)
+  --help, -h        Show this help
+
+Path syntax:
+  Dotted keys, with an optional leading dot: metadata.app  or  .metadata.app
+  Array indexes:                             configFiles[0]
+  Keys that contain a dot, double quoted:
+    compose.services.web.labels."traefik.http.routers.web.rule"
+
+Xcind keys (top level):
+  metadata            .workspace .app .workspaceless
+  appRoot
+  configFiles[]       composeFiles[]  composeEnvFiles[]
+  appEnvFiles[]       bakeFiles[]
+  tools
+  assignedExports     proxiedExports
+  apex                .enabled .hostname .url .scheme
+
+Compose keys (need the resolved cache):
+  compose.project.name
+  compose.volumes.<key>.name
+  compose.networks.<key>.name
+  compose.services.<name>.<key>
+  ...any key from `docker compose config --format json`
+  The bare path `compose` is not resolvable; ask for a path below it.
+
+Output:
+  Scalars print raw. Objects and arrays print as compact JSON.
+
+Exit status:
+  0 value    1 no value    2 resolved state unavailable    64 usage error
 HELPEOF
 }
 
@@ -111,6 +158,12 @@ PREVIEW_EXTRA_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --help | -h)
+    # A trailing --help behind a resolve path asks about resolve, not about
+    # xcind-config as a whole. Answer that instead of reporting a conflict.
+    if [[ $_do_resolve == true ]]; then
+      __xcind_config_resolve_usage
+      exit 0
+    fi
     _do_help=true
     _action_count=$((_action_count + 1))
     ;;
@@ -251,10 +304,18 @@ while [[ $# -gt 0 ]]; do
     fi
     ;;
   resolve)
+    # Handle help before claiming stdout, so `resolve --help` can never
+    # collide with another action's stdout claim.
+    if [[ ${2:-} == "--help" || ${2:-} == "-h" ]]; then
+      __xcind_config_resolve_usage
+      exit 0
+    fi
     _do_resolve=true
     _action_count=$((_action_count + 1))
     if [[ $# -lt 2 ]]; then
       echo "xcind-config: resolve requires a path" >&2
+      echo >&2
+      __xcind_config_resolve_usage >&2
       exit 64
     fi
     shift

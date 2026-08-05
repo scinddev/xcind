@@ -36,6 +36,7 @@ Inspect what Xcind resolved.
 xcind-config --json                     # machine-readable resolved config (used by JetBrains plugin)
 xcind-config resolve metadata.app       # read one resolved xcind value
 xcind-config resolve compose.project.name  # read one resolved Compose value
+xcind-config resolve --help             # list the resolvable keys and path syntax
 xcind-config --preview                  # show the resolved docker compose command line
 xcind-config doctor                     # diagnose discovery / config issues
 xcind-config --check                    # check system dependencies (yq, docker, ...)
