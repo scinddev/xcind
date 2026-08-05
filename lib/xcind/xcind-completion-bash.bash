@@ -119,7 +119,13 @@ _xcind_config_completions() {
     return
   fi
 
-  if [[ " ${COMP_WORDS[*]} " == *" resolve "* && $cur == -* ]]; then
+  # The first argument after resolve is always the required path.
+  if [[ $prev == "resolve" ]]; then
+    COMPREPLY=()
+    return
+  fi
+
+  if [[ " ${COMP_WORDS[*]} " == *" resolve "* ]]; then
     COMPREPLY=($(compgen -W "--cached --hooks-ttl=" -- "$cur"))
     return
   fi

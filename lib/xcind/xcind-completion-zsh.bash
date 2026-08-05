@@ -139,6 +139,27 @@ _xcind-config() {
     'completion:Output shell completion script'
   )
 
+  # The first argument after resolve is the required path. After that path,
+  # offer only resolve modifiers when the caller starts an option.
+  local resolve_seen=false
+  local word
+  for word in "${words[@]}"; do
+    if [[ $word == "resolve" ]]; then
+      resolve_seen=true
+      break
+    fi
+  done
+
+  if [[ $resolve_seen == true ]]; then
+    if [[ ${words[CURRENT - 1]} != "resolve" ]]; then
+      local -a resolve_opts=(
+        '--cached:Read current-SHA cache without Docker or hooks'
+        '--hooks-ttl=:Set cache-refresh TTL in seconds'
+      )
+      _describe 'resolve option' resolve_opts
+    fi
+    return
+  fi
   # Context-sensitive completion
   case "${words[CURRENT - 1]}" in
   completion)
@@ -149,14 +170,6 @@ _xcind-config() {
   doctor)
     local -a doctor_opts=('--json:Emit structured JSON report')
     _describe 'doctor option' doctor_opts
-    return
-    ;;
-  resolve)
-    local -a resolve_opts=(
-      '--cached:Read current-SHA cache without Docker or hooks'
-      '--hooks-ttl=:Set cache-refresh TTL in seconds'
-    )
-    _describe 'resolve option' resolve_opts
     return
     ;;
   --generate-docker-wrapper | --generate-docker-compose-wrapper | --generate-docker-compose-configuration)

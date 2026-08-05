@@ -47,13 +47,29 @@ xcind-config completion zsh             # zsh completions
 One leading dot is optional. Scalar values are raw, and objects or arrays are
 compact JSON. Use `--cached` to prohibit Docker and hook execution. Use
 `--hooks-ttl=N` or `XCIND_HOOKS_TTL` to change the five-second refresh
-window; a value of `0` disables the window.
+window; a value of `0` disables the window. An explicit `--hooks-ttl=N`
+value overrides `XCIND_HOOKS_TTL` from the app configuration.
+
+To read a key that itself contains a dot, put the key in double quotes:
+
+```bash
+xcind-config resolve 'compose.services.web.labels."traefik.http.routers.web.rule"'
+```
 
 The `compose.project.name`, `compose.volumes.<key>.name`, and
-`compose.networks.<key>.name` paths provide stable name lookups. An explicit
-Compose `name:` wins. Otherwise, volume and network names use
-`{project}_{key}`. Compose-backed lookups require Docker Compose 2.6 or
-newer.
+`compose.networks.<key>.name` paths provide stable name lookups. Docker
+Compose resolves these names, so they show the container, volume, and network
+names that Docker actually uses. Project-scoped volumes read as
+`{project}_{key}`, and external volumes keep their own name.
+Compose-backed lookups require Docker Compose 2.6 or newer.
+
+Exit status is `0` for a value, `1` when the path has no value, `2` when the
+resolved state is unavailable, and `64` for a usage error. Only `compose.*`
+paths need the cache. Other paths still resolve when an app sets
+`XCIND_HOOKS_GENERATE=()`, unless `--cached` is present. `--cached` requires
+current-SHA artifacts for every path and exits `2` when they are unavailable.
+The exact `compose` path and the trailing-dot `compose.` path are invalid;
+use a path below the `compose.*` namespace.
 
 Code generators:
 

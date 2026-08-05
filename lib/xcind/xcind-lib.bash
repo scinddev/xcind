@@ -548,7 +548,8 @@ __xcind-cache-artifacts-current() {
 }
 
 __xcind-hooks-stamp-fresh() {
-  local ttl="${XCIND_HOOKS_TTL:-5}"
+  local ttl="${XCIND_PREPARE_HOOKS_TTL:-${XCIND_HOOKS_TTL:-5}}"
+  [[ $ttl =~ ^[0-9]+$ ]] || return 1
   [[ $ttl != "0" && -f $XCIND_CACHE_DIR/.hooks-stamp ]] || return 1
 
   local stamp now
@@ -558,14 +559,21 @@ __xcind-hooks-stamp-fresh() {
   ((now - stamp < ttl))
 }
 
-__xcind-write-hooks-stamp() {
-  local _stamp_tmp
-  _stamp_tmp=$(mktemp "${XCIND_CACHE_DIR}/.hooks-stamp.XXXXXX") || return 1
-  if date +%s >"$_stamp_tmp" && mv -- "$_stamp_tmp" "$XCIND_CACHE_DIR/.hooks-stamp"; then
+# Write $2 to the file $1 through a temp file in the same directory, so a
+# failed or concurrent write never leaves a truncated cache artifact.
+__xcind-write-cache-file() {
+  local dest="$1" content="$2"
+  local _tmp
+  _tmp=$(mktemp "${dest}.XXXXXX") || return 1
+  if printf '%s' "$content" >"$_tmp" && mv -- "$_tmp" "$dest"; then
     return 0
   fi
-  rm -f -- "$_stamp_tmp"
+  rm -f -- "$_tmp"
   return 1
+}
+
+__xcind-write-hooks-stamp() {
+  __xcind-write-cache-file "$XCIND_CACHE_DIR/.hooks-stamp" "$(date +%s)"
 }
 
 __xcind-prepare-app() {
@@ -614,8 +622,16 @@ __xcind-prepare-app() {
 
   # Cache + GENERATE hooks only when hooks are registered
   if [[ ${#XCIND_HOOKS_GENERATE[@]} -gt 0 ]]; then
+    # Detect the host gateway once per run and hand the value to
+    # __xcind-compute-sha, which would otherwise detect it again. Skip the
+    # probe entirely when the feature is off — compute-sha ignores the value
+    # in that case, and detection can shell out to wslinfo/ip on WSL2.
     local _host_gateway_cache="$app_root/.xcind/cache/.host-gateway-detected"
-    if [[ ${XCIND_PREPARE_CACHED_ONLY:-0} == "1" ]]; then
+    if [[ ${XCIND_HOST_GATEWAY_ENABLED:-1} == "0" ]]; then
+      unset __XCIND_HOST_GATEWAY_DETECTED
+    elif [[ ${XCIND_PREPARE_CACHED_ONLY:-0} == "1" ]]; then
+      # --cached must not probe, so reuse the value the last full run stored.
+      # The SHA therefore reflects the gateway as of that run.
       [[ -f $_host_gateway_cache ]] || return 2
       __XCIND_HOST_GATEWAY_DETECTED=$(<"$_host_gateway_cache")
     else
@@ -655,8 +671,12 @@ __xcind-prepare-app() {
     # `xcind-config --json` reports. resolved-config.yaml stays in
     # __xcind-populate-cache because hooks consume it for service enumeration.
     __xcind-write-cache-config-json "$app_root" || return 1
+    if [[ ${XCIND_HOST_GATEWAY_ENABLED:-1} != "0" ]]; then
+      __xcind-write-cache-file "$_host_gateway_cache" \
+        "$__XCIND_HOST_GATEWAY_DETECTED" || return 1
+    fi
+    # Write the stamp last: it records that every refresh artifact completed.
     __xcind-write-hooks-stamp || return 1
-    printf '%s' "$__XCIND_HOST_GATEWAY_DETECTED" >"$_host_gateway_cache" || return 1
   else
     __xcind-debug "prepare-app: skipping hooks — XCIND_HOOKS_GENERATE is empty"
   fi
