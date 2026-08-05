@@ -232,7 +232,7 @@ generated state. If that teardown fails, `dispose` leaves generated state
 intact for a retry, because `compose.yaml` is the only remaining handle for
 stopping that proxy. When the teardown can never succeed — a corrupt
 `compose.yaml`, for example — stop the container by hand and then remove
-`~/.local/state/xcind/proxy` yourself; no CLI path removes state that
+`${XDG_STATE_HOME:-$HOME/.local/state}/xcind/proxy` yourself; no CLI path removes state that
 `dispose` still needs.
 
 ### Options
