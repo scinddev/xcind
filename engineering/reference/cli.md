@@ -78,6 +78,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 |------|--------|
 | *(none)* | Show usage help |
 | `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `tools`) |
+| `resolve <path> [--cached] [--hooks-ttl=N]` | One value from the resolved xcind or Compose configuration |
 | `--preview [-- ARGS...]` | The `docker compose` command line that would run |
 | `--check` | Check whether required and optional dependencies are available |
 | `doctor [--json]` | Diagnose `XCIND_PROXY_EXPORTS` and assigned-port hook state |
@@ -96,6 +97,8 @@ Multiple `--generate-*` flags may be combined in a single invocation when each s
 ```bash
 xcind-config                                       # Show help
 xcind-config --json                                # JSON output
+xcind-config resolve metadata.app                  # Raw xcind scalar
+xcind-config resolve compose.volumes.data.name     # Resolved Compose volume name
 xcind-config --preview                             # Show the docker compose command line
 xcind-config --check                               # Check dependencies
 xcind-config doctor                                # Diagnose proxy export and assigned-port state
@@ -111,6 +114,94 @@ xcind-config --version                             # Show version
 xcind-config completion bash                       # Output bash completions
 xcind-config completion zsh                        # Output zsh completions
 ```
+
+### Single-value resolution
+
+`xcind-config resolve` uses one root. A path that starts with `compose.`
+reads `.xcind/cache/{sha}/resolved-config.json`. All other paths read the
+xcind `config.json` contract. The contract reserves `compose` as a
+top-level key.
+
+The exact `compose` path and the trailing-dot `compose.` path are malformed;
+callers must select a value below `compose.*`.
+
+#### Path grammar
+
+A path is one or more segments, separated by dots. A segment is a bare key or
+a quoted key, and can carry numeric array indexes:
+
+```
+path    := segment ( "." segment )*
+segment := ( bare | quoted ) index*
+bare    := [A-Za-z_][A-Za-z0-9_-]*
+quoted  := '"' ( any character, with \" and \\ escaped ) '"'
+index   := "[" [0-9]+ "]"
+```
+
+Quote a key to read one that contains a dot, such as a Compose label:
+
+```bash
+xcind-config resolve 'compose.services.web.labels."traefik.http.routers.web.rule"'
+```
+
+One leading dot is accepted and removed. Arbitrary jq programs are not
+accepted. Scalars print as raw values. Objects and arrays print as compact
+JSON.
+
+#### Exit status
+
+| Status | Meaning |
+|--------|---------|
+| `0` | The path holds a non-null value |
+| `1` | The path holds no value: absent, `null`, or blocked by a scalar |
+| `2` | Resolved state or jq is unavailable |
+| `64` | Usage error, including a malformed path |
+
+Status `1` is silent when the path is simply absent. When the path runs
+through a scalar — `metadata.app.nested`, where `metadata.app` is a string —
+the command writes a `path is not traversable` line to stderr and still exits
+`1`. Callers that must tell the two apart can read stderr.
+
+#### Cache and hooks
+
+The default hook TTL is five seconds. During that window, repeated resolution
+skips the complete cache-refresh leg. Set `XCIND_HOOKS_TTL=0` or pass
+`--hooks-ttl=0` to disable TTL reuse. An explicit `--hooks-ttl=N` value takes
+precedence over `XCIND_HOOKS_TTL` sourced from the app configuration.
+
+`--cached` does not run Docker or hooks and exits with status `2` when
+current-SHA artifacts are unavailable.
+`--cached` also reuses the host-gateway value that the last full run stored
+in `.xcind/cache/.host-gateway-detected`, so its SHA reflects the gateway as
+of that run, not the current one.
+
+Only `compose.*` paths need the cache. An app that sets
+`XCIND_HOOKS_GENERATE=()` builds no cache directory; xcind paths still
+resolve, because the command builds the same `config.json` contract in
+memory. A `compose.*` path in that app exits `2` and names the cause.
+
+With `--cached`, xcind paths also require current-SHA artifacts and exit `2`
+instead of using the in-memory contract.
+
+`resolve` keeps the resolution pipeline quiet on stderr, so that scripts read
+clean output. Set `XCIND_DEBUG=1` to let the pipeline's diagnostics through.
+
+#### Compose name lookups
+
+`compose.project.name` is the one derived path: it aliases the top-level
+`name` of the Compose document. Every other `compose.*` path is a direct
+lookup.
+
+`compose.volumes.<key>.name` and `compose.networks.<key>.name` need no
+special handling. `docker compose config` resolves both itself, and has done
+so since 2.6 — the floor this command already requires. Verified against
+2.6.0, 2.20.3 and 2.29.7: each emits a resolved `name` for every volume and
+network. Project-scoped entries read as `{project}_{key}`; entries marked
+`external: true` keep their own un-prefixed name.
+
+Do not reintroduce a `{project}_{key}` fallback here. It would be
+unreachable for supported Compose versions, and wrong for external entries,
+which Compose deliberately leaves un-prefixed.
 
 ### JSON Output Contract
 

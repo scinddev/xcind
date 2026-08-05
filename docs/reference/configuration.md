@@ -66,6 +66,7 @@ apps through a Traefik that already runs on the host (e.g. Coolify's), see
 | `XCIND_HOOKS_EXECUTE` | (built-ins: proxy-execute, workspace-execute) | Hooks that run preconditions every invocation |
 | `XCIND_HOST_GATEWAY_ENABLED` | `1` | Disable the host-gateway hook for this app |
 | `XCIND_HOST_GATEWAY` | _(auto-detected)_ | Override the detected host-gateway value |
+| `XCIND_HOOKS_TTL` | `5` | Seconds that `xcind-config resolve` can reuse a completed cache-refresh leg; `0` disables reuse |
 
 Walkthrough: [Author custom hooks](../guides/custom-hooks.md), [host-gateway](../guides/host-gateway.md).
 
