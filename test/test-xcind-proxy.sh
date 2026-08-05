@@ -3739,6 +3739,10 @@ if [ "${XCIND_DISPOSE_PROXY_FAIL_NETWORK:-0}" = "1" ] && [ "$1" = "network" ]; t
   echo "network has active endpoints" >&2
   exit 1
 fi
+if [ "${XCIND_DISPOSE_PROXY_FAIL_COMPOSE:-0}" = "1" ] && [ "$1" = "compose" ]; then
+  echo "no configuration file provided" >&2
+  exit 1
+fi
 exit 0
 MOCKEOF
 chmod +x "$DISPOSE_PROXY_BIN/docker"
@@ -3781,6 +3785,14 @@ assert_eq "proxy dispose: active network exits non-zero" "1" "$dispose_proxy_fai
 assert_eq "proxy dispose: active network keeps generated state" "true" \
   "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
 
+# In managed mode a failed teardown is fatal: state must survive so a retry
+# can finish the job.
+dispose_proxy_compose_status=$(XCIND_DISPOSE_PROXY_FAIL_COMPOSE=1 \
+  capture_status "$XCIND_ROOT/bin/xcind-proxy" dispose --yes)
+assert_eq "proxy dispose: compose failure exits non-zero" "1" "$dispose_proxy_compose_status"
+assert_eq "proxy dispose: compose failure keeps generated state" "true" \
+  "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
+
 # A stale managed compose file may remain after migration to external mode.
 # Dispose must stop that known leftover, but the configured network belongs to
 # the external proxy and must never be removed.
@@ -3790,12 +3802,34 @@ printf '%s\n' 'XCIND_PROXY_MODE="external"' \
   'XCIND_PROXY_NETWORK="external-shared"' >"$DISPOSE_PROXY_CONFIG/config.sh"
 touch "$DISPOSE_PROXY_STATE/compose.yaml"
 : >"$DISPOSE_PROXY_LOG"
-"$XCIND_ROOT/bin/xcind-proxy" dispose --yes
+dispose_proxy_external_status=$(capture_status "$XCIND_ROOT/bin/xcind-proxy" dispose --yes)
 dispose_proxy_external_log=$(<"$DISPOSE_PROXY_LOG")
+assert_eq "proxy dispose external: exits zero" "0" "$dispose_proxy_external_status"
 assert_contains "proxy dispose external: stops migrated managed proxy" "compose -f" \
   "$dispose_proxy_external_log"
 assert_not_contains "proxy dispose external: keeps shared network" \
   "network rm external-shared" "$dispose_proxy_external_log"
+assert_eq "proxy dispose external: removes generated state" "false" \
+  "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
+assert_file_exists "proxy dispose external: keeps config" \
+  "$DISPOSE_PROXY_CONFIG/config.sh"
+
+# The retained compose file is the artifact dispose exists to clear, so a
+# project that no longer resolves must not block the cleanup.
+mkdir -p "$DISPOSE_PROXY_STATE"
+touch "$DISPOSE_PROXY_STATE/compose.yaml"
+dispose_proxy_broken_status=$(XCIND_DISPOSE_PROXY_FAIL_COMPOSE=1 \
+  capture_status "$XCIND_ROOT/bin/xcind-proxy" dispose --yes)
+assert_eq "proxy dispose external: broken compose project still exits zero" "0" \
+  "$dispose_proxy_broken_status"
+assert_eq "proxy dispose external: broken compose project still removes state" "false" \
+  "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
+
+mkdir -p "$DISPOSE_PROXY_STATE"
+touch "$DISPOSE_PROXY_STATE/compose.yaml"
+"$XCIND_ROOT/bin/xcind-proxy" dispose --purge --yes
+assert_eq "proxy dispose external --purge: removes config directory" "false" \
+  "$([ -d "$DISPOSE_PROXY_CONFIG" ] && echo true || echo false)"
 
 export HOME="$DISPOSE_PROXY_OLD_HOME"
 export PATH="$DISPOSE_PROXY_OLD_PATH"

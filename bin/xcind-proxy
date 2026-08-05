@@ -437,8 +437,12 @@ __xcind-proxy-dispose() {
       if [[ -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
         assignment_count=$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE")
       fi
-      prompt+=$'\n'"  - stop the managed proxy"
-      [[ $external != true ]] && prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
+      if [[ $external == true ]]; then
+        prompt+=$'\n'"  - stop a leftover xcind-managed proxy, if one is running"
+      else
+        prompt+=$'\n'"  - stop the managed proxy"
+        prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
+      fi
       prompt+=$'\n'"  - remove generated state $XCIND_PROXY_STATE_DIR"
       [[ $assignment_count -gt 0 ]] && prompt+=$'\n'"  - forget $assignment_count assigned-port binding(s); apps receive new ports on next up"
     fi
@@ -447,15 +451,20 @@ __xcind-proxy-dispose() {
   fi
 
   if [[ $proxy_present == true ]]; then
-    if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
-      echo "Error: Could not stop the proxy compose project." >&2
-      return 1
-    fi
-
     # An external-mode config can retain compose.yaml while a former
-    # xcind-managed proxy is still running. Stop that known leftover, but
-    # never remove its shared network: it belongs to the external proxy.
-    if [[ $external != true ]]; then
+    # xcind-managed proxy is still running. Stop that known leftover on a
+    # best-effort basis, the way `up` does: the file is a migration artifact
+    # this command exists to clear, so a broken or already-gone project must
+    # not block the cleanup. Never remove the shared network in external
+    # mode — it belongs to the external proxy, not to xcind.
+    if [[ $external == true ]]; then
+      docker compose -f "$XCIND_PROXY_COMPOSE" down 2>/dev/null || true
+    else
+      if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
+        echo "Error: Could not stop the proxy compose project." >&2
+        return 1
+      fi
+
       local network_err=""
       if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
         if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
