@@ -416,43 +416,67 @@ __xcind-proxy-dispose() {
     esac
   done
 
-  local assignment_count=0
-  if [[ -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
-    assignment_count=$(awk '$1 !~ /^#/ { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE")
-  fi
-  if [[ $yes != true ]]; then
-    local prompt="Dispose proxy:"
-    prompt+=$'\n'"  - stop the managed proxy"
-    prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
-    prompt+=$'\n'"  - remove generated state $XCIND_PROXY_STATE_DIR"
-    [[ $assignment_count -gt 0 ]] && prompt+=$'\n'"  - forget $assignment_count assigned-port binding(s); apps receive new ports on next up"
-    [[ $purge == true ]] && prompt+=$'\n'"  - remove configuration $XCIND_PROXY_CONFIG_DIR (--purge)"
-    __xcind-confirm "$prompt" || return 1
-  fi
+  # Decide what is actually left to do before prompting, so an already
+  # disposed proxy never asks the user to confirm a no-op.
+  local proxy_present=true
+  [[ -f $XCIND_PROXY_COMPOSE ]] || proxy_present=false
+  local config_present=true
+  [[ -d $XCIND_PROXY_CONFIG_DIR ]] || config_present=false
 
-  if [[ ! -f $XCIND_PROXY_COMPOSE ]]; then
-    [[ $purge == true ]] && rm -rf "$XCIND_PROXY_CONFIG_DIR"
+  if [[ $proxy_present == false && ($purge != true || $config_present == false) ]]; then
     echo "Proxy already disposed."
     return 0
   fi
 
-  if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
-    echo "Error: Could not stop the proxy compose project." >&2
-    return 1
+  if [[ $yes != true ]]; then
+    local prompt="Dispose proxy:"
+    if [[ $proxy_present == true ]]; then
+      local assignment_count=0
+      if [[ -f $XCIND_ASSIGNED_PORTS_FILE ]]; then
+        assignment_count=$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE")
+      fi
+      prompt+=$'\n'"  - stop the managed proxy"
+      prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
+      prompt+=$'\n'"  - remove generated state $XCIND_PROXY_STATE_DIR"
+      [[ $assignment_count -gt 0 ]] && prompt+=$'\n'"  - forget $assignment_count assigned-port binding(s); apps receive new ports on next up"
+    fi
+    [[ $purge == true ]] && prompt+=$'\n'"  - remove configuration $XCIND_PROXY_CONFIG_DIR (--purge)"
+    __xcind-confirm "$prompt" || return 1
   fi
 
-  local network_err=""
-  if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
-    if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
-      printf '%s\n' "$network_err" >&2
-      echo "Error: Could not remove proxy network $XCIND_PROXY_NETWORK; apps may still be attached." >&2
+  if [[ $proxy_present == true ]]; then
+    if ! docker compose -f "$XCIND_PROXY_COMPOSE" down; then
+      echo "Error: Could not stop the proxy compose project." >&2
+      return 1
+    fi
+
+    local network_err=""
+    if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
+      if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
+        printf '%s\n' "$network_err" >&2
+        echo "Error: Could not remove proxy network $XCIND_PROXY_NETWORK; apps may still be attached." >&2
+        return 1
+      fi
+    fi
+
+    if ! rm -rf "$XCIND_PROXY_STATE_DIR"; then
+      echo "Error: Could not remove generated state $XCIND_PROXY_STATE_DIR." >&2
       return 1
     fi
   fi
 
-  rm -rf "$XCIND_PROXY_STATE_DIR"
-  [[ $purge == true ]] && rm -rf "$XCIND_PROXY_CONFIG_DIR"
-  echo "Proxy disposed."
+  if [[ $purge == true ]]; then
+    if ! rm -rf "$XCIND_PROXY_CONFIG_DIR"; then
+      echo "Error: Could not remove configuration $XCIND_PROXY_CONFIG_DIR." >&2
+      return 1
+    fi
+  fi
+
+  if [[ $proxy_present == true ]]; then
+    echo "Proxy disposed."
+  else
+    echo "Proxy configuration removed."
+  fi
 }
 
 __xcind-proxy-status() {

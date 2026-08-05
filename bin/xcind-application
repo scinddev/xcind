@@ -223,12 +223,17 @@ __xcind-application-dispose() {
     return 1
   fi
 
+  if [[ $remove_dir == true ]] && __xcind-is-unsafe-removal-path "$app_root"; then
+    echo "Error: Refusing to remove $app_root with --rm." >&2
+    return 1
+  fi
+
   local compose_args=(down --remove-orphans)
   [[ $volumes == true ]] && compose_args+=(-v)
 
-  if [[ $yes != true && ($volumes == true || $remove_dir == true) ]]; then
+  if [[ $yes != true ]]; then
     local port_count
-    port_count=$(awk -F $'\t' -v path="$app_root" '$1 !~ /^#/ && $6 == path { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE" 2>/dev/null || true)
+    port_count=$(awk -F $'\t' -v path="$app_root" 'NF && $1 !~ /^#/ && $6 == path { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE" 2>/dev/null || true)
     local prompt
     prompt="Dispose application \"$(basename "$app_root")\" at $app_root:"
     prompt+=$'\n'"  - docker compose down --remove-orphans"
@@ -249,11 +254,17 @@ __xcind-application-dispose() {
     return 1
   fi
 
-  rm -rf "$app_root/.xcind"
+  if ! rm -rf "$app_root/.xcind"; then
+    echo "Error: Could not remove generated state at $app_root/.xcind." >&2
+    return 1
+  fi
   echo "Application disposed at $app_root"
 
   if [[ $remove_dir == true ]]; then
-    rm -rf "$app_root"
+    if ! rm -rf "$app_root"; then
+      echo "Error: Could not remove application directory $app_root." >&2
+      return 1
+    fi
     echo "Application directory removed: $app_root"
   fi
 }

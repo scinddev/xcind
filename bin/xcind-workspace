@@ -987,7 +987,7 @@ __xcind-workspace-dispose() {
   if [[ ! -d $dir ]]; then
     if [[ $dir_set == true ]]; then
       __xcind-workspace-forget "$dir"
-      return 0
+      return $?
     fi
     echo "Error: Directory not found: $dir" >&2
     return 1
@@ -999,6 +999,11 @@ __xcind-workspace-dispose() {
     echo "Error: Refusing to dispose an unsafe workspace path." >&2
     return 1
   }
+
+  if [[ $remove_dir == true ]] && __xcind-is-unsafe-removal-path "$ws_root"; then
+    echo "Error: Refusing to remove $ws_root with --rm." >&2
+    return 1
+  fi
 
   XCIND_WORKSPACE=""
   # shellcheck disable=SC1090,SC1091
@@ -1018,7 +1023,7 @@ __xcind-workspace-dispose() {
     __xcind-is-workspace-dir "$subdir" || app_dirs+=("$subdir")
   done
 
-  if [[ $yes != true && ($volumes == true || $remove_dir == true) ]]; then
+  if [[ $yes != true ]]; then
     local prompt="Dispose workspace \"$ws_name\" at $ws_root:"
     local app_dir
     for app_dir in "${app_dirs[@]+"${app_dirs[@]}"}"; do
@@ -1057,7 +1062,10 @@ __xcind-workspace-dispose() {
 
   __xcind-workspace-forget "$ws_root" || return 1
   if [[ $remove_dir == true ]]; then
-    rm -rf "$ws_root"
+    if ! rm -rf "$ws_root"; then
+      echo "Error: Could not remove workspace directory $ws_root." >&2
+      return 1
+    fi
     echo "Workspace directory removed: $ws_root"
   fi
   echo "Workspace disposed at $ws_root"

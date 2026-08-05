@@ -256,6 +256,12 @@ xcind-proxy logs -f       # Follow logs
 xcind-proxy --version     # Show version
 ```
 
+### Dispose Behavior
+
+- `dispose` removes the whole generated state directory, which holds `assigned-ports.tsv`. Every application therefore loses its port assignments and receives new host ports on the next `up`. The confirmation prompt counts the bindings it is about to forget; `--yes` skips that prompt, so scripted disposal drops them silently.
+- `--purge` also removes the config directory (`config.sh`). Without it, configuration survives so a later `init` keeps the user's settings.
+- When the proxy is already disposed, `dispose` exits 0 without prompting. With `--purge` and a surviving config directory, it prompts for the purge alone.
+
 ### Auto-Start Behavior
 
 When `XCIND_PROXY_EXPORTS` is configured for an application, the proxy hook automatically starts the proxy if it is not already running. This happens transparently during `xcind-compose` execution.
@@ -361,6 +367,8 @@ xcind-workspace dispose ~/code/acme --rm --volumes --yes
 
 - Disposes each immediate application by calling `xcind-application dispose`; `--volumes` and `--yes` are forwarded, while workspace `--rm` removes the root only after every application succeeds.
 - If any application fails, the workspace network, registry entry, and directory remain intact. A missing explicit workspace path is an idempotent cleanup that only forgets the registry entry.
+- Every form of `dispose` confirms first. Supply `--yes` to skip the prompt; a non-interactive session without `--yes` refuses instead of blocking.
+- `--rm` refuses paths that are unsafe to remove recursively: the filesystem root, `$HOME`, and single-component paths such as `/srv`.
 
 > **Trust boundary:** unlike `xcind-compose` and `xcind-config`, which walk
 > *upward* from `$PWD` (so the user has already chosen to `cd` into the
@@ -447,7 +455,8 @@ xcind-app list                                 # Short alias
 **Dispose:**
 
 - Runs `xcind-compose down --remove-orphans`, adding `-v` only with `--volumes`; only after successful runtime teardown does it release assigned ports and remove `.xcind/` generated state.
-- `--rm` requires a recognized application directory, and `--yes` is required for destructive disposal in a non-interactive session. Missing or already-disposed paths succeed without changes.
+- Every form of `dispose` confirms first, including the default one that keeps the directory. Supply `--yes` to skip the prompt; a non-interactive session without `--yes` refuses instead of blocking. The prompt names the resolved application root, which matters because `DIR` walks upward the way `xcind-compose` does.
+- `--rm` requires a recognized application directory and refuses paths that are unsafe to remove recursively: the filesystem root, `$HOME`, and single-component paths such as `/srv`. Missing or already-disposed paths succeed without changes.
 
 **List:**
 

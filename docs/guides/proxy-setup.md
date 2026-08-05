@@ -157,8 +157,9 @@ xcind-proxy init --mode managed --network xcind-proxy \
 xcind-proxy status          # is it running?
 xcind-proxy logs -f         # tail Traefik logs
 xcind-proxy down            # stop the shared proxy
-xcind-proxy dispose          # remove generated state; keep config.sh
-xcind-proxy dispose --purge --yes  # also remove config.sh without prompting
+xcind-proxy dispose         # remove generated state; keep config.sh
+xcind-proxy dispose --purge --yes
+                            # also remove config.sh, without prompting
 ```
 
 ## Where to go next

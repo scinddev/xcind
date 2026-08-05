@@ -4795,6 +4795,14 @@ exit 0
 MOCKEOF
 chmod +x "$DISPOSE_BIN/docker"
 
+# The default form is destructive too, so it must confirm before acting.
+dispose_default_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP")
+assert_eq "dispose: default form prompts without --yes" "1" "$dispose_default_status"
+assert_file_exists "dispose: prompt refusal keeps generated state" \
+  "$DISPOSE_APP/.xcind/generated-marker"
+
 dispose_out=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
   XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
   "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP" --volumes --yes)
@@ -4826,6 +4834,12 @@ dispose_refuse_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE
   XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" \
   capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_ROOT/not-an-app" --rm --yes)
 assert_eq "dispose --rm: refuses non-app directory" "1" "$dispose_refuse_status"
+dispose_home_status=$(PATH="$DISPOSE_BIN:$PATH" XDG_STATE_HOME="$DISPOSE_STATE" \
+  XCIND_DISPOSE_DOCKER_LOG="$DISPOSE_LOG" HOME="$DISPOSE_APP" \
+  capture_status "$XCIND_ROOT/bin/xcind-application" dispose "$DISPOSE_APP" --rm --yes)
+assert_eq "dispose --rm: refuses the home directory" "1" "$dispose_home_status"
+assert_eq "dispose --rm: home refusal keeps the directory" "true" \
+  "$([ -d "$DISPOSE_APP" ] && echo true || echo false)"
 assert_eq "dispose --rm: preserves non-app directory" "true" \
   "$([ -d "$DISPOSE_ROOT/not-an-app" ] && echo true || echo false)"
 
@@ -4869,14 +4883,25 @@ exit 0
 MOCKEOF
 chmod +x "$WORKSPACE_DISPOSE_BIN/docker"
 
+workspace_dispose_prompt_status=$(PATH="$WORKSPACE_DISPOSE_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_DISPOSE_STATE" \
+  XCIND_WORKSPACE_DISPOSE_DOCKER_LOG="$WORKSPACE_DISPOSE_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" dispose "$WORKSPACE_DISPOSE_WS")
+assert_eq "workspace dispose: default form prompts without --yes" "1" \
+  "$workspace_dispose_prompt_status"
+assert_eq "workspace dispose: prompt refusal keeps workspace" "true" \
+  "$([ -d "$WORKSPACE_DISPOSE_WS" ] && echo true || echo false)"
+
 PATH="$WORKSPACE_DISPOSE_BIN:$PATH" XDG_STATE_HOME="$WORKSPACE_DISPOSE_STATE" \
   XCIND_WORKSPACE_DISPOSE_DOCKER_LOG="$WORKSPACE_DISPOSE_LOG" \
-  "$XCIND_ROOT/bin/xcind-workspace" dispose "$WORKSPACE_DISPOSE_WS" --rm --yes
+  "$XCIND_ROOT/bin/xcind-workspace" dispose "$WORKSPACE_DISPOSE_WS" --rm --volumes --yes
 assert_eq "workspace dispose --rm: removes workspace directory" "false" \
   "$([ -d "$WORKSPACE_DISPOSE_WS" ] && echo true || echo false)"
 workspace_dispose_log=$(<"$WORKSPACE_DISPOSE_LOG")
 assert_contains "workspace dispose: delegates application down" "down --remove-orphans" \
   "$workspace_dispose_log"
+assert_contains "workspace dispose: forwards --volumes to applications" \
+  "down --remove-orphans -v" "$workspace_dispose_log"
 assert_contains "workspace dispose: removes workspace network" "network rm dispose-ws-internal" \
   "$workspace_dispose_log"
 workspace_registry=$(<"$WORKSPACE_DISPOSE_STATE/xcind/workspaces.tsv")

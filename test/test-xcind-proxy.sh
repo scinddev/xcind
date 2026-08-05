@@ -3758,6 +3758,14 @@ dispose_proxy_log=$(<"$DISPOSE_PROXY_LOG")
 assert_contains "proxy dispose: tears down compose project" "compose -f" "$dispose_proxy_log"
 assert_contains "proxy dispose: removes configured network" "network rm dispose-proxy" "$dispose_proxy_log"
 
+# An already disposed proxy is a no-op that never reaches the prompt, so it
+# succeeds even without --yes in this non-interactive test run.
+dispose_proxy_repeat_out=$("$XCIND_ROOT/bin/xcind-proxy" dispose)
+assert_contains "proxy dispose: repeat run reports already disposed" \
+  "Proxy already disposed." "$dispose_proxy_repeat_out"
+assert_file_exists "proxy dispose: repeat run keeps config" \
+  "$DISPOSE_PROXY_CONFIG/config.sh"
+
 mkdir -p "$DISPOSE_PROXY_STATE"
 touch "$DISPOSE_PROXY_STATE/compose.yaml"
 "$XCIND_ROOT/bin/xcind-proxy" dispose --purge --yes
