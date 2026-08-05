@@ -79,6 +79,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 | *(none)* | Show usage help |
 | `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `tools`) |
 | `resolve <path> [--cached] [--hooks-ttl=N]` | One value from the resolved xcind or Compose configuration |
+| `resolve --help` | The resolvable top-level keys, the path syntax, and the exit codes |
 | `--preview [-- ARGS...]` | The `docker compose` command line that would run |
 | `--check` | Check whether required and optional dependencies are available |
 | `doctor [--json]` | Diagnose `XCIND_PROXY_EXPORTS` and assigned-port hook state |

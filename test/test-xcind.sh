@@ -3053,6 +3053,55 @@ resolve_invalid_err=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config res
 assert_eq "resolve: invalid grammar exits 64" "64" "$resolve_invalid_rc"
 assert_contains "resolve: usage error has command prefix" "xcind-config: " "$resolve_invalid_err"
 
+# `resolve --help` is a help request: stdout, exit 0.
+resolve_help_rc=0
+resolve_help_out=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve --help 2>/dev/null) || resolve_help_rc=$?
+assert_eq "resolve: --help exits 0" "0" "$resolve_help_rc"
+assert_contains "resolve: --help shows usage" \
+  "Usage: xcind-config resolve" "$resolve_help_out"
+assert_contains "resolve: --help lists the top-level keys" "apex" "$resolve_help_out"
+assert_contains "resolve: --help explains the blocked compose path" \
+  'The bare path `compose` is not resolvable' "$resolve_help_out"
+
+resolve_help_err=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve --help 2>&1 >/dev/null)
+assert_eq "resolve: --help writes nothing to stderr" "" "$resolve_help_err"
+
+resolve_short_help=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve -h 2>/dev/null)
+assert_eq "resolve: -h matches --help" "$resolve_help_out" "$resolve_short_help"
+
+# A --help behind the path asks about resolve, not about xcind-config.
+resolve_trailing_help_rc=0
+resolve_trailing_help=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --help 2>/dev/null) ||
+  resolve_trailing_help_rc=$?
+assert_eq "resolve: --help after the path exits 0" "0" "$resolve_trailing_help_rc"
+assert_eq "resolve: --help after the path matches resolve help" \
+  "$resolve_help_out" "$resolve_trailing_help"
+
+# A bare `resolve` stays a usage error, but now explains the paths.
+resolve_bare_rc=0
+resolve_bare_err=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve 2>&1 >/dev/null) || resolve_bare_rc=$?
+assert_eq "resolve: bare resolve exits 64" "64" "$resolve_bare_rc"
+assert_contains "resolve: bare resolve keeps its error line" \
+  "resolve requires a path" "$resolve_bare_err"
+assert_contains "resolve: bare resolve lists the top-level keys" \
+  "apex" "$resolve_bare_err"
+resolve_bare_out=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve 2>/dev/null) || true
+assert_eq "resolve: bare resolve writes nothing to stdout" "" "$resolve_bare_out"
+
+# The help key list is static text. Guard it against drifting away from the
+# contract that __xcind-resolve-json actually builds.
+resolve_help_keys=$(printf '%s\n' "$resolve_help_out" |
+  awk '/^Xcind keys/ {on = 1; next} /^$/ {on = 0} on {print}' |
+  tr ' ' '\n' | sed 's/\[\]$//' | grep -E '^[A-Za-z][A-Za-z0-9]*$' | sort -u)
+assert_contains "resolve: help key list is not empty" "apex" "$resolve_help_keys"
+for resolve_help_key in $resolve_help_keys; do
+  resolve_help_key_rc=0
+  (cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve "$resolve_help_key" >/dev/null 2>&1) ||
+    resolve_help_key_rc=$?
+  assert_eq "resolve: documented key '$resolve_help_key' resolves" \
+    "0" "$resolve_help_key_rc"
+done
+
 for resolve_bad_path in 'a..b' 'a."unterminated' 'a."bad\q"' 'metadata[x]' 'metadata[0' '9bad' 'compose' 'compose.'; do
   resolve_bad_rc=0
   (cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve "$resolve_bad_path" >/dev/null 2>&1) || resolve_bad_rc=$?
@@ -3279,15 +3328,20 @@ assert_contains "completion bash: lists --cached" \
 assert_contains "completion bash: --format offers toml nix" \
   'compgen -W "toml nix"' "$comp_bash_result"
 
-# Resolve completion leaves the required path position empty, then offers
-# only resolve modifiers after the path.
+# Resolve completion offers the top-level keys in the required path position,
+# then offers only resolve modifiers after the path.
 # shellcheck disable=SC1091
 source "$XCIND_ROOT/lib/xcind/xcind-completion-bash.bash"
 COMP_WORDS=(xcind-config resolve "")
 COMP_CWORD=2
 _xcind_config_completions
-assert_eq "completion bash: resolve expects a path before options" \
-  "0" "${#COMPREPLY[@]}"
+resolve_key_completion="${COMPREPLY[*]}"
+assert_contains "completion bash: resolve offers a top-level key" \
+  "apex" "$resolve_key_completion"
+assert_contains "completion bash: resolve offers the compose namespace" \
+  "compose." "$resolve_key_completion"
+assert_not_contains "completion bash: resolve omits modifiers in the path position" \
+  "--cached" "$resolve_key_completion"
 COMP_WORDS=(xcind-config resolve metadata.app "")
 COMP_CWORD=3
 _xcind_config_completions
