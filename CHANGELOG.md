@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-08-05
+
+### Added
+
+- fix(config): refresh resolved compose cache after GENERATE hooks (#88) by @simensen in [#88](https://github.com/scinddev/xcind/pull/88)
+- Add resolve-specific help to xcind-config (#87) by @simensen in [#87](https://github.com/scinddev/xcind/pull/87)
 ## [0.6.2] - 2026-08-05
 
 ### Added
