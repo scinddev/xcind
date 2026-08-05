@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2026-08-05
+
+### Added
+
+- docs(adr): add ADR-0015 on export introspection and command placement (#70) by @simensen in [#70](https://github.com/scinddev/xcind/pull/70)
+- TLS proxy-domain: require multi-label; default localhost.scind.io (#72) by @simensen in [#72](https://github.com/scinddev/xcind/pull/72)
+- feat(proxy): report apex URL for the headlining proxied export (#73) by @simensen in [#73](https://github.com/scinddev/xcind/pull/73)
+- feat(discovery): inject service-discovery env vars into containers (#75) by @simensen in [#75](https://github.com/scinddev/xcind/pull/75)
+- feat: host/container environment symmetry (XCIND_HOST_ENV_FILE) [BDS-24] (#76) by @simensen in [#76](https://github.com/scinddev/xcind/pull/76)
+- Scind↔Xcind sync kickoff: planning framework + P1 self-sync (#78) by @simensen in [#78](https://github.com/scinddev/xcind/pull/78)
+- docs(decisions): add ADR-0019 (worktree instance) and ADR-0020 (host-env) (#79) by @simensen in [#79](https://github.com/scinddev/xcind/pull/79)
+- Add single-value resolved config lookups (#85) by @simensen in [#85](https://github.com/scinddev/xcind/pull/85)
+
+### Maintenance
+
+- xcind-prompt: Starship prompt integration (8-step feature) (#71) by @simensen in [#71](https://github.com/scinddev/xcind/pull/71)
+- feat: Git worktree isolation via a single XCIND_INSTANCE token [BDS-25] (#77) by @simensen in [#77](https://github.com/scinddev/xcind/pull/77)
+- Support kislyuk/yq (Python) alongside mikefarah yq-go (#82) by @simensen in [#82](https://github.com/scinddev/xcind/pull/82)
+- External proxy mode: serve apps through an existing host Traefik (ADR-0022) (#83) by @simensen in [#83](https://github.com/scinddev/xcind/pull/83)
+- Add dispose subcommands (#86) by @simensen in [#86](https://github.com/scinddev/xcind/pull/86)
+
+### Other
+
+- docs(agents): note Linear Xcind project association (#74) by @simensen in [#74](https://github.com/scinddev/xcind/pull/74)
+- Scind↔Xcind sync: P3–P5 gap analysis (learnings + bidirectional capability gaps) (#80) by @simensen in [#80](https://github.com/scinddev/xcind/pull/80)
+- Scind↔Xcind sync: P6 reconciliation + P7 divergence registry (#81) by @simensen in [#81](https://github.com/scinddev/xcind/pull/81)
 ## [0.6.1] - 2026-06-19
 
 ### Added
