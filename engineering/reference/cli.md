@@ -226,7 +226,9 @@ In external mode (`--mode external`, see [ADR-0022](../decisions/0022-external-p
 `--dashboard*`, `--http-port`, `--https-port`, `--tls-cert-file`,
 `--tls-key-file`) warn but are still persisted, `up` only verifies the shared
 network (`--force` refuses), and `down`/`logs` refuse since the proxy is not
-xcind-managed.
+xcind-managed. `dispose` never removes the shared external network; during a
+migration, it can stop a retained xcind-managed proxy before it removes its
+generated state.
 
 ### Options
 

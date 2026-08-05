@@ -3781,6 +3781,22 @@ assert_eq "proxy dispose: active network exits non-zero" "1" "$dispose_proxy_fai
 assert_eq "proxy dispose: active network keeps generated state" "true" \
   "$([ -d "$DISPOSE_PROXY_STATE" ] && echo true || echo false)"
 
+# A stale managed compose file may remain after migration to external mode.
+# Dispose must stop that known leftover, but the configured network belongs to
+# the external proxy and must never be removed.
+rm -rf "$DISPOSE_PROXY_STATE"
+mkdir -p "$DISPOSE_PROXY_STATE"
+printf '%s\n' 'XCIND_PROXY_MODE="external"' \
+  'XCIND_PROXY_NETWORK="external-shared"' >"$DISPOSE_PROXY_CONFIG/config.sh"
+touch "$DISPOSE_PROXY_STATE/compose.yaml"
+: >"$DISPOSE_PROXY_LOG"
+"$XCIND_ROOT/bin/xcind-proxy" dispose --yes
+dispose_proxy_external_log=$(<"$DISPOSE_PROXY_LOG")
+assert_contains "proxy dispose external: stops migrated managed proxy" "compose -f" \
+  "$dispose_proxy_external_log"
+assert_not_contains "proxy dispose external: keeps shared network" \
+  "network rm external-shared" "$dispose_proxy_external_log"
+
 export HOME="$DISPOSE_PROXY_OLD_HOME"
 export PATH="$DISPOSE_PROXY_OLD_PATH"
 unset XCIND_DISPOSE_PROXY_LOG

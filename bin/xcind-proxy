@@ -422,6 +422,8 @@ __xcind-proxy-dispose() {
   [[ -f $XCIND_PROXY_COMPOSE ]] || proxy_present=false
   local config_present=true
   [[ -d $XCIND_PROXY_CONFIG_DIR ]] || config_present=false
+  local external=false
+  __xcind-proxy-is-external && external=true
 
   if [[ $proxy_present == false && ($purge != true || $config_present == false) ]]; then
     echo "Proxy already disposed."
@@ -436,7 +438,7 @@ __xcind-proxy-dispose() {
         assignment_count=$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' "$XCIND_ASSIGNED_PORTS_FILE")
       fi
       prompt+=$'\n'"  - stop the managed proxy"
-      prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
+      [[ $external != true ]] && prompt+=$'\n'"  - remove Docker network $XCIND_PROXY_NETWORK"
       prompt+=$'\n'"  - remove generated state $XCIND_PROXY_STATE_DIR"
       [[ $assignment_count -gt 0 ]] && prompt+=$'\n'"  - forget $assignment_count assigned-port binding(s); apps receive new ports on next up"
     fi
@@ -450,12 +452,17 @@ __xcind-proxy-dispose() {
       return 1
     fi
 
-    local network_err=""
-    if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
-      if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
-        printf '%s\n' "$network_err" >&2
-        echo "Error: Could not remove proxy network $XCIND_PROXY_NETWORK; apps may still be attached." >&2
-        return 1
+    # An external-mode config can retain compose.yaml while a former
+    # xcind-managed proxy is still running. Stop that known leftover, but
+    # never remove its shared network: it belongs to the external proxy.
+    if [[ $external != true ]]; then
+      local network_err=""
+      if ! network_err=$(docker network rm "$XCIND_PROXY_NETWORK" 2>&1); then
+        if [[ $network_err != *"No such network"* && $network_err != *"not found"* ]]; then
+          printf '%s\n' "$network_err" >&2
+          echo "Error: Could not remove proxy network $XCIND_PROXY_NETWORK; apps may still be attached." >&2
+          return 1
+        fi
       fi
     fi
 
