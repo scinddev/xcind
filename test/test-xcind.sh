@@ -202,20 +202,79 @@ docker() {
 
 __xcind-populate-cache "$CACHE_APP"
 
-assert_file_exists "populate cache: writes resolved-config.yaml" \
+assert_file_exists "populate cache: writes pre-hook resolved-config.yaml" \
   "$XCIND_CACHE_DIR/resolved-config.yaml"
-assert_file_exists "populate cache: writes resolved-config.json" \
-  "$XCIND_CACHE_DIR/resolved-config.json"
-assert_contains "populate cache: requests JSON from Compose" \
+assert_eq "populate cache: does not write resolved-config.json" "no" \
+  "$([[ -f $XCIND_CACHE_DIR/resolved-config.json ]] && echo yes || echo no)"
+assert_not_contains "populate cache: no JSON request pre-hook" \
   "config --format json" "$cache_calls"
-assert_eq "populate cache: JSON keeps project name" "demo" \
+
+# Post-hook refresh rewrites the YAML and owns the JSON artifact. Simulate
+# hooks having appended an overlay by growing the opts before the refresh.
+XCIND_DOCKER_COMPOSE_OPTS+=("-f" "$CACHE_APP/overlay.yaml")
+cache_calls=""
+
+__xcind-refresh-resolved-cache
+
+assert_file_exists "refresh cache: writes resolved-config.json" \
+  "$XCIND_CACHE_DIR/resolved-config.json"
+assert_contains "refresh cache: requests JSON from Compose" \
+  "config --format json" "$cache_calls"
+assert_contains "refresh cache: uses post-hook overlay opts" \
+  "overlay.yaml" "$cache_calls"
+assert_eq "refresh cache: JSON keeps project name" "demo" \
   "$(jq -r '.name' "$XCIND_CACHE_DIR/resolved-config.json")"
-assert_eq "populate cache: JSON keeps resolved volume name" "demo_data" \
+assert_eq "refresh cache: JSON keeps resolved volume name" "demo_data" \
   "$(jq -r '.volumes.data.name' "$XCIND_CACHE_DIR/resolved-config.json")"
 
 unset -f docker
 unset XCIND_CACHE_DIR
 rm -rf "$CACHE_APP"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-replay-hook-outputs ==="
+
+REPLAY_APP=$(mktemp_d)
+export XCIND_GENERATED_DIR="$REPLAY_APP/.xcind/generated/test-sha"
+mkdir -p "$XCIND_GENERATED_DIR"
+_replay_saved_hooks=("${XCIND_HOOKS_GENERATE[@]}")
+XCIND_HOOKS_GENERATE=(replay-hook-a replay-hook-b)
+XCIND_DOCKER_COMPOSE_OPTS=("-f" "$REPLAY_APP/compose.yaml")
+
+# Incomplete generated dir (no .complete marker) must fail untouched.
+_replay_rc=0
+__xcind-replay-hook-outputs || _replay_rc=$?
+assert_eq "replay: fails without .complete marker" "1" "$_replay_rc"
+assert_eq "replay: opts untouched after marker failure" "2" \
+  "${#XCIND_DOCKER_COMPOSE_OPTS[@]}"
+
+touch "$REPLAY_APP/overlay-a.yaml" "$REPLAY_APP/overlay-b.yaml"
+printf -- '-f %s\n' "$REPLAY_APP/overlay-a.yaml" \
+  >"$XCIND_GENERATED_DIR/.hook-output-replay-hook-a"
+printf -- '-f %s\n' "$REPLAY_APP/overlay-b.yaml" \
+  >"$XCIND_GENERATED_DIR/.hook-output-replay-hook-b"
+printf '%s\n' "${XCIND_HOOKS_GENERATE[@]}" >"$XCIND_GENERATED_DIR/.complete"
+
+__xcind-replay-hook-outputs
+assert_eq "replay: appends both persisted overlays" "6" \
+  "${#XCIND_DOCKER_COMPOSE_OPTS[@]}"
+assert_contains "replay: overlay order preserved" \
+  "overlay-a.yaml -f $REPLAY_APP/overlay-b.yaml" \
+  "${XCIND_DOCKER_COMPOSE_OPTS[*]}"
+
+# A persisted output referencing a missing file must fail and restore opts.
+rm -f "$REPLAY_APP/overlay-b.yaml"
+XCIND_DOCKER_COMPOSE_OPTS=("-f" "$REPLAY_APP/compose.yaml")
+_replay_rc=0
+__xcind-replay-hook-outputs || _replay_rc=$?
+assert_eq "replay: fails when referenced overlay is missing" "1" "$_replay_rc"
+assert_eq "replay: opts restored after stale-output failure" "2" \
+  "${#XCIND_DOCKER_COMPOSE_OPTS[@]}"
+
+XCIND_HOOKS_GENERATE=("${_replay_saved_hooks[@]}")
+unset XCIND_GENERATED_DIR _replay_saved_hooks _replay_rc
+rm -rf "$REPLAY_APP"
 
 # ======================================================================
 echo ""
@@ -2968,7 +3027,13 @@ XCIND_HOOKS_GENERATE=("resolve_test_hook")
 XCIND_HOOKS_TTL=999
 XCIND_HOOKS_ALWAYS=()
 XCIND_HOOKS_EXECUTE=()
-resolve_test_hook() { return 0; }
+# Emits a generated overlay so the tests can verify that the cached
+# resolved artifacts reflect post-hook state: the docker stub reports the
+# project name "hooked-demo" whenever the overlay is on its command line.
+resolve_test_hook() {
+  printf 'services: {}\n' >"$XCIND_GENERATED_DIR/overlay.yaml"
+  printf -- '-f %s\n' "$XCIND_GENERATED_DIR/overlay.yaml"
+}
 EOF
 cat >"$RESOLVE_APP/compose.yaml" <<'EOF'
 services:
@@ -2983,12 +3048,18 @@ EOF
 cat >"$RESOLVE_BIN/docker" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$XCIND_TEST_DOCKER_CALLS"
+# The project name flips once the hook-generated overlay reaches the compose
+# command line, so tests can tell pre-hook output from post-hook output.
+name=demo
+case " $* " in
+*"overlay.yaml"*) name=hooked-demo ;;
+esac
 case " $* " in
 *" --format json "*)
-  printf '%s\n' '{"name":"demo","services":{"web":{"image":"nginx","labels":{"traefik.http.routers.web.rule":"Host(`demo`)","quoted\"key":"quote","slash\\key":"slash"}}},"volumes":{"data":{"name":"demo_data"},"uploads":{"name":"shared_uploads"},"legacy":{"name":"legacy","external":true}},"networks":{"default":{"name":"demo_default"}}}'
+  printf '%s\n' '{"name":"'"$name"'","services":{"web":{"image":"nginx","labels":{"traefik.http.routers.web.rule":"Host(`demo`)","quoted\"key":"quote","slash\\key":"slash"}}},"volumes":{"data":{"name":"demo_data"},"uploads":{"name":"shared_uploads"},"legacy":{"name":"legacy","external":true}},"networks":{"default":{"name":"demo_default"}}}'
   ;;
 *)
-  printf '%s\n' 'name: demo' 'services:' '  web:' '    image: nginx'
+  printf '%s\n' "name: $name" 'services:' '  web:' '    image: nginx'
   ;;
 esac
 EOF
@@ -3003,7 +3074,8 @@ resolve_false=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve .
 assert_eq "resolve: false scalar exits successfully and is raw" "false" "$resolve_false"
 
 resolve_project=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.project.name)
-assert_eq "resolve: curated Compose project name" "demo" "$resolve_project"
+assert_eq "resolve: curated Compose project name reflects post-hook state" \
+  "hooked-demo" "$resolve_project"
 
 resolve_volume=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.volumes.data.name)
 assert_eq "resolve: project-scoped Compose volume name" "demo_data" "$resolve_volume"
@@ -3094,15 +3166,32 @@ resolve_calls_after_fresh=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
 assert_eq "resolve: fresh stamp skips full refresh leg" \
   "$((resolve_calls_after_first + 1))" "$resolve_calls_after_fresh"
 
+# The TTL fast path must still serve post-hook content (from the cached
+# artifacts written after hooks ran on the full leg).
+resolve_ttl_project=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.project.name)
+assert_eq "resolve: fresh stamp serves post-hook project name" \
+  "hooked-demo" "$resolve_ttl_project"
+resolve_calls_after_fresh=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
+
 (cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --hooks-ttl=0 >/dev/null)
 resolve_calls_after_disabled=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
-assert_eq "resolve: TTL zero refreshes both Compose artifacts" \
-  "$((resolve_calls_after_fresh + 3))" "$resolve_calls_after_disabled"
+assert_eq "resolve: TTL zero runs pre-hook snapshot plus post-hook refresh" \
+  "$((resolve_calls_after_fresh + 4))" "$resolve_calls_after_disabled"
+
+# The final cached YAML must be the post-hook resolve, not the pre-hook
+# snapshot that hooks consume mid-pipeline.
+resolve_cached_yaml=$(find "$RESOLVE_APP/.xcind/cache" -name resolved-config.yaml -print -quit)
+assert_contains "resolve: cached resolved-config.yaml holds post-hook content" \
+  "hooked-demo" "$(cat "$resolve_cached_yaml")"
 
 (cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve metadata.app --cached >/dev/null)
 resolve_calls_after_cached=$(wc -l <"$RESOLVE_DOCKER_CALLS" | tr -d ' ')
 assert_eq "resolve: --cached does not run Docker" \
   "$resolve_calls_after_disabled" "$resolve_calls_after_cached"
+
+resolve_cached_project=$(cd "$RESOLVE_APP" && PATH="$resolve_path" xcind-config resolve compose.project.name --cached)
+assert_eq "resolve: --cached serves post-hook project name" \
+  "hooked-demo" "$resolve_cached_project"
 
 resolve_cache_dir=$(dirname "$(find "$RESOLVE_APP/.xcind/cache" -name resolved-config.json -print -quit)")
 rm -f "$resolve_cache_dir/resolved-config.json"
