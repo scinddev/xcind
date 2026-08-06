@@ -34,8 +34,10 @@ duplicate Scind's manifest. In fact the promote direction is *reversed*: Xcind
 question is escalated as **L-0035**. Verdict: **SURVIVES-AS-DIVERGENCE.**
 
 ## Revisit conditions
-Reopen with L-0035 (aggregated-manifest necessity) — that decides Scind's manifest,
-not adoption of Xcind's SHA JSON. Tied to divergence 0017 (stateless registry).
+The 2026-08 escalation decision resolved L-0035 by retaining Scind's aggregated
+manifest and deferred XA-0020's SHA-cache model. Reopen if the manifest's at-rest
+consumers disappear, or if Scind encounters correctness or performance failures
+that require content-addressed caching. Tied to divergences 0017 and 0018.
 
 ## Links
 - Origin finding: P4 XA-0032 (`--json` contract insight → L-0012 → P6; manifest

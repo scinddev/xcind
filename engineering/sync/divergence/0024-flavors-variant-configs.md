@@ -36,8 +36,10 @@ and the deeper question of whether flavors' state-coupling is heavier than neede
 explicit in Xcind ADR-0005.*
 
 ## Revisit conditions
-Reopen with the L-0039 flavors-review ESCALATE. If Xcind ever adds persisted state,
-flavors become buildable and this could resolve. Re-audit each round.
+The 2026-08 escalation decision resolved L-0039: Scind retains stateful flavors and
+does not add an env-var selection source now. Reopen if a real CI or scripting
+consumer cannot pass `--flavor`, or if Xcind adds persisted state and can implement
+flavors. Re-audit each round.
 
 ## Links
 - Origin finding: P5 SA-0008; the flavor mechanism review is ESCALATE L-0039 (→ P6);

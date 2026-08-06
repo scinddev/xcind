@@ -30,7 +30,7 @@ This ledger merges **every** P3/P4/P5 action item into one ordered record. The *
 | **DIVERGENCE** | 35 | P7 divergence registry |
 | **XCIND-BACKLOG** | 7 | Xcind issues/todos |
 | **PROCESS** | 8 | P6 procedure / Xcind doc maintenance |
-| **ESCALATE** | 20 | Human product call |
+| **ESCALATE** | 20 | Human calls resolved in `escalation-decision-brief.md` |
 | **ADR-POLICY** | 1 | Xcind ADR-0021 (this plan) |
 | **Total** | **115** | |
 
@@ -138,13 +138,13 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-077` | `SA-0023` | P5 | DIVERGENCE | P5 | DEFERRED-TO-P7 | engineering/sync/divergence/ (P7 registry) |
 | `RL-078` | `SA-0024` | P5 | DIVERGENCE | P5 | DEFERRED-TO-P7 | engineering/sync/divergence/ (P7 registry) |
 | `RL-079` | `SA-0025` | P5 | DIVERGENCE | P5 | DEFERRED-TO-P7 | engineering/sync/divergence/ (P7 registry) |
-| `RL-080` | `SA-0003` | P5 | XCIND-BACKLOG | P1 | XCIND-BACKLOG | xcind: test/ (behavioral completion tests) |
-| `RL-081` | `SA-0004` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: lib/xcind/ + bin/xcind-config |
-| `RL-082` | `SA-0012` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/xcind-proxy |
-| `RL-083` | `SA-0021` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/ context-detection error paths |
-| `RL-084` | `SA-0022` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/ arg parsers |
-| `RL-085` | `SA-0016` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: roadmap / future |
-| `RL-086` | `SA-0018` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: roadmap / future |
+| `RL-080` | `SA-0003` | P5 | XCIND-BACKLOG | P1 | XCIND-BACKLOG | xcind: test/ (behavioral completion tests) (Linear `BDS-112`) |
+| `RL-081` | `SA-0004` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: lib/xcind/ + bin/xcind-config (Linear `BDS-113`) |
+| `RL-082` | `SA-0012` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/xcind-proxy (Linear `BDS-114`) |
+| `RL-083` | `SA-0021` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/ context-detection error paths (Linear `BDS-115`) |
+| `RL-084` | `SA-0022` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/ arg parsers (Linear `BDS-116`) |
+| `RL-085` | `SA-0016` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: roadmap / future (Linear `BDS-117`) |
+| `RL-086` | `SA-0018` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: roadmap / future (Linear `BDS-118`) |
 | `RL-087` | `L-0029` | P3 | PROCESS | P3 | PROCESS | Scind build guidance (P6) — no canon change |
 | `RL-088` | `L-0030` | P3 | PROCESS | P3 | PROCESS | Scind CLI-ergonomics guideline (P6) — no canon change |
 | `RL-089` | `L-0031` | P3 | PROCESS | P3 | PROCESS | Scind documentation process (P6) — no canon change |
@@ -153,26 +153,26 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-092` | `PROC-0001` | P5 | PROCESS | P3 | PROCESS | xcind: engineering/decisions/0005-structure-vs-state-separation.md |
 | `RL-093` | `PROC-0002` | P5 | PROCESS | P3 | PROCESS | xcind: engineering/decisions/ (new ADR) |
 | `RL-094` | `PROC-0003` | P4 | PROCESS | P3 | PROCESS | xcind + scind: engineering/behaviors/ (both) |
-| `RL-095` | `L-0034` | P3 | ESCALATE | P2 | ESCALATED | human product call → P6 + P5 |
-| `RL-096` | `L-0035` | P3 | ESCALATE | P2 | ESCALATED | human product call → P6 |
-| `RL-097` | `L-0036` | P3 | ESCALATE | P2 | ESCALATED | human product call → P4 (forward-port) |
-| `RL-098` | `L-0037` | P3 | ESCALATE | P2 | ESCALATED | human product call → P6 |
-| `RL-099` | `L-0038` | P3 | ESCALATE | P2 | ESCALATED | human product call → P5 |
-| `RL-100` | `L-0039` | P3 | ESCALATE | P2 | ESCALATED | human product call → P6/P5 |
-| `RL-101` | `XA-0019` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-102` | `XA-0020` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-103` | `XA-0021` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-104` | `XA-0022` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-105` | `XA-0023` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-106` | `XA-0024` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-107` | `XA-0025` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-108` | `XA-0026` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-109` | `XA-0027` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-110` | `XA-0028` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-111` | `XA-0029` | P4 | ESCALATE | P2 | ESCALATED | human product call |
-| `RL-112` | `SA-0026` | P5 | ESCALATE | P2 | ESCALATED | human product call → P6/Scind design |
-| `RL-113` | `RG-0001` | P4 | ESCALATE | P3 | ESCALATED | human product call → P5/P3 |
-| `RL-114` | `RG-0002` | P4 | ESCALATE | P3 | ESCALATED | human product call → P5/P3 |
+| `RL-095` | `L-0034` | P3 | ESCALATE | P2 | RESOLVED | human product call → P6 + P5 |
+| `RL-096` | `L-0035` | P3 | ESCALATE | P2 | RESOLVED | human product call → P6 |
+| `RL-097` | `L-0036` | P3 | ESCALATE | P2 | RESOLVED | human product call → P4 (forward-port) |
+| `RL-098` | `L-0037` | P3 | ESCALATE | P2 | RESOLVED | human product call → P6 |
+| `RL-099` | `L-0038` | P3 | ESCALATE | P2 | RESOLVED | human product call → P5 |
+| `RL-100` | `L-0039` | P3 | ESCALATE | P2 | RESOLVED | human product call → P6/P5 |
+| `RL-101` | `XA-0019` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-102` | `XA-0020` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-103` | `XA-0021` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-104` | `XA-0022` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-105` | `XA-0023` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-106` | `XA-0024` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-107` | `XA-0025` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-108` | `XA-0026` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-109` | `XA-0027` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-110` | `XA-0028` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-111` | `XA-0029` | P4 | ESCALATE | P2 | RESOLVED | human product call |
+| `RL-112` | `SA-0026` | P5 | ESCALATE | P2 | RESOLVED | human product call → P6/Scind design |
+| `RL-113` | `RG-0001` | P4 | ESCALATE | P3 | RESOLVED | human product call → P5/P3 |
+| `RL-114` | `RG-0002` | P4 | ESCALATE | P3 | RESOLVED | human product call → P5/P3 |
 | `RL-115` | `RL-ADR-POLICY` | P6 | ADR-POLICY | P1 | APPLIED | xcind: engineering/decisions/0021-cross-repo-adr-cross-referencing.md (+ scind note) |
 
 ## 3. Scind canon changes — full specification (reviewable plan)
@@ -484,15 +484,15 @@ Referenced by origin ID only; **P7 owns** `engineering/sync/divergence/`, the ad
 
 ## 5. Xcind backlog
 
-| Ledger ID | Join key | Pri | Item | Target |
-|-----------|----------|-----|------|--------|
-| `RL-080` | `SA-0003` | P1 | Completion FUNCTION behavior untested (latent bug) | xcind: test/ (behavioral completion tests) |
-| `RL-081` | `SA-0004` | P3 | Fish shell support | xcind: lib/xcind/ + bin/xcind-config |
-| `RL-082` | `SA-0012` | P3 | port assign (manual host-port pin) | xcind: bin/xcind-proxy |
-| `RL-083` | `SA-0021` | P3 | Context-detection UX (feedback, exit code 5, hints) | xcind: bin/ context-detection error paths |
-| `RL-084` | `SA-0022` | P3 | Universal --yaml/--quiet/--verbose/--color flags | xcind: bin/ arg parsers |
-| `RL-085` | `SA-0016` | P3 | Application dependencies (depends_on) — shared future work | xcind: roadmap / future |
-| `RL-086` | `SA-0018` | P3 | Health checks — shared future work | xcind: roadmap / future |
+| Ledger ID | Join key | Pri | Item | Target | Linear |
+|-----------|----------|-----|------|--------|--------|
+| `RL-080` | `SA-0003` | P1 | Completion FUNCTION behavior untested (latent bug) | xcind: test/ (behavioral completion tests) | `BDS-112` |
+| `RL-081` | `SA-0004` | P3 | Fish shell support | xcind: lib/xcind/ + bin/xcind-config | `BDS-113` |
+| `RL-082` | `SA-0012` | P3 | port assign (manual host-port pin) | xcind: bin/xcind-proxy | `BDS-114` |
+| `RL-083` | `SA-0021` | P3 | Context-detection UX (feedback, exit code 5, hints) | xcind: bin/ context-detection error paths | `BDS-115` |
+| `RL-084` | `SA-0022` | P3 | Universal --yaml/--quiet/--verbose/--color flags | xcind: bin/ arg parsers | `BDS-116` |
+| `RL-085` | `SA-0016` | P3 | Application dependencies (depends_on) — shared future work | xcind: roadmap / future | `BDS-117` |
+| `RL-086` | `SA-0018` | P3 | Health checks — shared future work | xcind: roadmap / future | `BDS-118` |
 
 > `RL-080` (SA-0003, completion-function tests) is a **⚠️ latent-bug** item — highest-priority backlog work.
 
@@ -513,28 +513,28 @@ Referenced by origin ID only; **P7 owns** `engineering/sync/divergence/`, the ad
 
 Not filed as divergences (§2a: ambiguity routes up). Both readings are captured in the P3/P4/P5 artifacts.
 
-| Ledger ID | Join key | Plan | Open question | Route | Note |
-|-----------|----------|------|---------------|-------|------|
-| `RL-095` | `L-0034` | P3 | Per-export single tls key vs Scind protocol+visibility; visibility labels dropped | human product call → P6 + P5 | Visibility-label half = same as RG-0002; routes to P5 as Scind-ahead. tls-key half folds with L-0008. |
-| `RL-096` | `L-0035` | P3 | Workspace-wide generated-manifest: necessary orchestrator view or redundant with --json? | human product call → P6 |  |
-| `RL-097` | `L-0036` | P3 | Adopt Xcind's named extensible generation hook pipeline? | human product call → P4 (forward-port) | Related divergences XA-0031 (phase vocab), XA-0019 (extensibility ESCALATE). |
-| `RL-098` | `L-0037` | P3 | App-side self-declared workspace membership inverts workspace-owns-apps model | human product call → P6 |  |
-| `RL-099` | `L-0038` | P3 | Scind *_HOST_GATEWAY container env mandate UNMET in Xcind (extra_hosts only) | human product call → P5 | Same finding as SA-0002 / RG-0001 (host-gateway env). Human product-call: Scind keeps mandating; Xcind absence accepted → P7 (SA-0002). |
-| `RL-100` | `L-0039` | P3 | Flavors dropped by design — mechanism coupled to persistent state | human product call → P6/P5 |  |
-| `RL-101` | `XA-0019` | P4 | Extensible generation hook lifecycle (plugin/hook-dir contract) | human product call |  |
-| `RL-102` | `XA-0020` | P4 | Content-addressed (SHA-of-inputs) generation cache | human product call |  |
-| `RL-103` | `XA-0021` | P4 | Workspaceless standalone app mode | human product call |  |
-| `RL-104` | `XA-0022` | P4 | Late-bind workspace self-declaration (app names its workspace) | human product call | Depends on XA-0021. Related to ESCALATE L-0037 (app-side workspace membership). |
-| `RL-105` | `XA-0023` | P4 | XCIND_APP_ROOT env root-pin escape hatch | human product call | Likely already covered by Scind ADR-0011 targeting; low priority. |
-| `RL-106` | `XA-0024` | P4 | On-demand proxy auto-start on app up + opt-out | human product call |  |
-| `RL-107` | `XA-0025` | P4 | Apex reporting mechanics — HAND TO P3 | human product call | Folded into the apex cluster (L-0013/L-0018/L-0028) so apex is not decided twice. |
-| `RL-108` | `XA-0026` | P4 | proxy init accepts full config as flags (interface question) | human product call |  |
-| `RL-109` | `XA-0027` | P4 | config doctor generation/routing diagnostic | human product call |  |
-| `RL-110` | `XA-0028` | P4 | Zero-config default compose/env candidate resolution | human product call |  |
-| `RL-111` | `XA-0029` | P4 | XCIND_TOOLS declarative host→container tool shortcuts | human product call |  |
-| `RL-112` | `SA-0026` | P5 | scind-compose shell function + compose-prefix — does Scind still need it? | human product call → P6/Scind design | Human product-call. Related PROMOTE XA-0014 (wrapper generation). |
-| `RL-113` | `RG-0001` | P4 | *_HOST_GATEWAY env injection (Xcind behind Scind) | human product call → P5/P3 | Recorded for completeness; not a distinct action. |
-| `RL-114` | `RG-0002` | P4 | Per-export/port visibility labels (Xcind behind Scind) | human product call → P5/P3 | Recorded for completeness; not a distinct action. |
+| Ledger ID | Join key | Plan | Open question | Route | Status | Resolution note |
+|-----------|----------|------|---------------|-------|--------|-----------------|
+| `RL-095` | `L-0034` | P3 | Per-export single tls key vs Scind protocol+visibility; visibility labels dropped | human product call → P6 + P5 | RESOLVED | Resolved by the accepted escalation decision brief: retain divergence 0032, extend its label-schema scope, and route the Scind cleanup separately. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-096` | `L-0035` | P3 | Workspace-wide generated-manifest: necessary orchestrator view or redundant with --json? | human product call → P6 | RESOLVED | Resolved by the accepted escalation decision brief: retain the generated manifest as Scind's at-rest integration surface and update divergences 0017/0020/0023. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-097` | `L-0036` | P3 | Adopt Xcind's named extensible generation hook pipeline? | human product call → P4 (forward-port) | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER the extensible generation pipeline while preserving divergence 0019's contingency. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-098` | `L-0037` | P3 | App-side self-declared workspace membership inverts workspace-owns-apps model | human product call → P6 | RESOLVED | Resolved by the accepted escalation decision brief: allow external paths as a Scind canon change, but retain app-side self-declaration as divergence 0038. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-099` | `L-0038` | P3 | Scind *_HOST_GATEWAY container env mandate UNMET in Xcind (extra_hosts only) | human product call → P5 | RESOLVED | Resolved by the accepted escalation decision brief: confirm divergence 0022 and defer Xcind's optional host-gateway env injection. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-100` | `L-0039` | P3 | Flavors dropped by design — mechanism coupled to persistent state | human product call → P6/P5 | RESOLVED | Resolved by the accepted escalation decision brief: retain Scind flavors without an env-var alternative and update divergence 0024. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-101` | `XA-0019` | P4 | Extensible generation hook lifecycle (plugin/hook-dir contract) | human product call | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER the generation extensibility surface with the same decision as RL-097. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-102` | `XA-0020` | P4 | Content-addressed (SHA-of-inputs) generation cache | human product call | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER content-addressed caching and retain Scind's mtime-plus-revalidation model. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-103` | `XA-0021` | P4 | Workspaceless standalone app mode | human product call | RESOLVED | Resolved by the accepted escalation decision brief: keep Scind's workspace boundary and record Xcind's workspaceless mode as divergence 0037. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-104` | `XA-0022` | P4 | Late-bind workspace self-declaration (app names its workspace) | human product call | RESOLVED | Resolved by the accepted escalation decision brief: retain workspace-owned membership and record XA-0022/L-0037 self-declaration as divergence 0038. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-105` | `XA-0023` | P4 | XCIND_APP_ROOT env root-pin escape hatch | human product call | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER an app-root env pin because Scind ADR-0011 targeting covers the need. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-106` | `XA-0024` | P4 | On-demand proxy auto-start on app up + opt-out | human product call | RESOLVED | Resolved by the accepted escalation decision brief: forward-port export-conditional proxy start and an opt-out knob to Scind canon. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-107` | `XA-0025` | P4 | Apex reporting mechanics — HAND TO P3 | human product call | RESOLVED | Resolved by the accepted escalation decision brief: route the apex opt-out and stale-text cleanup as a Scind canon change. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-108` | `XA-0026` | P4 | proxy init accepts full config as flags (interface question) | human product call | RESOLVED | Resolved by the accepted escalation decision brief: retain minimal Scind proxy init and record Xcind's full-config flags as divergence 0036. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-109` | `XA-0027` | P4 | config doctor generation/routing diagnostic | human product call | RESOLVED | Resolved by the accepted escalation decision brief: forward-port a read-only per-app generation and routing diagnostic. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-110` | `XA-0028` | P4 | Zero-config default compose/env candidate resolution | human product call | RESOLVED | Resolved by the accepted escalation decision brief: forward-port zero-config Compose and env-file candidate resolution. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-111` | `XA-0029` | P4 | XCIND_TOOLS declarative host→container tool shortcuts | human product call | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER Xcind's tools metadata map pending a Scind consumer. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-112` | `SA-0026` | P5 | scind-compose shell function + compose-prefix — does Scind still need it? | human product call → P6/Scind design | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER the compose-wrapper design decision pending RL-080 completion tests. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-113` | `RG-0001` | P4 | *_HOST_GATEWAY env injection (Xcind behind Scind) | human product call → P5/P3 | RESOLVED | Resolved by the accepted escalation decision brief: duplicate of RL-099; confirm divergence 0022 and defer optional Xcind implementation. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-114` | `RG-0002` | P4 | Per-export/port visibility labels (Xcind behind Scind) | human product call → P5/P3 | RESOLVED | Resolved by the accepted escalation decision brief: duplicate of RL-095; retain and extend divergence 0032 for the label-schema deltas. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
 
 ## 8. ADR numbering & cross-referencing policy
 

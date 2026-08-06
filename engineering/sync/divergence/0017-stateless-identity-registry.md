@@ -37,9 +37,9 @@ is a **Scind-ahead gap** whose necessity is escalated as **L-0035**, not a diver
 Xcind proved. Verdict: **SURVIVES-AS-DIVERGENCE.**
 
 ## Revisit conditions
-Reopen if L-0035 (is the aggregated manifest necessary?) concludes Scind's manifest
-is redundant — that would trim *Scind's* state, not adopt Xcind's TSV. Re-audit each
-round.
+The 2026-08 escalation decision resolved L-0035: Scind retains the aggregated
+manifest as its at-rest integration surface. Reopen if its named consumers move to
+labels or on-demand JSON and leave the manifest unread. Re-audit each round.
 
 ## Links
 - Origin finding: P4 XA-0033; confirms CANON-CONFIRM L-0022; manifest question →

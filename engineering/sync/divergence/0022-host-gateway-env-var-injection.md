@@ -36,9 +36,10 @@ deliberate v1 scope-out, cleanly earned. Verdict: **DELIBERATELY-DEFERRED
 divergence.**
 
 ## Revisit conditions
-Xcind *may optionally* add `environment: - XCIND_HOST_GATEWAY=<value>` later (value
-already computed in-hook; unblocks Xdebug) — at which point this **resolves** (Xcind
-adopts canon). It is an *optional* Xcind backlog item, not a required gap.
+The 2026-08 escalation decision confirmed that Scind keeps the env-var mandate and
+Xcind may defer it. Reopen only for implementation: adding
+`environment: - XCIND_HOST_GATEWAY=<value>` (already computed in-hook; unblocks
+Xdebug) resolves this entry because Xcind then adopts canon.
 
 ## Links
 - Origin finding: P5 SA-0002 (human product-call); confirms correspondence-map §3

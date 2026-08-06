@@ -3,15 +3,15 @@
   "description": "Machine-readable roll-up of intentional Scind<->Xcind divergences. Mirrors each NNNN-{slug}.md frontmatter. P6's cross-project-sync procedure diffs observed deltas against this baseline; a delta matching an Active entry is expected, a delta with no entry is triaged.",
   "generated_for_plan": "P7",
   "counts": {
-    "total_entries": 35,
+    "total_entries": 38,
     "by_category": {
-      "Structural": 11,
+      "Structural": 12,
       "Process": 2,
-      "Design": 12,
+      "Design": 14,
       "Scope": 10
     },
     "seed": 2,
-    "populated": 33,
+    "populated": 36,
     "rejected": 6
   },
   "categories": {
@@ -107,10 +107,10 @@
       "status": "Active",
       "origin_finding": "L-0027",
       "source_plan": "P3",
-      "scind_canon": "distinct workspace.yaml registry + application.yaml",
+      "scind_canon": "distinct workspace.yaml roster + application.yaml; paths currently workspace-relative",
       "xcind_reality": "one .xcind.sh + XCIND_IS_WORKSPACE marker, dir-walk",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P3+P7). Inversion question = ESCALATE L-0037."
+      "notes": "Scind roster gives authoritative enumeration with workspace-relative paths; arbitrary external-path support is a separate accepted canon change. L-0037 resolved to retain workspace-owned membership; see 0038."
     },
     {
       "id": "0008",
@@ -240,7 +240,7 @@
       "scind_canon": "specs/state-management.md; generated-manifest.md (state.yaml+manifest.yaml)",
       "xcind_reality": "flat path+timestamp TSV; no state.yaml/manifest",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). CANON-CONFIRM L-0022; manifest question L-0035."
+      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: manifest retained as at-rest integration surface; reopen if consumers leave it unread."
     },
     {
       "id": "0018",
@@ -279,7 +279,7 @@
       "scind_canon": "specs/generated-manifest.md (aggregated manifest.yaml)",
       "xcind_reality": "per-app SHA-keyed config.json (cache dir)",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). --json contract = L-0012; manifest = L-0035."
+      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: aggregated manifest retained; XA-0020 SHA cache deferred. Reopen for manifest disuse or real mtime failures."
     },
     {
       "id": "0021",
@@ -305,7 +305,7 @@
       "scind_canon": "specs/host-gateway-resolution.md (mandate SCIND_HOST_GATEWAY in containers)",
       "xcind_reality": "extra_hosts only (xcind-host-gateway-lib.bash:200-224)",
       "adversarial_recheck": "human-product-call",
-      "notes": "Scind KEEPS mandating (NOT overreach). Optional Xcind backlog to add env var. RG-0001."
+      "notes": "Scind KEEPS mandating the env var; 2026-08 brief reconfirmed deferral. Resolves if Xcind injects XCIND_HOST_GATEWAY. RG-0001."
     },
     {
       "id": "0023",
@@ -318,7 +318,7 @@
       "scind_canon": "specs/generated-manifest.md (computed manifest.yaml)",
       "xcind_reality": "on-demand via xcind-application + --json; no manifest",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). At-rest readability legit. Soft P6 note: 3 surfaces / L-0035."
+      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: manifest retained for at-rest topology, not cache staleness. Reopen if named consumers leave it unread."
     },
     {
       "id": "0024",
@@ -331,7 +331,7 @@
       "scind_canon": "specs/configuration-schemas.md; reference/cli.md (flavors + default_flavor)",
       "xcind_reality": "flat XCIND_COMPOSE_FILES; ADR-0005 dropped flavors",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). = compose profiles. L-0039. Soft P6: note deferral in ADR-0005."
+      "notes": "Adversarial re-check performed (P7). L-0039 resolved 2026-08: Scind retains stateful flavors; no env-var source now. Reopen for a concrete CI consumer."
     },
     {
       "id": "0025",
@@ -427,15 +427,15 @@
     {
       "id": "0032",
       "file": "0032-visibility-access-control-labels.md",
-      "title": "Visibility (public/protected) labels",
+      "title": "Visibility labels and label-schema shape",
       "category": "Scope",
       "status": "Active",
       "origin_finding": "SA-0019",
       "source_plan": "P5",
       "scind_canon": "specs/port-types.md; docker-labels.md (visibility labels)",
-      "xcind_reality": "no visibility labels; test-enforced rejection (test-xcind-proxy.sh:721-723)",
+      "xcind_reality": "no visibility or assigned-port labels; dropped proxy. segment; visibility test-rejected",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). Named consumer (Servlo). Soft P6: 'access-control' is a misnomer. RG-0002/L-0034."
+      "notes": "Adversarial re-check performed (P7). Named consumer (Servlo). Covers omitted visibility and assigned-port labels plus Xcind's dropped proxy. segment. RG-0002/L-0034 resolved 2026-08."
     },
     {
       "id": "0033",
@@ -475,6 +475,45 @@
       "xcind_reality": "no eng appendices; folded inline + user docs/ (Diataxis)",
       "adversarial_recheck": "human-product-call",
       "notes": "Leave Scind appendices as-is. Ties to 0002. Error-catalog piece = SA-0021 backlog."
+    },
+    {
+      "id": "0036",
+      "file": "0036-proxy-init-full-config-flags.md",
+      "title": "Full proxy configuration through proxy init flags",
+      "category": "Structural",
+      "status": "Active",
+      "origin_finding": "XA-0026",
+      "source_plan": "P4",
+      "scind_canon": "reference/cli.md; specs/configuration-schemas.md (minimal init + typed config editor)",
+      "xcind_reality": "bin/xcind-proxy full-config init flags + idempotent merge",
+      "adversarial_recheck": "not-required",
+      "notes": "Forced by Xcind sourceable-shell config having no structured config editor; accepted in the 2026-08 escalation brief."
+    },
+    {
+      "id": "0037",
+      "file": "0037-workspaceless-standalone-mode.md",
+      "title": "Workspaceless standalone application mode",
+      "category": "Design",
+      "status": "Active",
+      "origin_finding": "XA-0021",
+      "source_plan": "P4",
+      "scind_canon": "specs/context-detection.md; specs/directory-structure.md (mandatory workspace boundary)",
+      "xcind_reality": "workspaceless mode defaults on across naming, networking, and discovery",
+      "adversarial_recheck": "SURVIVES",
+      "notes": "Adversarial re-check in 2026-08 escalation brief. Scind keeps one workspace-keyed model and scaffolds path: . for a single app."
+    },
+    {
+      "id": "0038",
+      "file": "0038-app-side-workspace-self-declaration.md",
+      "title": "Application-side workspace self-declaration",
+      "category": "Design",
+      "status": "Active",
+      "origin_finding": "XA-0022 / L-0037",
+      "source_plan": "P4/P3",
+      "scind_canon": "workspace.yaml owns and enumerates application membership",
+      "xcind_reality": "app .xcind.sh sets XCIND_WORKSPACE and late-binds without a parent roster",
+      "adversarial_recheck": "SURVIVES",
+      "notes": "Adversarial re-check in 2026-08 escalation brief. External paths flow to canon separately; ownership inversion stays Xcind-only."
     }
   ],
   "rejected": [

@@ -37,8 +37,10 @@ labels + on-demand JSON exist — Scind now carries three surfaces for one datas
 This is the manifest-necessity question also tracked as ESCALATE **L-0035**.
 
 ## Revisit conditions
-Reopen with the L-0035 manifest-necessity ESCALATE, or if Scind consolidates its
-three topology surfaces. Re-audit each round (Design entry).
+The 2026-08 escalation decision resolved L-0035: Scind retains the manifest as its
+at-rest integration surface, not as a cache-staleness input. Reopen if Servlo and
+DNS-updater consumers materialize and prefer labels or on-demand JSON, leaving the
+manifest unread. Re-audit each round (Design entry).
 
 ## Links
 - Origin finding: P5 SA-0007; manifest-necessity also ESCALATE L-0035 (→ P6).
