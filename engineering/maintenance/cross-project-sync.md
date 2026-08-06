@@ -11,6 +11,8 @@ artifacts). **This** document is the **standing process** distilled from that
 effort — run it when you need to sync the two projects again, without re-reading
 all the plans.
 
+**Path alias**: Scind `docs/` ≡ `engineering/` as of [scinddev/scind#5](https://github.com/scinddev/scind/pull/5) — read any `scind/docs/…` path in an older sync artifact as `scind/engineering/…`; do not mass-rewrite those artifacts (`RL-038`).
+
 ---
 
 ## 0. Directionality — read this first (global-context §2)

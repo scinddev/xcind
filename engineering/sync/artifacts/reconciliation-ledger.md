@@ -96,7 +96,7 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-035` | `XA-0016` | P4 | PROMOTE | P3 | APPLIED | scind: docs/reference/cli.md + docs/specs/state-management.md |
 | `RL-036` | `XA-0017` | P4 | PROMOTE | P2 | APPLIED | scind: docs/specs/environment-variables.md + new ADR (analogous to Scind ADR-0018) |
 | `RL-037` | `XA-0018` | P4 | PROMOTE | P2 | APPLIED | scind: docs/reference/configuration.md + docs/specs/configuration-schemas.md |
-| `RL-038` | `XA-0043` | P4 | PROMOTE | P2 | PLANNED | scind: rename docs/ → engineering/ (+ optional placeholder docs/README.md) |
+| `RL-038` | `XA-0043` | P4 | PROMOTE | P2 | APPLIED | scind: rename docs/ → engineering/ (+ optional placeholder docs/README.md) |
 | `RL-039` | `XA-0044` | P4 | PROMOTE | P2 | APPLIED | scind: docs/specs/environment-variables.md + docs/specs/state-management.md |
 | `RL-040` | `SA-0005` | P5 | CANON-OVERREACH | P1 | APPLIED | scind: docs/specs/state-management.md |
 | `RL-041` | `L-0019` | P3 | CANON-CONFIRM | P3 | APPLIED | scind: docs/specs/environment-variables.md |
@@ -395,10 +395,11 @@ Every `CANON-CHANGE` / `PROMOTE` / `CANON-OVERREACH` / `CANON-CONFIRM` row, with
 *Applied:* [scinddev/scind#3](https://github.com/scinddev/scind/pull/3)
 *Notes:* Same edit as CANON-CHANGE L-0014.
 
-**`RL-038` (XA-0043, P2, PLANNED)** — Two-track documentation (Diátaxis + LDS)
+**`RL-038` (XA-0043, P2, APPLIED)** — Two-track documentation (Diátaxis + LDS)
 *Target:* scind: rename docs/ → engineering/ (+ optional placeholder docs/README.md)
 *Edit:* Rename Scind's design-canon tree docs/ → engineering/ (matching Xcind's LDS track); optionally add a placeholder docs/README.md stating intent for a future user-facing Diátaxis track. No Diátaxis content exists yet in either project.
-*Notes:* HUMAN PRODUCT-CALL. Structural/repo-wide change — deferred in this PR (see notes); recommend a separate Scind PR to avoid churning every doc path mid-review. STATUS: still PLANNED — deferred to a separate Scind PR (repo-wide rename churns every doc path mid-review).
+*Applied:* [scinddev/scind#5](https://github.com/scinddev/scind/pull/5)
+*Notes:* HUMAN PRODUCT-CALL. Structural/repo-wide change — deferred from PR#3 to avoid churning every doc path mid-review. Decided GO in [`escalation-decision-brief.md`](./escalation-decision-brief.md#rl-038--rename-scind-docs--engineering-the-one-planned-row-gono-go) and executed after PR#4 merged, as its own rename PR: `git mv docs engineering`, repo-wide path-reference fixes, plus the placeholder `docs/README.md` reserving a future user-facing Diátaxis track. Sync artifacts keyed on `scind/docs/…` are **not** rewritten — the path-alias rule in [`cross-project-sync.md`](../../maintenance/cross-project-sync.md) covers them.
 
 **`RL-039` (XA-0044, P2, APPLIED)** — XDG Base Directory split (config vs state)
 *Target:* scind: docs/specs/environment-variables.md + docs/specs/state-management.md

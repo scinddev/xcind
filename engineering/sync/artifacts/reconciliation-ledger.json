@@ -662,9 +662,10 @@
       "target": "scind: rename docs/ \u2192 engineering/ (+ optional placeholder docs/README.md)",
       "edit_sketch": "Rename Scind's design-canon tree docs/ \u2192 engineering/ (matching Xcind's LDS track); optionally add a placeholder docs/README.md stating intent for a future user-facing Di\u00e1taxis track. No Di\u00e1taxis content exists yet in either project.",
       "priority": "P2",
-      "status": "PLANNED",
+      "status": "APPLIED",
       "merge_with": [],
-      "notes": "HUMAN PRODUCT-CALL. Structural/repo-wide change \u2014 deferred in this PR (see notes); recommend a separate Scind PR to avoid churning every doc path mid-review. STATUS: still PLANNED \u2014 deferred to a separate Scind PR (repo-wide rename churns every doc path mid-review)."
+      "notes": "HUMAN PRODUCT-CALL. Structural/repo-wide change \u2014 deferred from PR#3 to avoid churning every doc path mid-review. Decided GO in escalation-decision-brief.md and executed after PR#4 merged. Applied as its own rename PR: git mv docs \u2192 engineering, repo-wide path-reference fixes, plus the placeholder docs/README.md reserving a future user-facing Di\u00e1taxis track. Sync artifacts keyed on scind/docs/\u2026 are covered by the path-alias rule in engineering/maintenance/cross-project-sync.md, not rewritten.",
+      "scind_pr": "https://github.com/scinddev/scind/pull/5"
     },
     {
       "id": "RL-039",
