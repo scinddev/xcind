@@ -463,7 +463,7 @@ These are set automatically when workspace mode is active:
 | `XCIND_WORKSPACE_ROOT` | Absolute path to the workspace directory |
 | `XCIND_WORKSPACELESS` | `0` in workspace mode, `1` otherwise |
 
-An app can also self-declare workspace membership by setting `XCIND_WORKSPACE` directly in its `.xcind.sh`.
+An app can also self-declare workspace membership by setting `XCIND_WORKSPACE` directly in its `.xcind.sh`. The self-declaration takes effect only when the app is *not* already inside a workspace directory; otherwise the discovered name wins and xcind warns that the app value was ignored.
 
 ---
 

@@ -630,9 +630,18 @@ __xcind-prepare-app() {
     __xcind-source-additional-configs "$XCIND_WORKSPACE_ROOT"
   fi
 
+  # Capture the discovered workspace name so app-side configs cannot rename
+  # the workspace they live in. Captured after the workspace's own additional
+  # configs, which may legitimately set the name.
+  local _discovered_workspace=""
+  if [[ ${XCIND_WORKSPACELESS:-1} == "0" ]]; then
+    _discovered_workspace="${XCIND_WORKSPACE:-}"
+  fi
+
   # App config + additional configs + workspace self-declaration
   __xcind-load-config "$app_root" || return 1
   __xcind-source-additional-configs "$app_root"
+  __xcind-guard-discovered-workspace "$_discovered_workspace"
   __xcind-late-bind-workspace
 
   # Resolve names/URLs and build docker compose options
@@ -1193,6 +1202,28 @@ __xcind-discover-workspace() {
     XCIND_WORKSPACE_ROOT=""
     XCIND_WORKSPACE=""
   fi
+}
+
+# Restore the workspace name discovered from the directory tree when an
+# app-side config overwrote it.
+#
+# An app .xcind.sh may *self-declare* a workspace when none was discovered
+# (that is late-bind, below), but it may not rename the workspace it is
+# nested inside — see behaviors/workspace/self-declaration.feature. Without
+# this guard the app value silently wins, and every downstream name (compose
+# project, network, URLs) is built from a workspace that does not exist.
+#
+# Takes the discovered name captured before the app-side configs were
+# sourced; a caller that discovered no workspace passes the empty string,
+# which makes this a no-op.
+__xcind-guard-discovered-workspace() {
+  local discovered="$1"
+
+  [[ -n $discovered ]] || return 0
+  [[ ${XCIND_WORKSPACE:-} != "$discovered" ]] || return 0
+
+  echo "xcind: warning: app config set XCIND_WORKSPACE='${XCIND_WORKSPACE:-}', but this app is inside workspace '$discovered'; keeping the discovered name" >&2
+  XCIND_WORKSPACE="$discovered"
 }
 
 # Late-bind workspace self-declaration.

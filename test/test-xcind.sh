@@ -989,6 +989,71 @@ assert_eq "no late-bind when workspace empty" "1" "$XCIND_WORKSPACELESS"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-guard-discovered-workspace ==="
+
+# Test: an app value that differs from the discovered name is rejected
+XCIND_WORKSPACE="other"
+guard_err_file=$(mktemp)
+__xcind-guard-discovered-workspace "discovered" 2>"$guard_err_file"
+assert_eq "guard restores the discovered workspace name" "discovered" "$XCIND_WORKSPACE"
+assert_contains "guard warns about the rejected value" "keeping the discovered name" \
+  "$(cat "$guard_err_file")"
+
+# Test: matching value is silent
+XCIND_WORKSPACE="discovered"
+__xcind-guard-discovered-workspace "discovered" 2>"$guard_err_file"
+assert_eq "guard leaves a matching name alone" "discovered" "$XCIND_WORKSPACE"
+assert_eq "guard is silent when the name matches" "" "$(cat "$guard_err_file")"
+
+# Test: no discovered workspace — self-declaration must still be allowed
+XCIND_WORKSPACE="selfdeclared"
+__xcind-guard-discovered-workspace "" 2>"$guard_err_file"
+assert_eq "guard leaves a self-declared name alone" "selfdeclared" "$XCIND_WORKSPACE"
+assert_eq "guard is silent when nothing was discovered" "" "$(cat "$guard_err_file")"
+
+rm -f "$guard_err_file"
+unset guard_err_file
+
+# ======================================================================
+echo ""
+echo "=== Test: app .xcind.sh cannot rename the discovered workspace ==="
+
+# Exercises the discover → load-config → guard sequence from
+# __xcind-prepare-app, per behaviors/workspace/self-declaration.feature:17-22.
+GUARD_ROOT=$(mktemp_d)
+mkdir -p "$GUARD_ROOT/realws/myapp"
+echo 'XCIND_IS_WORKSPACE=1' >"$GUARD_ROOT/realws/.xcind.sh"
+cat >"$GUARD_ROOT/realws/myapp/.xcind.sh" <<'SCRIPT'
+XCIND_WORKSPACE="hijacked"
+SCRIPT
+
+unset XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS
+XCIND_NO_REGISTRY=1
+XCIND_APP_ROOT="$GUARD_ROOT/realws/myapp"
+__XCIND_SOURCED_CONFIG_FILES=()
+__xcind-discover-workspace "$XCIND_APP_ROOT"
+guard_discovered="$XCIND_WORKSPACE"
+guard_err_file=$(mktemp)
+__xcind-load-config "$XCIND_APP_ROOT"
+assert_eq "app config overwrites the discovered name before the guard" \
+  "hijacked" "$XCIND_WORKSPACE"
+__xcind-guard-discovered-workspace "$guard_discovered" 2>"$guard_err_file"
+assert_eq "guard keeps the discovered workspace" "realws" "$XCIND_WORKSPACE"
+assert_eq "guard keeps the discovered workspace root" "$GUARD_ROOT/realws" \
+  "$XCIND_WORKSPACE_ROOT"
+assert_contains "guard names the rejected value" "hijacked" "$(cat "$guard_err_file")"
+
+# Late-bind must not undo the guard
+__xcind-late-bind-workspace
+assert_eq "late-bind leaves the guarded name alone" "realws" "$XCIND_WORKSPACE"
+
+rm -f "$guard_err_file"
+rm -rf "$GUARD_ROOT"
+unset guard_err_file guard_discovered XCIND_NO_REGISTRY
+unset XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_APP_ROOT
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-resolve-app ==="
 
 unset XCIND_APP

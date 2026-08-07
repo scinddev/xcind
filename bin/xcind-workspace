@@ -440,6 +440,10 @@ __xcind-workspace-status() {
 
         if [[ $_app_ws != "$ws_name" ]]; then
           # Silently skip apps that aren't configured for this workspace.
+          # Defense-in-depth: an app nested in this workspace can no longer
+          # rename itself out of it (see __xcind-guard-discovered-workspace),
+          # so this filter only catches resolution paths that bypass
+          # directory-tree discovery.
           _i=$((_i + 1))
           continue
         fi

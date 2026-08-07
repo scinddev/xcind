@@ -142,6 +142,12 @@ its parent is not a workspace root. `__xcind-late-bind-workspace` flips
 the runtime to workspace mode so the app participates in that
 workspace's network and proxy routing.
 
+Self-declaration is a fallback, not an override. When the app *is* inside a
+workspace directory, `__xcind-guard-discovered-workspace` restores the
+discovered name after the app configs are sourced and warns that the app
+value was ignored — otherwise every derived name (compose project, network,
+URLs) would be built from a workspace that does not exist.
+
 ---
 
 ## Application Variables

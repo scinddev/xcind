@@ -12,6 +12,12 @@ each application. Xcind also lets a workspaceless application's committed
 `.xcind.sh` set `XCIND_WORKSPACE`; late binding then gives the application a
 workspace identity without a parent workspace registry.
 
+The inversion is bounded: self-declaration is a **fallback for applications with
+no discovered workspace**, not an override. An application nested inside a
+workspace directory cannot rename the workspace it belongs to —
+`__xcind-guard-discovered-workspace` restores the discovered name and warns
+(2026-08; the guard was missing until then, so the app value silently won).
+
 ## Why Xcind diverges
 Xcind is per-app, registry-light, and workspaceless by default. App-side declaration
 lets a standalone repository join a conceptual workspace network without adding a

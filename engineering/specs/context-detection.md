@@ -60,7 +60,7 @@ Exit code: 1
 ## Edge Cases
 
 - **Nested directories**: The upward walk stops at the first `.xcind.sh` found that does not set `XCIND_IS_WORKSPACE=1`. If you're in `frontend/src/components/`, it finds `frontend/.xcind.sh`.
-- **Workspace self-declaration**: An app can declare itself part of a workspace by setting `XCIND_WORKSPACE` in its own `.xcind.sh`, without needing a parent workspace directory.
+- **Workspace self-declaration**: An app can declare itself part of a workspace by setting `XCIND_WORKSPACE` in its own `.xcind.sh`, without needing a parent workspace directory. This applies only when no workspace was discovered: an app that already sits inside a workspace cannot rename it — the discovered name is restored and a warning is printed.
 - **Workspace-only directories**: A `.xcind.sh` that sets `XCIND_IS_WORKSPACE=1` is skipped by the upward walk — it is never treated as an app root on its own.
 
 ---

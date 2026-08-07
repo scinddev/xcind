@@ -2124,13 +2124,16 @@ rm -rf "$WS_COUNT_DIR"
 
 # ======================================================================
 echo ""
-echo "=== Test: xcind-workspace status workspace mismatch ==="
+echo "=== Test: xcind-workspace status ignores an app-declared workspace ==="
 
 WS_MISMATCH_DIR=$(mktemp_d)
 REAL_PATH_MISMATCH="$PATH"
 
-# Two app subdirs under myws/. One has a normal config; the other declares
-# itself as belonging to a different workspace via XCIND_WORKSPACE.
+# Two app subdirs under myws/. One has a normal config; the other tries to
+# declare itself as belonging to a different workspace via XCIND_WORKSPACE.
+# Self-declaration is a fallback for apps with no discovered workspace, so
+# the declaration is ignored here and both apps are listed. The status
+# mismatch filter below stays as defense-in-depth.
 mkdir -p "$WS_MISMATCH_DIR/myws/realapp" "$WS_MISMATCH_DIR/myws/strangerapp"
 echo 'XCIND_IS_WORKSPACE=1' >"$WS_MISMATCH_DIR/myws/.xcind.sh"
 : >"$WS_MISMATCH_DIR/myws/realapp/.xcind.sh"
@@ -2144,13 +2147,21 @@ MOCKEOF
 chmod +x "$WS_MISMATCH_DIR/bin/docker"
 export PATH="$WS_MISMATCH_DIR/bin:$REAL_PATH_MISMATCH"
 
-mismatch_status=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_MISMATCH_DIR/myws")
-assert_contains "ws status mismatch: shows real app" "realapp/" "$mismatch_status"
-assert_not_contains "ws status mismatch: skips stranger app" "strangerapp" "$mismatch_status"
+mismatch_status=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_MISMATCH_DIR/myws" 2>/dev/null)
+assert_contains "ws status declared: shows real app" "realapp/" "$mismatch_status"
+assert_contains "ws status declared: keeps the app that declared otherws" \
+  "strangerapp" "$mismatch_status"
 
-mismatch_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_MISMATCH_DIR/myws" --json)
+mismatch_json=$("$XCIND_ROOT/bin/xcind-workspace" status "$WS_MISMATCH_DIR/myws" --json 2>/dev/null)
 mismatch_count=$(echo "$mismatch_json" | jq '.apps | length')
-assert_eq "ws status mismatch: json apps count = 1" "1" "$mismatch_count"
+assert_eq "ws status declared: json apps count = 2" "2" "$mismatch_count"
+mismatch_ws=$(
+  unset XCIND_APP XCIND_WORKSPACE XCIND_WORKSPACE_ROOT XCIND_WORKSPACELESS XCIND_IS_WORKSPACE
+  XCIND_APP_ROOT="$WS_MISMATCH_DIR/myws/strangerapp" \
+    "$XCIND_ROOT/bin/xcind-config" --json 2>/dev/null | jq -r '.metadata.workspace'
+)
+assert_eq "ws status declared: stranger app resolves to the discovered workspace" \
+  "myws" "$mismatch_ws"
 
 export PATH="$REAL_PATH_MISMATCH"
 rm -rf "$WS_MISMATCH_DIR"
