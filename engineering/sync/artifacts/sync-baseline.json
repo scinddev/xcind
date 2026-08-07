@@ -111,16 +111,16 @@
       "scind": {
         "compared_against": "ca156eb",
         "compared_against_note": "Canon at round-1 close; confirmed unchanged (ca156eb..origin/main empty at round start).",
-        "canon_at_close": "ca156eb",
-        "canon_at_close_note": "PR #8 (branch sync/round-2-canon, commit b82b9b1) was OPEN at round close - the sandbox denied 'gh pr merge', so merging is a pending human action. Once merged, canon includes every round-2 edit; the next round should treat the merge commit as round-2 output, not drift.",
+        "canon_at_close": "c63cbc6",
+        "canon_at_close_note": "main after PR #8 squash-merged (2026-08-07, post-close with user approval). Round 3 diffs from here.",
         "prs": [
-          "https://github.com/scinddev/scind/pull/8  OPEN at close (round-2 batch: ADR-0017 external proxy mode, proxy destroy, app get, +16 more rows)"
+          "https://github.com/scinddev/scind/pull/8  merged 2026-08-07 as c63cbc6  (round-2 batch: ADR-0017 external proxy mode, proxy destroy, app get, +16 more rows)"
         ]
       },
       "next_round_diff": {
         "xcind": "git -C /home/dev/Code/xcind log --oneline ce0da4c..HEAD",
-        "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline ca156eb..origin/main",
-        "note": "Subtract the round-2 bookkeeping commit(s) from the xcind range. The scind range is expected to contain exactly PR #8's merge (round-2 output); anything beyond that is independent canon drift."
+        "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline c63cbc6..origin/main",
+        "note": "Subtract the round-2 bookkeeping commits from the xcind range. The scind range is expected to be empty until canon moves independently."
       }
     }
   ]

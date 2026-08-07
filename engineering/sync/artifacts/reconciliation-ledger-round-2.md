@@ -1,6 +1,6 @@
 # Round 2 — Reconciliation Ledger (post-9f975e4 feature wave)
 
-**Status**: **Closed** 2026-08-07 — all Scind-affecting rows APPLIED in [scinddev/scind#8](https://github.com/scinddev/scind/pull/8) (PR open at close; merge pending, see the round-2 `sync-baseline.json` entry).
+**Status**: **Closed** 2026-08-07 — all Scind-affecting rows APPLIED in [scinddev/scind#8](https://github.com/scinddev/scind/pull/8) (merged 2026-08-07 as `c63cbc6`).
 **Date**: 2026-08-07
 **Procedure**: [`engineering/maintenance/cross-project-sync.md`](../../maintenance/cross-project-sync.md) (Steps 3–5 output).
 **Scope**: Xcind PRs [#82](https://github.com/scinddev/xcind/pull/82) `07de51f`, [#83](https://github.com/scinddev/xcind/pull/83) `5b4b9f4`, [#85](https://github.com/scinddev/xcind/pull/85) `63223d3`, [#86](https://github.com/scinddev/xcind/pull/86) `d9d9a8f`, [#87](https://github.com/scinddev/xcind/pull/87) `a5f9494`, [#88](https://github.com/scinddev/xcind/pull/88) `92b0ea5` — round 1's `known_excluded` set — triaged against Scind canon at `ca156eb` (unchanged since round 1 closed).

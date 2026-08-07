@@ -43,9 +43,9 @@ resolve-help), one PROCESS row (this round's artifact refresh).
   orchestration) is increasingly likely to close soon — `workspace dispose`
   proves the per-app iteration pattern it needs.
 - **Scind PR(s)**: [scinddev/scind#8](https://github.com/scinddev/scind/pull/8)
-  (branch `sync/round-2-canon`, commit `b82b9b1`) — **open at round close**;
-  merge is pending a human action (the sandbox denied `gh pr merge`). All 19
-  Scind-affecting ledger rows are APPLIED in that PR.
+  (branch `sync/round-2-canon`, commit `b82b9b1`) — **merged 2026-08-07 as
+  `c63cbc6`** (post-close, with user approval). All 19 Scind-affecting ledger
+  rows are APPLIED in that PR.
 
 ## Highlights
 
