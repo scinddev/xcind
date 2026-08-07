@@ -1,8 +1,12 @@
 # Divergence 0022: `*_HOST_GATEWAY` env-var injection into containers
 
-**Status**: Active
+**Status**: Resolved (Xcind adopted canon, 2026-08)
 **Scind canon**: `docs/specs/host-gateway-resolution.md` (mandates exposing the resolved host as a `SCIND_HOST_GATEWAY` env var *inside containers* — Xdebug `client_host` use case)
-**Xcind reality**: writes only `services.<name>.extra_hosts: host.docker.internal:<value>`; no `environment:` block, no named gateway variable reaches any container; `lib/xcind/xcind-host-gateway-lib.bash:200-224`
+**Xcind reality**: `xcind-host-gateway-hook` now writes both halves — `services.<name>.extra_hosts: host.docker.internal:<value>` and `services.<name>.environment: XCIND_HOST_GATEWAY: <value>`; `lib/xcind/xcind-host-gateway-lib.bash`
+
+> **Resolved.** Read the sections below as the historical record of the
+> divergence. The revisit condition named in this entry was executed: see
+> [Resolution](#resolution) at the end.
 **Category**: Scope
 **Origin**: P5 SA-0002 *(source: human product-call)*
 
@@ -40,6 +44,23 @@ The 2026-08 escalation decision confirmed that Scind keeps the env-var mandate a
 Xcind may defer it. Reopen only for implementation: adding
 `environment: - XCIND_HOST_GATEWAY=<value>` (already computed in-hook; unblocks
 Xdebug) resolves this entry because Xcind then adopts canon.
+
+## Resolution
+**2026-08-07 — Xcind adopted canon** (escalation follow-up Step 6, item 1).
+`xcind-host-gateway-hook` now emits `environment: XCIND_HOST_GATEWAY: <value>`
+next to the `extra_hosts` mapping, using the value it already computed. The two
+halves are independent per service: a service that already has the
+`host.docker.internal` mapping still receives the variable, and a service that
+already sets `XCIND_HOST_GATEWAY` itself keeps its own value. The overlay is
+skipped for a service only when it has both.
+
+**One residual gap, deliberately not closed here.** On Docker Desktop
+`__xcind-detect-host-gateway` returns nothing — `host.docker.internal` resolves
+via DNS there — so the hook returns before generating any file, and no variable
+reaches the containers on that platform. Closing it means generating an
+env-only overlay carrying the literal `host.docker.internal`, which changes the
+compose invocation on every Docker Desktop host. That is a separate decision,
+not part of this entry.
 
 ## Links
 - Origin finding: P5 SA-0002 (human product-call); confirms correspondence-map §3

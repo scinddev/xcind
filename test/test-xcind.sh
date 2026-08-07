@@ -4084,6 +4084,10 @@ assert_contains "generated YAML has web service" "web:" "$generated"
 assert_contains "generated YAML has worker service" "worker:" "$generated"
 assert_contains "generated YAML has host.docker.internal mapping" \
   "host.docker.internal:host-gateway" "$generated"
+assert_eq "generated YAML exposes XCIND_HOST_GATEWAY to web" "host-gateway" \
+  "$(yq -r '.services.web.environment.XCIND_HOST_GATEWAY' "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
+assert_eq "generated YAML exposes XCIND_HOST_GATEWAY to worker" "host-gateway" \
+  "$(yq -r '.services.worker.environment.XCIND_HOST_GATEWAY' "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
 
 unset XCIND_HOST_GATEWAY
 rm -rf "$HGW_ALL"
@@ -4115,16 +4119,20 @@ hook_output=$(xcind-host-gateway-hook "$HGW_SKIP")
 assert_contains "host-gateway hook returns -f flag (partial)" \
   "-f $XCIND_GENERATED_DIR/compose.host-gateway.yaml" "$hook_output"
 
-generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
-assert_not_contains "generated YAML does not have web service (already mapped)" "web:" "$generated"
-assert_contains "generated YAML has worker service" "worker:" "$generated"
+generated="$XCIND_GENERATED_DIR/compose.host-gateway.yaml"
+assert_eq "generated YAML omits extra_hosts for web (already mapped)" "null" \
+  "$(yq -r '.services.web.extra_hosts // "null"' "$generated")"
+assert_eq "generated YAML still exposes XCIND_HOST_GATEWAY to web" "host-gateway" \
+  "$(yq -r '.services.web.environment.XCIND_HOST_GATEWAY' "$generated")"
+assert_eq "generated YAML maps worker" "host.docker.internal:host-gateway" \
+  "$(yq -r '.services.worker.extra_hosts[0]' "$generated")"
 
 unset XCIND_HOST_GATEWAY
 rm -rf "$HGW_SKIP"
 
 # ======================================================================
 echo ""
-echo "=== Test: xcind-host-gateway-hook skips all when all have mapping ==="
+echo "=== Test: xcind-host-gateway-hook emits env-only overlay when all mapped ==="
 
 HGW_ALLSKIP=$(mktemp_d)
 export XCIND_SHA="hgwallskip"
@@ -4147,12 +4155,59 @@ YAML
 # shellcheck disable=SC2034  # read by xcind-host-gateway-hook
 XCIND_HOST_GATEWAY="host-gateway"
 hook_output=$(xcind-host-gateway-hook "$HGW_ALLSKIP")
-assert_eq "host-gateway hook no-op when all mapped: no output" "" "$hook_output"
-assert_eq "host-gateway hook no-op when all mapped: no file" "false" \
-  "$([ -f "$XCIND_GENERATED_DIR/compose.host-gateway.yaml" ] && echo true || echo false)"
+assert_contains "host-gateway hook returns -f flag (env only)" \
+  "-f $XCIND_GENERATED_DIR/compose.host-gateway.yaml" "$hook_output"
+
+generated="$XCIND_GENERATED_DIR/compose.host-gateway.yaml"
+assert_eq "env-only overlay adds no extra_hosts to web" "null" \
+  "$(yq -r '.services.web.extra_hosts // "null"' "$generated")"
+assert_eq "env-only overlay adds no extra_hosts to worker" "null" \
+  "$(yq -r '.services.worker.extra_hosts // "null"' "$generated")"
+assert_eq "env-only overlay exposes XCIND_HOST_GATEWAY to web" "host-gateway" \
+  "$(yq -r '.services.web.environment.XCIND_HOST_GATEWAY' "$generated")"
+assert_eq "env-only overlay exposes XCIND_HOST_GATEWAY to worker" "host-gateway" \
+  "$(yq -r '.services.worker.environment.XCIND_HOST_GATEWAY' "$generated")"
 
 unset XCIND_HOST_GATEWAY
 rm -rf "$HGW_ALLSKIP"
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-host-gateway-hook no-op when mapping and env both present ==="
+
+HGW_BOTH=$(mktemp_d)
+export XCIND_SHA="hgwboth"
+export XCIND_CACHE_DIR="$HGW_BOTH/.xcind/cache/$XCIND_SHA"
+export XCIND_GENERATED_DIR="$HGW_BOTH/.xcind/generated/$XCIND_SHA"
+mkdir -p "$XCIND_CACHE_DIR" "$XCIND_GENERATED_DIR"
+
+# web declares both halves as a map; worker declares both, using the
+# "NAME=value" list form for environment.
+cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'
+services:
+  web:
+    image: nginx
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      XCIND_HOST_GATEWAY: "10.0.0.9"
+  worker:
+    image: alpine
+    extra_hosts:
+      - "host.docker.internal=192.168.1.1"
+    environment:
+      - "XCIND_HOST_GATEWAY=10.0.0.9"
+YAML
+
+# shellcheck disable=SC2034  # read by xcind-host-gateway-hook
+XCIND_HOST_GATEWAY="host-gateway"
+hook_output=$(xcind-host-gateway-hook "$HGW_BOTH")
+assert_eq "host-gateway hook no-op when both present: no output" "" "$hook_output"
+assert_eq "host-gateway hook no-op when both present: no file" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.host-gateway.yaml" ] && echo true || echo false)"
+
+unset XCIND_HOST_GATEWAY
+rm -rf "$HGW_BOTH"
 
 # ======================================================================
 echo ""
@@ -4291,9 +4346,11 @@ YAML
 XCIND_HOST_GATEWAY="host-gateway"
 hook_output=$(xcind-host-gateway-hook "$HGW_EQ")
 
-generated="$(cat "$XCIND_GENERATED_DIR/compose.host-gateway.yaml")"
-assert_not_contains "equals separator: web skipped (already mapped)" "web:" "$generated"
-assert_contains "equals separator: worker gets mapping" "worker:" "$generated"
+generated="$XCIND_GENERATED_DIR/compose.host-gateway.yaml"
+assert_eq "equals separator: web extra_hosts skipped (already mapped)" "null" \
+  "$(yq -r '.services.web.extra_hosts // "null"' "$generated")"
+assert_eq "equals separator: worker gets mapping" "host.docker.internal:host-gateway" \
+  "$(yq -r '.services.worker.extra_hosts[0]' "$generated")"
 
 unset XCIND_HOST_GATEWAY
 rm -rf "$HGW_EQ"

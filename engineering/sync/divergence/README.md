@@ -133,7 +133,7 @@ before P3–P5 finished; the rest are **populated** from P3/P4/P5 findings.
 | [0019](./0019-hook-phase-vocabulary.md) | Internal 4-phase hook vocabulary | Design | Active | XA-0031 |
 | [0020](./0020-per-app-sha-config-json.md) | Per-app SHA-keyed `config.json` | Design | Active | XA-0032 |
 | [0021](./0021-options-based-targeting-by-name.md) | Options-based targeting by name | Scope | Active | SA-0001 |
-| [0022](./0022-host-gateway-env-var-injection.md) | `*_HOST_GATEWAY` env-var injection | Scope | Active | SA-0002 |
+| [0022](./0022-host-gateway-env-var-injection.md) | `*_HOST_GATEWAY` env-var injection | Scope | Resolved | SA-0002 |
 | [0023](./0023-generated-manifest.md) | Computed generated manifest | Design | Active | SA-0007 |
 | [0024](./0024-flavors-variant-configs.md) | Flavors (variant configs) | Scope | Active | SA-0008 |
 | [0025](./0025-port-inventory-status-model.md) | `port_inventory` status model | Design | Active | SA-0009 |

@@ -117,7 +117,7 @@ Hooks run after file resolution as the final step before executing `docker compo
 | `xcind-naming-hook` | `xcind-naming-lib.bash` | Sets Docker Compose project `name:` |
 | `xcind-app-hook` | `xcind-app-lib.bash` | App identity labels on all services |
 | `xcind-app-env-hook` | `xcind-app-env-lib.bash` | Injects `XCIND_APP_ENV_FILES` |
-| `xcind-host-gateway-hook` | `xcind-host-gateway-lib.bash` | Maps `host.docker.internal` via `extra_hosts` |
+| `xcind-host-gateway-hook` | `xcind-host-gateway-lib.bash` | Maps `host.docker.internal` via `extra_hosts`; exposes `XCIND_HOST_GATEWAY` via `environment` |
 | `xcind-proxy-hook` | `xcind-proxy-lib.bash` | Generates Traefik labels and proxy network |
 | `xcind-assigned-hook` | `xcind-assigned-lib.bash` | Stable host port bindings |
 | `xcind-workspace-hook` | `xcind-workspace-lib.bash` | Generates workspace network aliases |

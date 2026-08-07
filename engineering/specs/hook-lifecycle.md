@@ -138,7 +138,7 @@ xcind-compose pipeline
 | `xcind-naming-hook` | `compose.naming.yaml` | Docker Compose project `name:` | n/a (no `yq` dependency) |
 | `xcind-app-hook` | `compose.app.yaml` | App context labels for all services | Soft-skip |
 | `xcind-app-env-hook` | `compose.app-env.yaml` | Injects `XCIND_APP_ENV_FILES` via `env_file:` | Hard-fail |
-| `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Maps `host.docker.internal` via `extra_hosts` | Soft-skip |
+| `xcind-host-gateway-hook` | `compose.host-gateway.yaml` | Maps `host.docker.internal` via `extra_hosts`; exposes `XCIND_HOST_GATEWAY` via `environment` | Soft-skip |
 | `xcind-proxy-hook` | `compose.proxy.yaml` | Traefik labels, proxy network attachment, export labels | Hard-fail |
 | `xcind-assigned-hook` | `compose.assigned.yaml` | Stable host port bindings with flock-serialized state | Hard-fail |
 | `xcind-workspace-hook` | `compose.workspace.yaml` | Workspace network aliases and context labels | Soft-skip |

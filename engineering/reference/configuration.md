@@ -205,6 +205,20 @@ Override the auto-detected host gateway value. When set, this value is used dire
 XCIND_HOST_GATEWAY="192.168.1.100"
 ```
 
+The hook also exposes the resolved value **inside containers** under the same
+name, so tools that read a host address from the environment (Xdebug
+`client_host`, for example) can use it directly:
+
+```yaml
+services:
+  web:
+    environment:
+      XCIND_HOST_GATEWAY: "192.168.1.100"
+```
+
+A service that sets `XCIND_HOST_GATEWAY` in its own compose file keeps that
+value; the overlay only fills the variable in where it is absent.
+
 > The host-gateway hook requires `yq`. If `yq` is not installed, the hook is
 > skipped with a warning. The hook's generated output is cached by SHA; changes
 > to `XCIND_HOST_GATEWAY` or `XCIND_HOST_GATEWAY_ENABLED` automatically

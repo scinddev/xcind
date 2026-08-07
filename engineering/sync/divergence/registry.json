@@ -299,13 +299,13 @@
       "file": "0022-host-gateway-env-var-injection.md",
       "title": "*_HOST_GATEWAY env-var injection",
       "category": "Scope",
-      "status": "Active",
+      "status": "Resolved",
       "origin_finding": "SA-0002",
       "source_plan": "P5",
       "scind_canon": "specs/host-gateway-resolution.md (mandate SCIND_HOST_GATEWAY in containers)",
-      "xcind_reality": "extra_hosts only (xcind-host-gateway-lib.bash:200-224)",
+      "xcind_reality": "extra_hosts AND environment: XCIND_HOST_GATEWAY (xcind-host-gateway-lib.bash)",
       "adversarial_recheck": "human-product-call",
-      "notes": "Scind KEEPS mandating the env var; 2026-08 brief reconfirmed deferral. Resolves if Xcind injects XCIND_HOST_GATEWAY. RG-0001."
+      "notes": "Scind KEEPS mandating the env var; Xcind adopted canon 2026-08 (escalation follow-up Step 6.1) by injecting XCIND_HOST_GATEWAY into environment: alongside extra_hosts. Residual: on Docker Desktop the hook emits nothing at all, so neither half is present there. RG-0001."
     },
     {
       "id": "0023",
