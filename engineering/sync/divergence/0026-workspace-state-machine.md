@@ -31,15 +31,20 @@ the environment at runtime"* — Scind and Xcind **agree**, so there is no contr
 to exploit. The machine is a descriptive model, not stored state. Verdict:
 **SURVIVES-AS-DIVERGENCE** (the difference is only that Scind *documents* the observed
 states as a machine; Xcind does not persist one — a doc/mechanism divergence). Its
-CLI facets are divergences 0033 (generate) and 0034 (destroy).
+CLI facets are divergences 0033 (generate, still Active) and 0034 (destroy —
+**Resolved by convergence** in round 2: Xcind PR #86 shipped `xcind-workspace
+dispose`, the same teardown cascade canon's destroy transition describes). The
+destroy facet's resolution does not touch this entry's core claim — both projects
+still infer state; Xcind gaining an explicit destroy *transition* validates canon's
+transition vocabulary without persisting any state machine.
 
 ## Revisit conditions
 None substantive — both infer state. Would only reopen if Scind moved to *persisted*
 state (it explicitly does not). Re-audit each round.
 
 ## Links
-- Origin finding: P5 SA-0010; CLI facets SA-0023 (divergence 0033), SA-0024
-  (divergence 0034). Tied to divergence 0017.
+- Origin finding: P5 SA-0010; CLI facets SA-0023 (divergence 0033, Active), SA-0024
+  (divergence 0034, Resolved 2026-08-07 round 2). Tied to divergence 0017.
 - Related ADR(s): Xcind ADR-0005 (structure-vs-state); Scind `workspace-lifecycle.md`
 - Correspondence-map row(s): `specs/workspace-lifecycle.md` (PARTIAL),
   `specs/application-lifecycle.md` (XCIND-ONLY)

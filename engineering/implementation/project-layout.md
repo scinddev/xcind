@@ -32,6 +32,7 @@ Directory structure and file responsibilities for Xcind.
 | `lib/xcind/xcind-app-lib.bash` | `xcind-app-hook` (GENERATE) — adds app identity labels so xcind-managed containers remain discoverable. |
 | `lib/xcind/xcind-app-env-lib.bash` | `xcind-app-env-hook` (GENERATE) — injects app-level env files (`XCIND_APP_ENV_FILES`) into Compose services. |
 | `lib/xcind/xcind-assigned-lib.bash` | `xcind-assigned-hook` (GENERATE + `XCIND_HOOKS_ALWAYS`) and helpers for stable assigned host ports, `compose.assigned.yaml`, and the `proxy/assigned-ports.tsv` registry under `${XDG_STATE_HOME:-$HOME/.local/state}/xcind/`. Re-runs on every cache hit to keep allocations consistent with live state. |
+| `lib/xcind/xcind-discovery-lib.bash` | `xcind-discovery-hook` (GENERATE + `XCIND_HOOKS_ALWAYS`) — injects own-app service-discovery env vars (`XCIND_{APP}_{EXPORT}_{HOST,PORT,SCHEME,URL,HOST_PORT}` plus apex and `XCIND_WORKSPACE_NAME`) into every service. Registered last, after `xcind-assigned-hook`, and re-run on cache hits because `_HOST_PORT` embeds live assigned-port state outside the cache SHA. |
 | `lib/xcind/xcind-host-gateway-lib.bash` | `xcind-host-gateway-hook` (GENERATE) — normalizes `host.docker.internal` access across Docker Desktop, Linux, and WSL modes; the runtime-detected gateway value is also folded into the cache SHA when host-gateway support is enabled. |
 | `lib/xcind/xcind-hostenv-lib.bash` | `__xcind-hostenv-execute-hook` (EXECUTE) — writes the opt-in host-view env file (`XCIND_HOST_ENV_FILE`) with discovery variables resolved for host-run processes. |
 | `lib/xcind/xcind-naming-lib.bash` | `xcind-naming-hook` (GENERATE) — sets the Docker Compose project name and handles workspace/workspaceless collision avoidance. |
@@ -77,6 +78,7 @@ Built-in hooks:
 - `xcind-proxy-hook` (GENERATE, from `xcind-proxy-lib.bash`) --- generates Traefik routing labels
 - `xcind-assigned-hook` (GENERATE, from `xcind-assigned-lib.bash`) --- reserves and emits assigned host ports
 - `xcind-workspace-hook` (GENERATE, from `xcind-workspace-lib.bash`) --- generates network aliases
+- `xcind-discovery-hook` (GENERATE + ALWAYS, from `xcind-discovery-lib.bash`) --- injects own-app service-discovery env vars; runs last so assigned ports exist
 - `__xcind-proxy-execute-hook` (EXECUTE, from `xcind-proxy-lib.bash`) --- ensures proxy is running
 - `__xcind-workspace-execute-hook` (EXECUTE, from `xcind-workspace-lib.bash`) --- ensures workspace network exists
 - `__xcind-hostenv-execute-hook` (EXECUTE, from `xcind-hostenv-lib.bash`) --- writes the opt-in host-view env file

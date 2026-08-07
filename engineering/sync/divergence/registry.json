@@ -369,8 +369,8 @@
       "scind_canon": "specs/workspace-lifecycle.md (explicit state machine)",
       "xcind_reality": "status inferred from Docker live",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Scind spec also says state inferred; descriptive model. Facets 0033/0034.",
-      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
+      "notes": "Adversarial re-check performed (P7). Scind spec also says state inferred; descriptive model. Facets 0033 (Active) / 0034 (Resolved round 2); destroy-facet wording refreshed round 3.",
+      "reaudited": "2026-08-07 round-3: STILL-JUSTIFIED (destroy-facet wording refreshed; core both-infer-state claim untouched by 0034's resolution)"
     },
     {
       "id": "0027",
@@ -395,10 +395,10 @@
       "origin_finding": "SA-0013",
       "source_plan": "P5",
       "scind_canon": "reference/cli.md; specs/workspace-lifecycle.md (one-command orchestration)",
-      "xcind_reality": "per-app-dir only (bin/xcind-workspace:936-966)",
+      "xcind_reality": "per-app-dir only; surface init/dispose/status/list/register/forget (bin/xcind-workspace:1083-1092)",
       "adversarial_recheck": "SURVIVES-STRONG",
-      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Highest-value reconsider; likely resolves.",
-      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
+      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Highest-value reconsider; likely resolves. Round-3 re-test: still no up/down/restart; dispose (PR #86) proves the exact enumerate/invoke/collect-failures loop it needs (bin/xcind-workspace:1033-1053).",
+      "reaudited": "2026-08-07 round-3: STILL-JUSTIFIED (re-tested against as-built; one proven loop from closing)"
     },
     {
       "id": "0029",

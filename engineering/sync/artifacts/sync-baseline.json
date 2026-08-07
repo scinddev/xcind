@@ -122,6 +122,47 @@
         "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline c63cbc6..origin/main",
         "note": "Subtract the round-2 bookkeeping commits from the xcind range. The scind range is expected to be empty until canon moves independently."
       }
+    },
+    {
+      "round": 3,
+      "name": "Quiet round: carried follow-ups (divergences 0026, 0028) + high-drift spot-check",
+      "opened": "2026-08-07",
+      "completed": "2026-08-07",
+      "artifacts": [
+        "engineering/sync/artifacts/reconciliation-ledger-round-3.{md,json}",
+        "engineering/sync/divergence/ (0026 + 0028 wording refreshed, round-3 stamps)",
+        "engineering/implementation/project-layout.md (RL-145 self-drift fix)",
+        "engineering/archive/sync-audit-2026-08-07-cross-project-round-3.md"
+      ],
+      "ledger": {
+        "file": "engineering/sync/artifacts/reconciliation-ledger-round-3.md",
+        "status": "CLOSED",
+        "rl_id_range": "RL-143..RL-146",
+        "next_rl_id": "RL-147"
+      },
+      "xcind": {
+        "reviewed_through": "14f0ab7",
+        "reviewed_through_subject": "docs(sync): round-2 close-out — scinddev/scind#8 merged as c63cbc6",
+        "head_at_close": "14f0ab7",
+        "head_at_close_note": "Plus this round's own docs(sync) bookkeeping commit, which lands immediately after this entry is written; it is a round output. The two commits in ce0da4c..14f0ab7 are round-2 outputs, already accounted.",
+        "round_outputs": [
+          "docs(sync) round-3 bookkeeping commit (ledger round-3, 0026/0028 refreshes + stamps, project-layout.md fix, report, this baseline entry)"
+        ],
+        "known_excluded": [],
+        "known_excluded_reason": "Nothing: the range was empty after subtracting round-2 bookkeeping. The round's substantive input was the carried follow-ups and the spot-check, not commits."
+      },
+      "scind": {
+        "compared_against": "c63cbc6",
+        "compared_against_note": "Canon at round-2 close; confirmed unchanged (c63cbc6..origin/main empty at round start, verified by fetch).",
+        "canon_at_close": "c63cbc6",
+        "canon_at_close_note": "Unchanged — the round produced zero canon-affecting rows and no Scind PR. Round 4 diffs from here.",
+        "prs": []
+      },
+      "next_round_diff": {
+        "xcind": "git -C /home/dev/Code/xcind log --oneline 14f0ab7..HEAD",
+        "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline c63cbc6..origin/main",
+        "note": "Subtract the round-3 bookkeeping commit from the xcind range. The scind range is expected to be empty until canon moves independently. Standing watch item: divergence 0028 should resolve when Xcind ships a workspace up/down loop (dispose already proves the pattern)."
+      }
     }
   ]
 }

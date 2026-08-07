@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "plan": "R3",
+    "title": "Reconciliation Ledger — Round 3 (quiet round: carried follow-ups + drift spot-check)",
+    "date": "2026-08-07",
+    "description": "Round-3 ledger of the standing cross-project-sync procedure (engineering/maintenance/cross-project-sync.md). Scope: empty commit ranges on both sides (ce0da4c..HEAD is only round-2 bookkeeping afec2a5/14f0ab7; scind c63cbc6..origin/main empty). Work: the two follow-ups round 2 carried (divergences 0026, 0028) plus a defensive spot-check of the five recurring high-drift areas. RL- IDs continue the global sequence (round 2 ended at RL-142). Same field names and status vocabulary as the P6 ledger.",
+    "inputs": [
+      "engineering/sync/artifacts/sync-baseline.json (round-2 entry: next_round_diff)",
+      "Round-2 carried follow-ups: divergence 0026 destroy-facet wording; divergence 0028 re-test (watch item)",
+      "Step-1 gate: no content commits since the green round-2 close; make check re-run green (137/137)",
+      "High-drift spot-check (subagent) over the five P3 L-0033 areas: 4 CLEAN, 1 DRIFT (RL-145)"
+    ],
+    "action_types": {
+      "REGISTRY-UPDATE": "Status/wording change to an existing P7 registry entry (Step 5 outcome).",
+      "XCIND-DOC-FIX": "Xcind self-drift doc correction landing via Xcind's normal flow (Step 4, Xcind-side).",
+      "PROCESS": "Sync-artifact bookkeeping."
+    },
+    "rl_id_range": "RL-143..RL-146",
+    "status_vocabulary": ["PLANNED", "APPLIED", "RESOLVED", "DONE", "XCIND-BACKLOG", "DEFERRED-TO-P7"],
+    "scind_pr": "none (zero canon-affecting rows)"
+  },
+  "rows": [
+    {
+      "id": "RL-143",
+      "join_key": "F3-0026-destroy-facet-wording",
+      "plan": "R3",
+      "source_classification": "REGISTRY-UPDATE",
+      "action_type": "REGISTRY-UPDATE",
+      "title": "Divergence 0026: refresh destroy-facet wording after 0034's round-2 resolution",
+      "target": "xcind: engineering/sync/divergence/0026-workspace-state-machine.md + registry.json",
+      "edit_sketch": "Mark facet 0033 Active / 0034 Resolved-by-convergence (round 2, PR #86 dispose). State why the resolution leaves 0026's core both-infer-state claim intact: an explicit destroy transition validates canon's transition vocabulary without persisting a state machine.",
+      "priority": "P3",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Carried follow-up recorded in 0034's round-2 resolution note. Canon-neutrality re-test: STILL-JUSTIFIED.",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-144",
+      "join_key": "F3-0028-retest-vs-dispose",
+      "plan": "R3",
+      "source_classification": "REGISTRY-UPDATE",
+      "action_type": "REGISTRY-UPDATE",
+      "title": "Divergence 0028: re-test against as-built — still no up/down; dispose proves the loop",
+      "target": "xcind: engineering/sync/divergence/0028-workspace-orchestration-up-down.md + registry.json",
+      "edit_sketch": "Surface is init/dispose/status/list/register/forget (bin/xcind-workspace:1083-1092); no up/down/restart, revisit condition not triggered. Replace stale status-loop evidence (:393-533) with dispose's enumerate/invoke/collect-failures loop (bin/xcind-workspace:1033-1053) — the exact shape a workspace up/down needs.",
+      "priority": "P2",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Round-2 watch item. STILL-JUSTIFIED (SURVIVES-STRONG); highest-value Xcind-backlog easy win, likely short-lived.",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-145",
+      "join_key": "F3-project-layout-missing-discovery-lib",
+      "plan": "R3",
+      "source_classification": "XCIND-DOC-FIX",
+      "action_type": "XCIND-DOC-FIX",
+      "title": "project-layout.md omits xcind-discovery-lib.bash from library and hook tables",
+      "target": "xcind: engineering/implementation/project-layout.md (Shared Libraries table + built-in hooks list)",
+      "edit_sketch": "Add the xcind-discovery-lib.bash row (GENERATE + ALWAYS, own-app discovery env vars, runs last after xcind-assigned-hook) to the Shared Libraries table and xcind-discovery-hook to the built-in hooks list.",
+      "priority": "P3",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Found by the round-3 high-drift spot-check (area 3, P3 L-0033). Pre-existing self-drift invisible to commit-range scoping. Specs and Makefile were already correct; no canon impact.",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-146",
+      "join_key": "F3-artifacts-refresh",
+      "plan": "R3",
+      "source_classification": "PROCESS",
+      "action_type": "PROCESS",
+      "title": "Round-3 artifact refresh: ledger, report, registry stamps, baseline entry",
+      "target": "xcind: engineering/sync/artifacts/* + sync/divergence/registry.json + engineering/archive/ report",
+      "edit_sketch": "This ledger pair, round-3 report, round-3 re-audit stamps for 0026/0028, baseline round-3 entry. Correspondence map unchanged (empty ranges, clean tree, spot-check found only RL-145). Other 20 Active Design/Scope divergences carry same-day round-2 stamps: no canon-neutrality input changed since.",
+      "priority": "P1",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Zero canon impact this round; no Scind PR.",
+      "scind_pr": null
+    }
+  ]
+}
