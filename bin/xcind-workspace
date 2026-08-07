@@ -1076,6 +1076,130 @@ __xcind-workspace-dispose() {
 }
 
 # --------------------------------------------------------------------------
+# Up / Down
+# --------------------------------------------------------------------------
+
+# Shared loop for `up` and `down`: enumerate every application directory in
+# the workspace, run xcind-compose with the verb's arguments in each, and
+# collect per-app failures instead of aborting on the first. Mirrors the
+# dispose loop's conventions (path safety check, app enumeration, --yes).
+__xcind-workspace-updown() {
+  local verb="$1"
+  shift
+  local dir="."
+  local dir_set=false
+  local yes=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --yes | -y)
+      if [[ $verb != down ]]; then
+        echo "Error: Unknown option for $verb: $1" >&2
+        return 1
+      fi
+      yes=true
+      shift
+      ;;
+    --help | -h)
+      echo "Usage: xcind-workspace $verb [DIR] [OPTIONS]"
+      echo ""
+      if [[ $verb == up ]]; then
+        echo "Bring up every application in the workspace at DIR (default: walk"
+        echo "up from the current directory) by running 'xcind-compose up -d'"
+        echo "in each application directory."
+      else
+        echo "Bring down every application in the workspace at DIR (default:"
+        echo "walk up from the current directory) by running 'xcind-compose"
+        echo "down' in each application directory."
+        echo ""
+        echo "Options:"
+        echo "  --yes, -y      Skip the confirmation prompt"
+      fi
+      return 0
+      ;;
+    -*)
+      echo "Error: Unknown option for $verb: $1" >&2
+      return 1
+      ;;
+    *)
+      if [[ $dir_set == true ]]; then
+        echo "Error: Unexpected argument for $verb: $1" >&2
+        return 1
+      fi
+      dir="$1"
+      dir_set=true
+      shift
+      ;;
+    esac
+  done
+
+  if [[ ! -d $dir ]]; then
+    echo "Error: Directory not found: $dir" >&2
+    return 1
+  fi
+
+  local ws_root
+  ws_root=$(__xcind-workspace-find-root "$dir") || return 1
+  [[ $ws_root != / && -n $ws_root ]] || {
+    echo "Error: Refusing to operate on an unsafe workspace path." >&2
+    return 1
+  }
+
+  local meta ws_name
+  meta=$(__xcind-workspace-extract-meta "$ws_root")
+  ws_name="${meta%%$'\t'*}"
+
+  local -a app_dirs=()
+  local subdir
+  for subdir in "$ws_root"/*/; do
+    [[ -d $subdir ]] || continue
+    subdir="${subdir%/}"
+    [[ -f $subdir/.xcind.sh ]] || continue
+    __xcind-is-workspace-dir "$subdir" || app_dirs+=("$subdir")
+  done
+
+  if [[ ${#app_dirs[@]} -eq 0 ]]; then
+    echo "No applications found in workspace \"$ws_name\" at $ws_root."
+    return 0
+  fi
+
+  local app_dir
+  if [[ $verb == down && $yes != true ]]; then
+    local prompt="Bring down workspace \"$ws_name\" at $ws_root:"
+    for app_dir in "${app_dirs[@]}"; do
+      prompt+=$'\n'"  - bring down application $(basename "$app_dir")"
+    done
+    __xcind-confirm "$prompt" || return 1
+  fi
+
+  local -a compose_args=(down)
+  [[ $verb == up ]] && compose_args=(up -d)
+
+  local -a failed_apps=()
+  for app_dir in "${app_dirs[@]}"; do
+    if ! (cd "$app_dir" && "$XCIND_ROOT/bin/xcind-compose" "${compose_args[@]}"); then
+      failed_apps+=("$app_dir")
+    fi
+  done
+
+  if [[ ${#failed_apps[@]} -gt 0 ]]; then
+    echo "Error: Could not bring $verb ${#failed_apps[@]} application(s):" >&2
+    printf '  %s\n' "${failed_apps[@]}" >&2
+    return 1
+  fi
+
+  echo "Workspace $verb at $ws_root (${#app_dirs[@]} application(s))"
+}
+
+__xcind-workspace-up() {
+  __xcind-workspace-updown up "$@"
+}
+
+__xcind-workspace-down() {
+  __xcind-workspace-updown down "$@"
+}
+
+# --------------------------------------------------------------------------
 # Help
 # --------------------------------------------------------------------------
 
@@ -1084,6 +1208,8 @@ __xcind-workspace-help() {
   echo ""
   echo "Subcommands:"
   echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
+  echo "  up [DIR]                 Bring up every application in the workspace"
+  echo "  down [DIR] [OPTIONS]     Bring down every application in the workspace"
   echo "  dispose [DIR] [OPTIONS]  Tear down a workspace"
   echo "  status [DIR] [OPTIONS]   Show workspace-wide status"
   echo "  list [OPTIONS]           List all known workspaces"
@@ -1093,6 +1219,9 @@ __xcind-workspace-help() {
   echo "Init options:"
   echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
   echo "  --proxy-domain DOMAIN    Set XCIND_PROXY_DOMAIN in workspace config"
+  echo ""
+  echo "Down options:"
+  echo "  --yes, -y                Skip the confirmation prompt"
   echo ""
   echo "Dispose options:"
   echo "  --volumes                Also remove each application's Docker volumes"
@@ -1132,6 +1261,14 @@ case "${1:-}" in
 init)
   shift
   __xcind-workspace-init "$@"
+  ;;
+up)
+  shift
+  __xcind-workspace-up "$@"
+  ;;
+down)
+  shift
+  __xcind-workspace-down "$@"
   ;;
 dispose)
   shift

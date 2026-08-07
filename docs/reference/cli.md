@@ -112,7 +112,7 @@ Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
 
 ## `xcind-workspace`
 
-Manage workspace-level operations. `xcind-workspace dispose DIR --rm --volumes --yes` tears down every application, removes the workspace network and registry entry, then removes the directory. See `xcind-workspace --help` for subcommands; the workspace concept itself is in [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
+Manage workspace-level operations. `xcind-workspace up` runs `xcind-compose up -d` in every application directory of the workspace; `xcind-workspace down` runs `xcind-compose down` the same way (it confirms first — pass `--yes` to skip). Both continue past a failing application and report the failures at the end. `xcind-workspace dispose DIR --rm --volumes --yes` tears down every application, removes the workspace network and registry entry, then removes the directory. See `xcind-workspace --help` for subcommands; the workspace concept itself is in [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
 
 ## Environment overrides
 

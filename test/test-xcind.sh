@@ -5556,6 +5556,125 @@ assert_contains "workspace dispose: child failure keeps registry entry" \
 rm -rf "$WORKSPACE_FAIL_ROOT"
 
 # ======================================================================
+# xcind-workspace up / down CLI
+
+echo ""
+echo "=== Test: xcind-workspace up / down CLI ==="
+
+WORKSPACE_UPDOWN_ROOT=$(mktemp_d)
+WORKSPACE_UPDOWN_WS="$WORKSPACE_UPDOWN_ROOT/workspace"
+WORKSPACE_UPDOWN_STATE="$WORKSPACE_UPDOWN_ROOT/state"
+WORKSPACE_UPDOWN_BIN="$WORKSPACE_UPDOWN_ROOT/bin"
+WORKSPACE_UPDOWN_LOG="$WORKSPACE_UPDOWN_ROOT/docker.log"
+mkdir -p "$WORKSPACE_UPDOWN_WS/api" "$WORKSPACE_UPDOWN_WS/web" \
+  "$WORKSPACE_UPDOWN_STATE/xcind" "$WORKSPACE_UPDOWN_BIN"
+cat >"$WORKSPACE_UPDOWN_WS/.xcind.sh" <<'CFGEOF'
+XCIND_IS_WORKSPACE=1
+XCIND_WORKSPACE="updown-ws"
+CFGEOF
+for workspace_updown_app in api web; do
+  cat >"$WORKSPACE_UPDOWN_WS/$workspace_updown_app/.xcind.sh" <<'CFGEOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+CFGEOF
+  printf '%s\n' 'services: {}' >"$WORKSPACE_UPDOWN_WS/$workspace_updown_app/compose.yaml"
+done
+cat >"$WORKSPACE_UPDOWN_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_WORKSPACE_UPDOWN_DOCKER_LOG"
+case "$*" in
+*"/api/"*" up "*) [ -n "${XCIND_WORKSPACE_UPDOWN_FAIL_API:-}" ] && exit 1 ;;
+esac
+exit 0
+MOCKEOF
+chmod +x "$WORKSPACE_UPDOWN_BIN/docker"
+
+workspace_up_out=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS")
+assert_contains "workspace up: reports success" "Workspace up at" "$workspace_up_out"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace up: brings up the first application" \
+  "$WORKSPACE_UPDOWN_WS/api/compose.yaml" "$workspace_updown_log"
+assert_contains "workspace up: brings up the second application" \
+  "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
+assert_contains "workspace up: runs compose up detached" "up -d" "$workspace_updown_log"
+
+# `up` also works from inside an application directory (walks up to the root).
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_up_inner_out=$(cd "$WORKSPACE_UPDOWN_WS/api" &&
+  PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+    XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+    XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+    "$XCIND_ROOT/bin/xcind-workspace" up)
+assert_contains "workspace up: walks up from an app directory" "Workspace up at" \
+  "$workspace_up_inner_out"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace up: inner invocation still covers sibling apps" \
+  "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
+
+# `down` is workspace-wide, so it confirms before acting.
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_down_prompt_status=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" down "$WORKSPACE_UPDOWN_WS")
+assert_eq "workspace down: default form prompts without --yes" "1" \
+  "$workspace_down_prompt_status"
+assert_eq "workspace down: prompt refusal runs no compose commands" "false" \
+  "$([ -s "$WORKSPACE_UPDOWN_LOG" ] && echo true || echo false)"
+
+workspace_down_out=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" down "$WORKSPACE_UPDOWN_WS" --yes)
+assert_contains "workspace down: reports success" "Workspace down at" "$workspace_down_out"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace down: brings down the first application" \
+  "$WORKSPACE_UPDOWN_WS/api/compose.yaml" "$workspace_updown_log"
+assert_contains "workspace down: brings down the second application" \
+  "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
+assert_contains "workspace down: runs compose down" " down" "$workspace_updown_log"
+
+# `up` rejects down-only options.
+workspace_up_yes_status=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" --yes)
+assert_eq "workspace up: rejects --yes" "1" "$workspace_up_yes_status"
+
+# One failing application does not stop the loop; the rest still run and
+# the failure is reported at the end. The failing app (api) sorts first, so
+# a still-running web proves the loop continued past the failure.
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_up_fail_status=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  XCIND_WORKSPACE_UPDOWN_FAIL_API=1 \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS")
+assert_eq "workspace up: child failure exits non-zero" "1" "$workspace_up_fail_status"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace up: child failure still brings up later apps" \
+  "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
+workspace_up_fail_err=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  XCIND_WORKSPACE_UPDOWN_FAIL_API=1 \
+  "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" 2>&1 || true)
+assert_contains "workspace up: child failure names the failed app" \
+  "$WORKSPACE_UPDOWN_WS/api" "$workspace_up_fail_err"
+
+# Outside a workspace both verbs refuse.
+mkdir -p "$WORKSPACE_UPDOWN_ROOT/not-a-workspace"
+workspace_up_outside_status=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_ROOT/not-a-workspace")
+assert_eq "workspace up: refuses outside a workspace" "1" "$workspace_up_outside_status"
+
+rm -rf "$WORKSPACE_UPDOWN_ROOT"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

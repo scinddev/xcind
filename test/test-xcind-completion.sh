@@ -282,7 +282,7 @@ DIR_FIXTURE=$(mktemp_d)
 mkdir -p "$DIR_FIXTURE/svc-alpha" "$DIR_FIXTURE/svc-beta"
 
 out=$(comp_run fresh _xcind_workspace_completions xcind-workspace)
-for sub in init dispose status list register forget; do
+for sub in init up down dispose status list register forget; do
   assert_line "top level offers '$sub'" "$sub" "$out"
 done
 assert_line "top level offers --version" "--version" "$out"
@@ -306,6 +306,21 @@ assert_eq "'status ' offers only --json" "--json" "$out"
 out=$(comp_run fresh _xcind_workspace_completions xcind-workspace list)
 assert_line "'list ' offers --json" "--json" "$out"
 assert_line "'list ' offers --prune" "--prune" "$out"
+
+out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
+  xcind-workspace up)
+assert_line "'up ' offers a directory" "svc-alpha" "$out"
+assert_no_line "'up ' excludes --yes" "--yes" "$out"
+
+out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
+  xcind-workspace down)
+assert_line "'down ' offers --yes" "--yes" "$out"
+assert_line "'down ' offers a directory" "svc-alpha" "$out"
+
+out=$(cd "$DIR_FIXTURE" && comp_run partial _xcind_workspace_completions \
+  xcind-workspace down --)
+assert_line "'down --' offers --yes" "--yes" "$out"
+assert_no_line "'down --' drops directories" "svc-alpha" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
   xcind-workspace dispose)

@@ -43,6 +43,17 @@ XCIND_PROXY_DOMAIN="xcind.localhost"
 
 That's it. Each app's `.xcind.sh` works as before — when Xcind discovers an app inside a workspace, it sources the workspace's `.xcind.sh` first to set group-level defaults, then the app's `.xcind.sh` for app-specific overrides.
 
+## Bring the whole workspace up or down
+
+To start or stop every application in one command, run:
+
+```bash
+xcind-workspace up      # xcind-compose up -d in each app directory
+xcind-workspace down    # xcind-compose down in each app directory (confirms first)
+```
+
+Both walk up from the current directory to find the workspace (or take an explicit directory), continue past a failing application, and list the failures at the end. `down --yes` skips the confirmation prompt.
+
 ## Dispose a workspace
 
 To remove a workspace and its runtime state in one command, run:

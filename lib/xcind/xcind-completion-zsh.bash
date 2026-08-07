@@ -320,6 +320,8 @@ _xcind-proxy() {
 _xcind-workspace() {
   local -a main_commands=(
     'init:Initialize a workspace directory'
+    'up:Bring up every application in the workspace'
+    'down:Bring down every application in the workspace'
     'dispose:Tear down a workspace'
     'status:Show workspace-wide status'
     'list:List all known workspaces'
@@ -345,6 +347,19 @@ _xcind-workspace() {
   status)
     local -a status_opts=('--json:Output structured JSON')
     _describe 'status option' status_opts
+    _files -/
+    return
+    ;;
+  up)
+    _files -/
+    return
+    ;;
+  down)
+    local -a down_opts=(
+      '--yes:Skip confirmation prompt'
+      '-y:Skip confirmation prompt'
+    )
+    _describe 'down option' down_opts
     _files -/
     return
     ;;
