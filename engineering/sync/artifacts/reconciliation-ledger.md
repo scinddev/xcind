@@ -1,8 +1,8 @@
 # P6 — Consolidated Reconciliation Ledger
 
-**Status**: Active — Scind canon changes applied via **[scinddev/scind#3](https://github.com/scinddev/scind/pull/3)**; divergences deferred to P7.
-**Date**: 2026-07-15
-**Scind PR**: https://github.com/scinddev/scind/pull/3
+**Status**: **Closed** 2026-08-07 — every row carries a terminal status; no `ESCALATED` and no `PLANNED` rows remain. See [§10 Close-out](#10-close-out-2026-08-07).
+**Date**: 2026-07-15 (opened) · 2026-08-07 (closed)
+**Scind PRs**: [#3](https://github.com/scinddev/scind/pull/3) (P6 batch), [#4](https://github.com/scinddev/scind/pull/4) (escalation batch), [#5](https://github.com/scinddev/scind/pull/5) (`docs/` → `engineering/` rename), [#7](https://github.com/scinddev/scind/pull/7) (`RL-112` binary) — all merged.
 **Plan**: [`06-reconciliation-and-sync-procedure.md`](../06-reconciliation-and-sync-procedure.md) (Part A).
 **Inputs**: [`learnings.md`](./learnings.md)/`.json` (P3), [`xcind-ahead.md`](./xcind-ahead.md)/`.json` (P4), [`scind-ahead.md`](./scind-ahead.md)/`.json` (P5).
 **Machine companion**: [`reconciliation-ledger.json`](./reconciliation-ledger.json) (same rows, `meta` + `rows[]`).
@@ -15,7 +15,7 @@ This ledger merges **every** P3/P4/P5 action item into one ordered record. The *
 
 ### Scope & cross-agent boundaries
 
-- **Scind canon changes are applied** (scope lifted 2026-07-15): `CANON-CHANGE` / `PROMOTE` / `CANON-OVERREACH` / `CANON-CONFIRM` rows are edited in the Scind working tree and landed via a Scind branch + PR. Rows flip `PLANNED → APPLIED` with a `scind_pr` reference as they land. Rows still marked `PLANNED` are fully specified here (target file + edit sketch + rationale) but deferred (see per-row notes).
+- **Scind canon changes are applied** (scope lifted 2026-07-15): `CANON-CHANGE` / `PROMOTE` / `CANON-OVERREACH` / `CANON-CONFIRM` rows are edited in the Scind working tree and landed via a Scind branch + PR. Rows flip `PLANNED → APPLIED` with a `scind_pr` reference as they land. **As of the 2026-08-07 close-out, no `PLANNED` rows remain** — every Scind-affecting row is `APPLIED` against a merged PR.
 - **Divergences are P7's territory.** `DIVERGENCE` / `DELIBERATELY-DEFERRED` rows are referenced by origin ID and marked `DEFERRED-TO-P7`; this ledger authors **no** entries under `engineering/sync/divergence/` and invents no divergence IDs. P7 owns the registry admission gate + adversarial re-check.
 - **Xcind backlog / process / escalation** rows carry a status and a note; they do not change Scind design.
 
@@ -23,18 +23,23 @@ This ledger merges **every** P3/P4/P5 action item into one ordered record. The *
 
 | Action type | Count | Destination / status |
 |-------------|------:|----------------------|
-| **CANON-CHANGE** | 19 | Edit Scind canon → Scind PR |
+| **CANON-CHANGE** | 20 | Edit Scind canon → Scind PR |
 | **PROMOTE** | 20 | Add to Scind canon (+ ADR) → Scind PR |
 | **CANON-OVERREACH** | 1 | Trim/fix Scind canon → Scind PR |
 | **CANON-CONFIRM** | 4 | Annotate Scind (low priority) → Scind PR |
 | **DIVERGENCE** | 35 | P7 divergence registry |
 | **XCIND-BACKLOG** | 7 | Xcind issues/todos |
 | **PROCESS** | 8 | P6 procedure / Xcind doc maintenance |
-| **ESCALATE** | 20 | Human calls resolved in `escalation-decision-brief.md` |
+| **ESCALATE** | 19 | Human calls resolved in `escalation-decision-brief.md` |
 | **ADR-POLICY** | 1 | Xcind ADR-0021 (this plan) |
 | **Total** | **115** | |
 
-**Scind-affecting rows**: 40 substantive (**19** CANON-CHANGE + **20** PROMOTE + **1** CANON-OVERREACH) + **4** CANON-CONFIRM annotations = 44 total. After merging **8** cross-plan duplicate pairs (a P3 learning and a P4 capability that target the *same* Scind edit), these collapse to ≈32 **distinct** Scind edit-sets.
+Counts are **final** (2026-08-07). They differ from the ledger's opening figures by
+one row: `RL-112` began as an `ESCALATE` and was reclassified to `CANON-CHANGE`
+when `RL-080`'s completion tests met its named flip condition, so CANON-CHANGE
+went 19 → 20 and ESCALATE 20 → 19.
+
+**Scind-affecting rows**: 41 substantive (**20** CANON-CHANGE + **20** PROMOTE + **1** CANON-OVERREACH) + **4** CANON-CONFIRM annotations = 45 total. After merging **8** cross-plan duplicate pairs (a P3 learning and a P4 capability that target the *same* Scind edit), these collapse to ≈33 **distinct** Scind edit-sets.
 
 ### Cross-plan duplicate pairs (apply each edit once)
 
@@ -582,4 +587,71 @@ Not filed as divergences (§2a: ambiguity routes up). Both readings are captured
 
 ---
 
-*Generated for P6. 115 rows. Re-render from the JSON after any status flip.*
+## 10. Close-out (2026-08-07)
+
+The Scind ↔ Xcind sync effort is **closed**. This section records the final
+verification and what remains outside the effort.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| Every ledger row has a terminal status | **Pass** — 115/115. No `ESCALATED`, no `PLANNED`. |
+| Status distribution | `APPLIED` 48 · `DEFERRED-TO-P7` 35 · `RESOLVED` 19 · `XCIND-BACKLOG` 6 · `PROCESS` 6 · `DONE` 1 (`RL-080`). |
+| `.md` and `.json` rows agree | **Pass** — same 115 IDs, same statuses. `RL-112`'s `.md` cell reads `APPLIED (CANON-CHANGE)`, spelling out the reclassification the `.json` carries in `action_type`. |
+| All 18 `DECISION:` boxes in the brief are marked | **Pass** — all 18 accepted; all 20 originating `ESCALATE` rows are terminal. |
+| Divergence `registry.json` ↔ entry files | **Pass** — 38 entries, 38 files, statuses match. |
+| Divergence README index ↔ registry | **Pass** — all 38 IDs indexed; category counts (Design 14 · Structural 12 · Scope 10 · Process 2) match. |
+| Scind PRs merged | **Pass** — [#3](https://github.com/scinddev/scind/pull/3), [#4](https://github.com/scinddev/scind/pull/4), [#5](https://github.com/scinddev/scind/pull/5), [#7](https://github.com/scinddev/scind/pull/7). ([#6](https://github.com/scinddev/scind/pull/6) closed, superseded by #7.) |
+
+### `00-global-context.md` §10 success criteria
+
+All eight hold:
+
+1. **P1 audit** — [`p1-self-sync-report.md`](./p1-self-sync-report.md).
+2. **Correspondence map** — [`correspondence-map.md`](./correspondence-map.md)/`.json`.
+3. **Learnings classified** — [`learnings.md`](./learnings.md)/`.json`; canon changes landed in Scind #3/#4/#7.
+4. **Xcind-ahead capabilities** — [`xcind-ahead.md`](./xcind-ahead.md)/`.json`; each promoted or recorded as a divergence.
+5. **Scind-ahead capabilities** — [`scind-ahead.md`](./scind-ahead.md)/`.json`; each labelled.
+6. **ADR numbering strategy** — [ADR-0021](../../decisions/0021-cross-repo-adr-cross-referencing.md).
+7. **Repeatable sync procedure** — [`cross-project-sync.md`](../../maintenance/cross-project-sync.md), carrying the `docs/` ≡ `engineering/` path alias.
+8. **Divergence registry** — [`divergence/`](../divergence/), 38 entries, living.
+
+### What closed in this pass
+
+- **Scind canon** — the escalation batch (`RL-095`…`RL-110`) in #4, the
+  `docs/` → `engineering/` rename (`RL-038`) in #5, and the `scind-compose`
+  binary (`RL-112`) in #7.
+- **Divergence registry** — 0032 extended with the label-schema deltas; revisit
+  notes refreshed on 0017/0020/0022/0023/0024; 0007's unsupported `path:` claim
+  corrected; three new entries filed (0036 proxy-init flags, 0037 workspaceless
+  mode, 0038 workspace self-declaration); **0022 flipped to Resolved**.
+- **Xcind code** — `XCIND_HOST_GATEWAY` injected into `environment:`
+  (`80f083a`); the workspace-guard gap closed (`dbbc397`).
+- **Xcind docs** — the `XCIND_CACHE_SCHEMA` SHA input documented (`c7358b4`);
+  ADR-0005's flavors deferral made explicit and **ADR-0023** filed for the
+  targeting-model deviation (`ffee906`).
+- **Xcind tests** — `test/test-xcind-completion.sh`, 137 assertions, wired into
+  `make test` and CI. It found no latent bug and supplied the evidence that
+  flipped `RL-112`.
+
+### Explicitly outside this effort (still open)
+
+These are tracked work, not sync debt. The sync effort does not wait on them.
+
+| Item | Where |
+|------|-------|
+| `BDS-104` — `xcind-workspace status` is instance-blind | Linear backlog |
+| `RL-081`…`RL-086` — fish support, `port assign`, context-detection UX, universal flags, `depends_on`, health checks | Linear `BDS-113`…`BDS-118` |
+| `RL-087`…`RL-091` — standing build/CLI/docs-process guidance | No dated action; consulted per round |
+| `RL-094` — drop `behaviors/` from both projects | Needs maintainer coordination across both repos; deliberately not executed here |
+| Docker Desktop hosts get no `XCIND_HOST_GATEWAY` | Recorded in divergence 0022's residual-gap note; closing it is a separate decision |
+| Scind completion is not context-scoped (`-p`/`-f` absent) | Filed as a known limitation in Scind #7, not specified on unproven ground |
+
+Future rounds start from
+[`cross-project-sync.md`](../../maintenance/cross-project-sync.md), not from this
+ledger. This ledger is now a historical record.
+
+---
+
+*Generated for P6. 115 rows. Closed 2026-08-07. Re-render from the JSON after any status flip.*

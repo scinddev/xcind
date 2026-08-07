@@ -129,9 +129,36 @@ terminal (RESOLVED); only §3.1's planned-edits list still carries it.
 
 `make check` passed before each commit.
 
-## Step 7 — Close out the effort
+## Step 7 — Close out the effort — ✅ DONE
 
 > Verify every reconciliation-ledger row now has a terminal status (no ESCALATED or PLANNED remaining), the divergence `registry.json` and README index match the entry files, and `engineering/sync/00-global-context.md` §10 success criteria all hold. Update the ledger header status line, note the completion date, and summarize what closed in this pass. Flag anything still open (e.g. BDS-104, remaining Linear backlog) as explicitly outside the sync effort.
+
+**Done.** The effort is closed as of 2026-08-07. Every verification passed with
+no corrective work needed on the rows themselves: all 115 ledger rows are
+terminal (no `ESCALATED`, no `PLANNED` — Step 3b's §3.1 gap is closed), the `.md`
+and `.json` agree row-for-row, the divergence registry's 38 entries match their
+files and the README index, all 18 `DECISION:` boxes are marked, and all four
+Scind PRs (#3, #4, #5, #7) are merged.
+
+Two stale bookkeeping figures were corrected rather than left to mislead a
+future round: the ledger's summary table and the JSON `meta` counts still
+described the opening state (`PLANNED: 1`, `ESCALATE: 20`). `RL-112`'s
+reclassification moves one row from ESCALATE to CANON-CHANGE, so the final
+counts read CANON-CHANGE 20 / ESCALATE 19, and the Scind-affecting totals become
+41 substantive / 45 with confirms / ≈33 distinct edit-sets. `DONE` was added to
+the JSON `status_values` vocabulary — `RL-080` had been using it undeclared.
+
+The close-out lives in **ledger §10**: verification table, per-criterion
+evidence for §10 of the global context, what closed this pass, and an
+explicit out-of-scope list (BDS-104; `RL-081`…`RL-086` = BDS-113…BDS-118;
+the standing guidance rows `RL-087`…`RL-091`; `RL-094`, which still needs
+maintainer coordination in both repos; the Docker Desktop `XCIND_HOST_GATEWAY`
+gap; and Scind's non-context-scoped completion). `engineering/sync/README.md`
+and §10 of `00-global-context.md` both carry a status banner pointing at it.
+
+The `sync/` tree is now a historical record. Future rounds start from
+`engineering/maintenance/cross-project-sync.md`; the divergence registry stays
+living.
 
 ---
 

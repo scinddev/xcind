@@ -8,6 +8,14 @@ Bash proof-of-concept), in preparation for building Scind for real.
 canon; Xcind records where it intentionally diverges.* Full context and rules
 are in [`00-global-context.md`](./00-global-context.md) — **read that first.**
 
+> **Status: closed 2026-08-07.** P1–P7 all ran; every ledger row reached a
+> terminal status and all eight §10 success criteria hold. See
+> [`artifacts/reconciliation-ledger.md` §10](./artifacts/reconciliation-ledger.md#10-close-out-2026-08-07)
+> for the close-out. This tree is now a **historical record** — ongoing sync
+> rounds start from
+> [`engineering/maintenance/cross-project-sync.md`](../maintenance/cross-project-sync.md),
+> and the [`divergence/`](./divergence/) registry stays living.
+
 ## The plans
 
 Each plan is standalone: hand it to a fresh session, which fans out researcher

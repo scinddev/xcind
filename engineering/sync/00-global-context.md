@@ -256,6 +256,9 @@ P3–P6.
 
 ## 10. Success criteria for the whole effort
 
+> **All eight met as of 2026-08-07.** Evidence per criterion is in
+> [`artifacts/reconciliation-ledger.md` §10](./artifacts/reconciliation-ledger.md#10-close-out-2026-08-07).
+
 1. Xcind eng-docs verified against as-built (P1 audit report committed).
 2. A complete, verified correspondence map exists (P2).
 3. Every Xcind learning is classified and, where it changes canon, a Scind change

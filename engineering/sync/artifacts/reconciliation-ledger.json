@@ -3,7 +3,6 @@
     "plan": "P6",
     "title": "Consolidated Reconciliation Ledger (Scind \u2194 Xcind sync)",
     "date": "2026-07-15",
-    "scind_pr": "https://github.com/scinddev/scind/pull/3",
     "description": "Merges every P3 (learnings), P4 (xcind-ahead) and P5 (scind-ahead) action item into one ordered ledger. Join key = source-finding ID (L-/XA-/SA-/RG-). Scind-affecting rows are fully specified with target file + edit sketch and marked PLANNED, then flipped to APPLIED once landed in the Scind PR. DIVERGENCE / DELIBERATELY-DEFERRED rows are referenced by origin ID and owned by P7 (engineering/sync/divergence/) \u2014 this ledger authors no divergence entries.",
     "inputs": [
       "engineering/sync/artifacts/learnings.{md,json}",
@@ -28,38 +27,47 @@
       "XCIND-BACKLOG": "Xcind backlog item.",
       "PROCESS": "Procedure / doc-maintenance action.",
       "ESCALATED": "Awaiting a human product decision.",
-      "RESOLVED": "Human product decision accepted and recorded in engineering/sync/artifacts/escalation-decision-brief.md."
+      "RESOLVED": "Human product decision accepted and recorded in engineering/sync/artifacts/escalation-decision-brief.md.",
+      "DONE": "Xcind backlog row executed and complete."
     },
     "counts_by_action": {
       "ADR-POLICY": 1,
-      "CANON-CHANGE": 19,
+      "CANON-CHANGE": 20,
       "CANON-CONFIRM": 4,
       "CANON-OVERREACH": 1,
       "DIVERGENCE": 35,
-      "ESCALATE": 20,
+      "ESCALATE": 19,
       "PROCESS": 8,
       "PROMOTE": 20,
       "XCIND-BACKLOG": 7
     },
     "counts_by_status": {
-      "APPLIED": 44,
+      "APPLIED": 48,
       "DEFERRED-TO-P7": 35,
-      "ESCALATED": 0,
-      "PLANNED": 1,
-      "PROCESS": 8,
-      "XCIND-BACKLOG": 7,
-      "RESOLVED": 20
+      "DONE": 1,
+      "PROCESS": 6,
+      "RESOLVED": 19,
+      "XCIND-BACKLOG": 6
     },
     "total_rows": 115,
     "planned_scind_changes": {
-      "CANON-CHANGE": 19,
+      "CANON-CHANGE": 20,
       "PROMOTE": 20,
       "CANON-OVERREACH": 1,
       "CANON-CONFIRM": 4,
-      "substantive_total": 40,
-      "with_confirm_annotations": 44,
+      "substantive_total": 41,
+      "with_confirm_annotations": 45,
       "cross_plan_duplicate_pairs": 8,
-      "note": "8 CANON-CHANGE\u2194PROMOTE pairs target the same Scind edit (L-0001/XA-0002, L-0003/XA-0003, L-0004/XA-0017, L-0005/XA-0001, L-0008/XA-0005, L-0010/XA-0004, L-0011/XA-0007, L-0014/XA-0018); apply each once. Distinct Scind edit-sets \u2248 substantive_total \u2212 8."
+      "note": "8 CANON-CHANGE\u2194PROMOTE pairs target the same Scind edit (L-0001/XA-0002, L-0003/XA-0003, L-0004/XA-0017, L-0005/XA-0001, L-0008/XA-0005, L-0010/XA-0004, L-0011/XA-0007, L-0014/XA-0018); apply each once. Distinct Scind edit-sets \u2248 substantive_total \u2212 8. Final counts (2026-08-07) shift one row from ESCALATE to CANON-CHANGE: RL-112 was reclassified when RL-080's completion tests met its flip condition."
+    },
+    "status": "CLOSED",
+    "closed_date": "2026-08-07",
+    "closure_note": "Sync effort closed 2026-08-07. Every row carries a terminal status: no ESCALATED, no PLANNED. Scind PRs #3, #4, #5 and #7 are merged (#6 closed, superseded by #7). See section 10 of reconciliation-ledger.md for the close-out verification and the list of items explicitly outside the effort.",
+    "scind_prs": {
+      "3": "https://github.com/scinddev/scind/pull/3",
+      "4": "https://github.com/scinddev/scind/pull/4",
+      "5": "https://github.com/scinddev/scind/pull/5",
+      "7": "https://github.com/scinddev/scind/pull/7"
     }
   },
   "rows": [
