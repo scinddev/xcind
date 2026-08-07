@@ -37,7 +37,7 @@ batch was already defined, so this edit is *not* in
 catch the omission on its own — `RL-112`'s row status is already terminal
 (RESOLVED); only the §3.1 planned-edits list still shows it as PLANNED.
 
-**Done.** [scinddev/scind#6](https://github.com/scinddev/scind/pull/6) —
+**Done.** [scinddev/scind#7](https://github.com/scinddev/scind/pull/7) —
 `scind-compose` becomes a binary that resolves context in-process and execs
 `docker compose`; the sourced function, the `eval` prefix contract, and the
 empty-output error-detection workaround are all retired. Completion delegates
@@ -55,6 +55,12 @@ no `-p`/`-f`, so service names come from Docker's own directory discovery, not
 Scind's resolved context. Xcind's tests proved the direct `docker __complete`
 call, not a context-scoped variant — so the gap is filed as a known limitation
 with a future-consideration fix, rather than specified on unproven ground.
+
+**Stacked on Step 4.** The PR targets `sync/rename-docs-to-engineering`, not
+`main`, so its paths are `engineering/` and it inherits the rename. **Step 4's
+rename PR must merge first.** An earlier PR against `main` with `docs/` paths
+([#6](https://github.com/scinddev/scind/pull/6)) was closed and superseded;
+the commit content is identical, rebased.
 
 `RL-112` is flipped to APPLIED in the ledger `.md` (both the §1 table and the
 §3.1 entry) and `.json`, each carrying the PR reference.

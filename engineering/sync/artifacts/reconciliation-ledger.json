@@ -1720,8 +1720,8 @@
       "priority": "P2",
       "status": "APPLIED",
       "merge_with": [],
-      "notes": "Flipped from WONTFIX-DEFER to CANON-CHANGE on the flip condition the brief named. RL-080 completion tests now pass and prove delegated docker compose completion (subcommands, per-subcommand flags, and compose-file service names) works from a standalone binary, disproving the assumption that a sourced shell function is required for completion delegation. See `engineering/sync/artifacts/escalation-decision-brief.md`. Applied in its own Scind PR (#6) \u2014 the flip landed after the #3 and #4 batches were defined. compose-prefix was kept but demoted to an explicitly non-load-bearing scripting-facing command. One limitation documented rather than overclaimed: the delegated completion request carries no -p/-f, so service-name completion follows Docker's own directory discovery; context-scoped delegation is listed as a future consideration, not specified.",
-      "scind_pr": "https://github.com/scinddev/scind/pull/6"
+      "notes": "Flipped from WONTFIX-DEFER to CANON-CHANGE on the flip condition the brief named. RL-080 completion tests now pass and prove delegated docker compose completion (subcommands, per-subcommand flags, and compose-file service names) works from a standalone binary, disproving the assumption that a sourced shell function is required for completion delegation. See `engineering/sync/artifacts/escalation-decision-brief.md`. Applied in its own Scind PR (#7) \u2014 the flip landed after the #3 and #4 batches were defined. Stacked on the RL-038 rename PR, so its paths are engineering/, not docs/; the rename must merge first. (#7 supersedes #6, the same content against main.) compose-prefix was kept but demoted to an explicitly non-load-bearing scripting-facing command. One limitation documented rather than overclaimed: the delegated completion request carries no -p/-f, so service-name completion follows Docker's own directory discovery; context-scoped delegation is listed as a future consideration, not specified.",
+      "scind_pr": "https://github.com/scinddev/scind/pull/7"
     },
     {
       "id": "RL-113",
