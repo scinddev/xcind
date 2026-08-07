@@ -170,7 +170,7 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-109` | `XA-0027` | P4 | ESCALATE | P2 | RESOLVED | human product call |
 | `RL-110` | `XA-0028` | P4 | ESCALATE | P2 | RESOLVED | human product call |
 | `RL-111` | `XA-0029` | P4 | ESCALATE | P2 | RESOLVED | human product call |
-| `RL-112` | `SA-0026` | P5 | ESCALATE | P2 | RESOLVED (CANON-CHANGE) | scind: shell-integration.md — replace function + `compose-prefix` with a binary |
+| `RL-112` | `SA-0026` | P5 | ESCALATE | P2 | APPLIED (CANON-CHANGE) | scind: shell-integration.md — replace function + `compose-prefix` with a binary |
 | `RL-113` | `RG-0001` | P4 | ESCALATE | P3 | RESOLVED | human product call → P5/P3 |
 | `RL-114` | `RG-0002` | P4 | ESCALATE | P3 | RESOLVED | human product call → P5/P3 |
 | `RL-115` | `RL-ADR-POLICY` | P6 | ADR-POLICY | P1 | APPLIED | xcind: engineering/decisions/0021-cross-repo-adr-cross-referencing.md (+ scind note) |
@@ -292,10 +292,11 @@ Every `CANON-CHANGE` / `PROMOTE` / `CANON-OVERREACH` / `CANON-CONFIRM` row, with
 *Applied:* [scinddev/scind#3](https://github.com/scinddev/scind/pull/3)
 *Notes:* Apex cluster. HUMAN PRODUCT-CALL overrode a provisional divergence. Resolves SA-0006 overreach candidacy.
 
-**`RL-112` (SA-0026, P2, PLANNED)** — `scind-compose` simplifies from a shell function to a binary
+**`RL-112` (SA-0026, P2, APPLIED)** — `scind-compose` simplifies from a shell function to a binary
 *Target:* scind: docs/specs/shell-integration.md (function + `compose-prefix` sections)
 *Edit:* Replace the sourced `scind-compose` shell function and the `compose-prefix` eval contract with a real `scind-compose` executable that resolves context internally and execs `docker compose`; retire the empty-output error-detection workaround the eval contract required. Keep `compose-prefix` only if scripting consumers want the prefix text. Keep wrapper generation as-is (RL-033). Carry over Xcind's hardcoded fallback list for hosts whose `docker` CLI lacks Cobra `__complete`.
-*Notes:* Arrived late — flipped from the escalation brief's WONTFIX-DEFER once its named condition (RL-080) was met. `test/test-xcind-completion.sh` proves delegated `docker compose` completion — subcommands, per-subcommand flags, and compose-file service names — works from Xcind's standalone binary, disproving the "must be a shell function" premise. Not in [scinddev/scind#3](https://github.com/scinddev/scind/pull/3); needs its own Scind PR.
+*Applied:* [scinddev/scind#6](https://github.com/scinddev/scind/pull/6)
+*Notes:* Arrived late — flipped from the escalation brief's WONTFIX-DEFER once its named condition (RL-080) was met. `test/test-xcind-completion.sh` proves delegated `docker compose` completion — subcommands, per-subcommand flags, and compose-file service names — works from Xcind's standalone binary, disproving the "must be a shell function" premise. Not in [scinddev/scind#3](https://github.com/scinddev/scind/pull/3) or [#4](https://github.com/scinddev/scind/pull/4) — the flip landed after both batches were defined — so it got its own PR. `compose-prefix` was kept, demoted to an explicitly non-load-bearing scripting-facing command. One limitation documented rather than overclaimed: the delegated request carries no `-p`/`-f`, so service-name completion follows Docker's own directory discovery; context-scoped delegation is listed as a future consideration, not specified.
 
 ### 3.2 PROMOTE — capabilities Scind should adopt
 

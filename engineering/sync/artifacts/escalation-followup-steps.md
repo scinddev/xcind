@@ -27,7 +27,7 @@ outcome — the later steps execute exactly what the boxes say.
 
 > In the scind repo (`/Users/beausimensen/Code/scind`): reset the checkout to origin/main (`241c991`), branch, and apply the accepted Scind edits from `xcind/engineering/sync/artifacts/escalation-decision-brief.md`: RL-107 (apex opt-out mechanism + fix the stale `behaviors/*.feature` and `naming-conventions.md:46` text that contradicts the hybrid apex rule), the RL-098 canon-change half (allow absolute/external `applications.path`, targeting via `-w`/`-a`), RL-106 (export-conditional proxy start + `proxy.auto_start` knob), RL-109 (per-app `diagnose` command at intent level), RL-110 (zero-config compose/env defaults), and the small cleanup riders from RL-095 (visibility enum + `workspace.visibility` label name + advisory-metadata wording) and RL-096 (the stale manifest "Caching" bullet). Check first whether pending PROCESS row RL-094 (drop `behaviors/`) should execute in the same PR — if yes, skip the feature-file fixes. Open one PR; reference the brief in the description.
 
-## Step 3b — RL-112 Scind binary PR (created by Step 5; after Step 3 merges)
+## Step 3b — RL-112 Scind binary PR (created by Step 5; after Step 3 merges) — ✅ DONE
 
 > In the scind repo, from a fresh main: execute ledger row `RL-112`, now a CANON-CHANGE. Replace the sourced `scind-compose` shell function and the `compose-prefix` eval contract in `docs/specs/shell-integration.md` with a real `scind-compose` binary that resolves context internally and execs `docker compose`, and retire the empty-output error-detection workaround. Keep `compose-prefix` only if scripting consumers want the prefix text; keep wrapper generation as-is. Carry over a hardcoded completion fallback for hosts whose `docker` CLI lacks Cobra `__complete`. Reference `xcind/engineering/sync/artifacts/escalation-decision-brief.md` (§RL-112, FLIP APPLIED) and the xcind evidence in `test/test-xcind-completion.sh`. Then flip §3.1's `RL-112` entry in the xcind ledger from PLANNED to APPLIED with the PR reference.
 
@@ -36,6 +36,28 @@ batch was already defined, so this edit is *not* in
 [scinddev/scind#3](https://github.com/scinddev/scind/pull/3). Step 7 will not
 catch the omission on its own — `RL-112`'s row status is already terminal
 (RESOLVED); only the §3.1 planned-edits list still shows it as PLANNED.
+
+**Done.** [scinddev/scind#6](https://github.com/scinddev/scind/pull/6) —
+`scind-compose` becomes a binary that resolves context in-process and execs
+`docker compose`; the sourced function, the `eval` prefix contract, and the
+empty-output error-detection workaround are all retired. Completion delegates
+via `docker __complete compose …` with the hardcoded subcommand fallback carried
+over from Xcind. `compose-prefix` is kept but demoted to an explicitly
+non-load-bearing, scripting-facing command; wrapper generation is unchanged
+(RL-033). The Bash floor for the completion script drops from 4.0+ to 3.2+.
+Sixteen files changed: `docs/specs/shell-integration.md` carries the substance,
+the rest is consistency (CLI reference and appendices, the three shell setup
+appendices, specs README, context-detection, glossary, vision, implementation
+scaffolding).
+
+One thing deliberately *not* claimed: the delegated completion request carries
+no `-p`/`-f`, so service names come from Docker's own directory discovery, not
+Scind's resolved context. Xcind's tests proved the direct `docker __complete`
+call, not a context-scoped variant — so the gap is filed as a known limitation
+with a future-consideration fix, rather than specified on unproven ground.
+
+`RL-112` is flipped to APPLIED in the ledger `.md` (both the §1 table and the
+§3.1 entry) and `.json`, each carrying the PR reference.
 
 ## Step 4 — RL-038 rename PR (after Step 3 merges)
 
