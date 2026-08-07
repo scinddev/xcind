@@ -97,7 +97,8 @@
       "scind_canon": "specs/environment-variables.md (workspace-wide cross-app injection)",
       "xcind_reality": "own-app services only (xcind-discovery-lib.bash)",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P3+P7). v1 gap; resolves if Xcind ships v2."
+      "notes": "Adversarial re-check performed (P3+P7). v1 gap; resolves if Xcind ships v2.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0007",
@@ -110,7 +111,8 @@
       "scind_canon": "distinct workspace.yaml roster + application.yaml; paths currently workspace-relative",
       "xcind_reality": "one .xcind.sh + XCIND_IS_WORKSPACE marker, dir-walk",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Scind roster gives authoritative enumeration with workspace-relative paths; arbitrary external-path support is a separate accepted canon change. L-0037 resolved to retain workspace-owned membership; see 0038."
+      "notes": "Scind roster gives authoritative enumeration with workspace-relative paths; arbitrary external-path support is a separate accepted canon change. L-0037 resolved to retain workspace-owned membership; see 0038.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0008",
@@ -214,7 +216,8 @@
       "scind_canon": "decisions/0009; specs/proxy-infrastructure.md (.scind.test)",
       "xcind_reality": "default localhost.scind.io (public registration); ADR-0016",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Multi-label rule PROMOTED as XA-0002."
+      "notes": "Adversarial re-check performed (P7). Multi-label rule PROMOTED as XA-0002.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0016",
@@ -227,7 +230,8 @@
       "scind_canon": "specs/state-management.md (fail-closed conflict error)",
       "xcind_reality": "sticky-trust, no bind-probe (xcind-assigned-lib.bash:789-797)",
       "adversarial_recheck": "SURVIVES-NARROWED",
-      "notes": "Adversarial re-check performed (P7). Promotable half = SA-0005 (CANON-OVERREACH \u2192 P6); keep routed."
+      "notes": "Adversarial re-check performed (P7). Promotable half = SA-0005 (CANON-OVERREACH \u2192 P6); keep routed.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0017",
@@ -240,7 +244,8 @@
       "scind_canon": "specs/state-management.md; generated-manifest.md (state.yaml+manifest.yaml)",
       "xcind_reality": "flat path+timestamp TSV; no state.yaml/manifest",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: manifest retained as at-rest integration surface; reopen if consumers leave it unread."
+      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: manifest retained as at-rest integration surface; reopen if consumers leave it unread.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0018",
@@ -253,7 +258,8 @@
       "scind_canon": "specs/generated-override-files.md (one monolithic override)",
       "xcind_reality": "8 per-hook SHA overlays merged via -f",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Byte-identical output; live-vs-pure = XA-0001/L-0005."
+      "notes": "Adversarial re-check performed (P7). Byte-identical output; live-vs-pure = XA-0001/L-0005.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0019",
@@ -266,7 +272,8 @@
       "scind_canon": "architecture/overview.md (monolithic generator)",
       "xcind_reality": "CONFIGURED/RESOLVED/GENERATE/EXECUTE arrays",
       "adversarial_recheck": "SURVIVES-CONTINGENT",
-      "notes": "Adversarial re-check performed (P7). CONTINGENT on ESCALATE XA-0019 \u2014 RE-OPEN if it promotes."
+      "notes": "Adversarial re-check performed (P7). CONTINGENT on ESCALATE XA-0019 \u2014 RE-OPEN if it promotes.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0020",
@@ -279,7 +286,8 @@
       "scind_canon": "specs/generated-manifest.md (aggregated manifest.yaml)",
       "xcind_reality": "per-app SHA-keyed config.json (cache dir)",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: aggregated manifest retained; XA-0020 SHA cache deferred. Reopen for manifest disuse or real mtime failures."
+      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: aggregated manifest retained; XA-0020 SHA cache deferred. Reopen for manifest disuse or real mtime failures.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0021",
@@ -292,7 +300,8 @@
       "scind_canon": "decisions/0011 (--workspace/--app from anywhere)",
       "xcind_reality": "no flags; cwd-walk + [DIR] + XCIND_APP_ROOT",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Scind registry = superset. Xcind should file an ADR. Xcind ADR filed 2026-08-07: ADR-0023 location-based-targeting (RL-093)."
+      "notes": "Adversarial re-check performed (P7). Scind registry = superset. Xcind should file an ADR. Xcind ADR filed 2026-08-07: ADR-0023 location-based-targeting (RL-093).",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0022",
@@ -318,7 +327,8 @@
       "scind_canon": "specs/generated-manifest.md (computed manifest.yaml)",
       "xcind_reality": "on-demand via xcind-application + --json; no manifest",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: manifest retained for at-rest topology, not cache staleness. Reopen if named consumers leave it unread."
+      "notes": "Adversarial re-check performed (P7). L-0035 resolved 2026-08: manifest retained for at-rest topology, not cache staleness. Reopen if named consumers leave it unread.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0024",
@@ -331,7 +341,8 @@
       "scind_canon": "specs/configuration-schemas.md; reference/cli.md (flavors + default_flavor)",
       "xcind_reality": "flat XCIND_COMPOSE_FILES; ADR-0005 dropped flavors",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). L-0039 resolved 2026-08: Scind retains stateful flavors; no env-var source now. Reopen for a concrete CI consumer. ADR-0005 flavors-deferral section added 2026-08-07 (RL-092)."
+      "notes": "Adversarial re-check performed (P7). L-0039 resolved 2026-08: Scind retains stateful flavors; no env-var source now. Reopen for a concrete CI consumer. ADR-0005 flavors-deferral section added 2026-08-07 (RL-092).",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0025",
@@ -344,7 +355,8 @@
       "scind_canon": "specs/state-management.md (assigned/unavailable/released)",
       "xcind_reality": "active-only TSV; prune + release",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). Soft P6 note: 'unavailable' sub-state inherits SA-0005 taint."
+      "notes": "Adversarial re-check performed (P7). Soft P6 note: 'unavailable' sub-state inherits SA-0005 taint.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0026",
@@ -357,7 +369,8 @@
       "scind_canon": "specs/workspace-lifecycle.md (explicit state machine)",
       "xcind_reality": "status inferred from Docker live",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Scind spec also says state inferred; descriptive model. Facets 0033/0034."
+      "notes": "Adversarial re-check performed (P7). Scind spec also says state inferred; descriptive model. Facets 0033/0034.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0027",
@@ -370,7 +383,8 @@
       "scind_canon": "reference/cli.md; specs/state-management.md (scan + gc)",
       "xcind_reality": "auto-running prune only",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). Soft P6 note: scan's role in SA-0005 error flow. Tied to 0025."
+      "notes": "Adversarial re-check performed (P7). Soft P6 note: scan's role in SA-0005 error flow. Tied to 0025.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0028",
@@ -383,7 +397,8 @@
       "scind_canon": "reference/cli.md; specs/workspace-lifecycle.md (one-command orchestration)",
       "xcind_reality": "per-app-dir only (bin/xcind-workspace:936-966)",
       "adversarial_recheck": "SURVIVES-STRONG",
-      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Highest-value reconsider; likely resolves."
+      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Highest-value reconsider; likely resolves.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0029",
@@ -396,7 +411,8 @@
       "scind_canon": "reference/cli.md (workspace clone + repository:)",
       "xcind_reality": "no repository concept; dirs user brings",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Multi-repo bootstrap is real; Xcind scope choice."
+      "notes": "Adversarial re-check performed (P7). Multi-repo bootstrap is real; Xcind scope choice.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0030",
@@ -409,7 +425,8 @@
       "scind_canon": "specs/port-types.md; roadmap.md (Future)",
       "xcind_reality": "test-enforced rejection",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). (Future) in both; permanent subset."
+      "notes": "Adversarial re-check performed (P7). (Future) in both; permanent subset.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0031",
@@ -422,7 +439,8 @@
       "scind_canon": "roadmap.md (Future)",
       "xcind_reality": "unbuilt; dropped from roadmap",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). (Future) in both; permanent subset."
+      "notes": "Adversarial re-check performed (P7). (Future) in both; permanent subset.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0032",
@@ -435,7 +453,8 @@
       "scind_canon": "specs/port-types.md; docker-labels.md (visibility labels)",
       "xcind_reality": "no visibility or assigned-port labels; dropped proxy. segment; visibility test-rejected",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). Named consumer (Servlo). Covers omitted visibility and assigned-port labels plus Xcind's dropped proxy. segment. RG-0002/L-0034 resolved 2026-08."
+      "notes": "Adversarial re-check performed (P7). Named consumer (Servlo). Covers omitted visibility and assigned-port labels plus Xcind's dropped proxy. segment. RG-0002/L-0034 resolved 2026-08.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0033",
@@ -448,20 +467,22 @@
       "scind_canon": "reference/cli.md; specs/workspace-lifecycle.md (generate verb)",
       "xcind_reality": "folded into on-demand SHA-cached derivation",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Inspection affordance; facet of 0026."
+      "notes": "Adversarial re-check performed (P7). Inspection affordance; facet of 0026.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0034",
       "file": "0034-explicit-workspace-destroy.md",
       "title": "Explicit workspace destroy",
       "category": "Design",
-      "status": "Active",
+      "status": "Resolved",
       "origin_finding": "SA-0024",
       "source_plan": "P5",
       "scind_canon": "reference/cli.md; specs/workspace-lifecycle.md (destroy verb)",
       "xcind_reality": "thinner teardown via forget/prune",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Maps to stateful cleanup; facet of 0026."
+      "notes": "Adversarial re-check performed (P7). Maps to stateful cleanup; facet of 0026. Resolved 2026-08-07 (round 2, RL-135): Xcind PR #86 shipped xcind-workspace dispose \u2014 the same down+release-ports+remove-generated+deregister cascade as scind workspace destroy \u2014 falsifying the 'Xcind needs less teardown' premise. Xcind converged to canon; canon validated, unchanged. Residual difference is flag shape only (--yes/--rm vs --force/--keep-apps; RL-134), beneath registry granularity. Re-check divergence 0026's destroy-facet wording next round.",
+      "reaudited": "2026-08-07 round-2: RESOLVED-BY-CONVERGENCE"
     },
     {
       "id": "0035",
@@ -500,7 +521,8 @@
       "scind_canon": "specs/context-detection.md; specs/directory-structure.md (mandatory workspace boundary)",
       "xcind_reality": "workspaceless mode defaults on across naming, networking, and discovery",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check in 2026-08 escalation brief. Scind keeps one workspace-keyed model and scaffolds path: . for a single app."
+      "notes": "Adversarial re-check in 2026-08 escalation brief. Scind keeps one workspace-keyed model and scaffolds path: . for a single app.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
       "id": "0038",
@@ -513,7 +535,8 @@
       "scind_canon": "workspace.yaml owns and enumerates application membership",
       "xcind_reality": "app .xcind.sh sets XCIND_WORKSPACE and late-binds without a parent roster",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check in 2026-08 escalation brief. External paths flow to canon separately; ownership inversion stays Xcind-only."
+      "notes": "Adversarial re-check in 2026-08 escalation brief. External paths flow to canon separately; ownership inversion stays Xcind-only.",
+      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     }
   ],
   "rejected": [

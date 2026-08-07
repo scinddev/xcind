@@ -1,0 +1,14 @@
+# Gitleaks repo config. The reconciliation ledgers (engineering/sync/artifacts/)
+# carry a "join_key" field whose value is a human-readable finding slug
+# (L-/XA-/SA-/F2-…). The generic-api-key rule matches any *key-named field with
+# an entropic string value, so descriptive slugs false-positive. Allowlist that
+# one field shape, nothing else.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Sync-ledger join_key finding slugs are not secrets"
+regexTarget = "line"
+regexes = [
+  '''"join_key":\s*"[A-Za-z0-9-]+"''',
+]

@@ -4,6 +4,7 @@
 trees. Every file in the comparison surface (Scind `docs/` 82 files, Xcind
 `engineering/` 83 files — 165 total) appears in exactly one row below.
 **Date**: 2026-07-15   **Branch**: `sync/p1-self-sync`
+**Round-2 update (2026-08-07)**: rows touched by Xcind PRs #82–#88 refreshed; ADR rows for Xcind 0021/0022/0023 added; see [`reconciliation-ledger-round-2.md`](./reconciliation-ledger-round-2.md) and §2's Round-2 delta.
 **Inputs**: [`00-global-context.md`](../00-global-context.md),
 [`02-correspondence-map.md`](../02-correspondence-map.md),
 [`p1-self-sync-report.md`](./p1-self-sync-report.md).
@@ -73,18 +74,18 @@ tags the downstream plan each non-`MATCH` row hands to.
 | Scind path | Xcind path | Rel | Feeds | Notes |
 |-----------|-----------|-----|-------|-------|
 | `docs/decisions/0000-template.md` | `engineering/decisions/0000-template.md` | MATCH | — | Identical body; Scind keeps a trailing HTML comment. |
-| `docs/decisions/README.md` | `engineering/decisions/README.md` | PARTIAL | — | Structural index; Xcind lists 0001–0020 + Scind-origin note. |
+| `docs/decisions/README.md` | `engineering/decisions/README.md` | PARTIAL | — | Structural index; Xcind lists 0001–0023 + Scind-origin note. *(R2)* |
 | `docs/decisions/0001-docker-compose-project-name-isolation.md` | `engineering/decisions/0001-…` | MATCH | — | Same decision; Xcind adds a worktree-instance note (subject of 0019). |
 | `docs/decisions/0002-two-layer-networking.md` | `engineering/decisions/0002-…` | MATCH | — | Identical but proxy-net prefix. |
 | `docs/decisions/0003-pure-overlay-design.md` | `engineering/decisions/0003-…` | MATCH | — | Identical. |
 | `docs/decisions/0004-convention-based-naming.md` | `engineering/decisions/0004-…` | MATCH | — | Same; Xcind adds additive URL templates. |
-| `docs/decisions/0005-structure-vs-state-separation.md` | `engineering/decisions/0005-…` | MATCH | — | Same; state mechanism differs (YAML vs `.xcind.sh` + cache). |
+| `docs/decisions/0005-structure-vs-state-separation.md` | `engineering/decisions/0005-…` | MATCH | — | Same; state mechanism differs (YAML vs `.xcind.sh` + cache). R2: Xcind adds a flavors-deferred-not-rejected section (→ divergence 0024). |
 | `docs/decisions/0006-three-configuration-schemas.md` | `engineering/decisions/0006-…` | MATCH | — | Same three-tier; Bash vs YAML. |
 | `docs/decisions/0007-port-type-system.md` | `engineering/decisions/0007-…` | MATCH | — | Same proxied/assigned; Xcind's positional-primary rule is the root of the apex divergence. |
 | `docs/decisions/0008-traefik-reverse-proxy.md` | `engineering/decisions/0008-…` | MATCH | — | Identical. |
 | `docs/decisions/0009-flexible-tls-configuration.md` | `engineering/decisions/0009-…` | MATCH | — | Same modes; Xcind adds per-export `tls`; corrected later by 0016. |
 | `docs/decisions/0010-up-down-command-semantics.md` | `engineering/decisions/0010-…` | MATCH | — | Identical. |
-| `docs/decisions/0011-options-based-targeting.md` | — | SCIND-ONLY | P5 | No Xcind ADR for `--workspace`/`--app` targeting (Xcind uses subcommands + DIR). |
+| `docs/decisions/0011-options-based-targeting.md` | `engineering/decisions/0023-location-based-targeting.md` | **DIVERGED** | P3 | **R2**: Xcind ADR-0023 formalizes the deviation (SA-0001) — name-based `--workspace`/`--app` flags explicitly rejected in favor of location-only targeting (no authoritative name→location roster, per Xcind 0005). Was SCIND-ONLY. |
 | `docs/decisions/0012-layered-documentation-system.md` | `engineering/decisions/0011-layered-documentation-system.md` | RENUMBERED | P6 | Same LDS decision, off-by-one. |
 | `docs/decisions/0013-apex-url-primary-designation.md` | `engineering/decisions/0017-apex-url-reporting.md` | **DIVERGED** | P3 | **Conflicting decision** (see §2 verdict): Scind mandates `primary: true` and explicitly rejects positional; Xcind is positional (0007) + 0017 adds only reporting. |
 | `docs/decisions/0014-host-docker-internal-normalization.md` | `engineering/decisions/0013-host-docker-internal-normalization.md` | RENUMBERED | P6 | Same decision, different number. |
@@ -95,6 +96,8 @@ tags the downstream plan each non-`MATCH` row hands to.
 | — | `engineering/decisions/0018-service-discovery-env-injection.md` | XCIND-ONLY | P4 | Ports a Scind spec-level design; `_HOST_PORT` is a PROMOTE candidate. |
 | — | `engineering/decisions/0019-worktree-instance-isolation.md` | XCIND-ONLY | **P6/P3** | Learning is a **canon-change against Scind 0001** (one-working-copy assumption), not a divergence. |
 | — | `engineering/decisions/0020-host-env-symmetry.md` | XCIND-ONLY | P4 | Opt-in host-view env file; self-flagged PROMOTE candidate. |
+| — | `engineering/decisions/0021-cross-repo-adr-cross-referencing.md` | XCIND-ONLY | P6 | *(R2)* Meta-ADR owning the topic-keyed cross-reference policy (this table). |
+| — | `engineering/decisions/0022-external-proxy-mode.md` | XCIND-ONLY | P4 | *(R2)* managed\|external proxy mode (host Traefik, e.g. Coolify). Promoted to Scind ADR-0017 (RL-116). |
 
 ### specs/  (+ appendices)
 
@@ -104,19 +107,19 @@ tags the downstream plan each non-`MATCH` row hands to.
 | `docs/specs/configuration-schemas.md` | `engineering/specs/configuration-schemas.md` | PARTIAL | P4/P5 | Scind three YAML schemas + flavors vs Xcind three `.xcind.sh` levels + hook-pipeline table. Flavors Scind-only (P5); pipeline Xcind-ahead (P4). |
 | `docs/specs/context-detection.md` | `engineering/specs/context-detection.md` | PARTIAL | P4 | Scind walks for `workspace.yaml`/`application.yaml`; Xcind walks for `.xcind.sh` + parent `XCIND_IS_WORKSPACE` + late-bind/`XCIND_APP_ROOT`. |
 | `docs/specs/directory-structure.md` | `engineering/specs/directory-structure.md` | PARTIAL | P4 | Scind `.generated/*.override.yaml`; Xcind SHA-keyed `.xcind/generated/{sha}/` 8 overlays + cache + workspaceless mode. |
-| `docs/specs/docker-labels.md` | `engineering/specs/docker-labels.md` | **DIVERGED** | P3/P4 | **Conflicting label schema**: Scind `.proxy.{proto}.visibility/.url` + visibility labels; Xcind `.http.url/.https.url`/preferred `.url` + `traefik.docker.network`/`.service` + redirect middleware + two-router model. Xcind ahead on routers (P4); visibility Scind-only (P3). |
+| `docs/specs/docker-labels.md` | `engineering/specs/docker-labels.md` | **DIVERGED** | P3/P4 | **Conflicting label schema**: Scind `.proxy.{proto}.visibility/.url` + visibility labels; Xcind `.http.url/.https.url`/preferred `.url` + `traefik.docker.network`/`.service` + redirect middleware + two-router model. Xcind ahead on routers (P4); visibility Scind-only (P3). R2: config-driven network/entrypoint label values + `tls.certresolver` (ADR-0022); redirect routers pin `noop@internal`. |
 | `docs/specs/environment-variables.md` | `engineering/specs/environment-variables.md` | PARTIAL | P4 | `SCIND_`→`XCIND_` + Xcind far ahead: `_HOST_PORT` (self-flagged divergence), `XCIND_HOST_ENV_FILE/_MODE`, `XCIND_INSTANCE/_AUTO`, app-env injection. |
-| `docs/specs/generated-override-files.md` | `engineering/specs/generated-override-files.md` | PARTIAL | P4 | Scind monolithic override; Xcind 8 per-hook SHA overlays + caching/`.complete`/`XCIND_HOOKS_ALWAYS` contract. |
+| `docs/specs/generated-override-files.md` | `engineering/specs/generated-override-files.md` | PARTIAL | P4 | Scind monolithic override; Xcind 8 per-hook SHA overlays + caching/`.complete`/`XCIND_HOOKS_ALWAYS` contract. R2: third cache artifact `resolved-config.json` (post-hook) + `XCIND_CACHE_SCHEMA` in the SHA inputs. |
 | `docs/specs/naming-conventions.md` | `engineering/specs/naming-conventions.md` | PARTIAL | P4 | Xcind folds `XCIND_INSTANCE` + workspaceless templates; Scind `primary:true` field + git-submodule strategy have no Xcind analog. |
 | `docs/specs/port-types.md` | `engineering/specs/port-types.md` | PARTIAL | P4/P5 | Xcind ahead on per-export `tls` + assigned lifecycle (P4); tcp/SNI + visibility Scind-only (P5). |
-| `docs/specs/proxy-infrastructure.md` | `engineering/specs/proxy-infrastructure.md` | PARTIAL | P4 | Xcind ahead: configurable ports, multi-label domain constraint (0016), layered TLS resolution, assigned-ports lifecycle. |
+| `docs/specs/proxy-infrastructure.md` | `engineering/specs/proxy-infrastructure.md` | PARTIAL | P4 | Xcind ahead: configurable ports, multi-label domain constraint (0016), layered TLS resolution, assigned-ports lifecycle. R2: External Proxy Mode section (ADR-0022) + `dispose` + status/doctor extensions. |
 | `docs/specs/workspace-lifecycle.md` | `engineering/specs/workspace-lifecycle.md` | PARTIAL | P4/P5 | Scind full state machine + flavors + destroy (P5); Xcind deliberately stateless registry (P4). |
 | `docs/specs/state-management.md` | — | SCIND-ONLY | P5 | Flavors, `port_inventory`, status-transition model absent from Xcind by design. |
 | `docs/specs/host-gateway-resolution.md` | — | SCIND-ONLY | P5 | **Built but not re-specified** (via `xcind-host-gateway-hook`); Xcind defers to this Scind spec. Candidate gap: Scind mandates exposing `*_HOST_GATEWAY` into containers; Xcind env-var spec never mentions it. |
 | `docs/specs/generated-manifest.md` | — | SCIND-ONLY | P5 | Xcind deliberately has **no manifest** (`application-lifecycle.md` says so). Candidate P7 divergence. |
 | `docs/specs/shell-integration.md` | — | SCIND-ONLY | P5 | Scind `scind-compose` shell-function design; Xcind `xcind-compose` is a real binary. Candidate P7 divergence. |
-| — | `engineering/specs/hook-lifecycle.md` | XCIND-ONLY | P4 | CONFIGURED/RESOLVED/GENERATE/EXECUTE hook pipeline. Built, unspecified in canon. |
-| — | `engineering/specs/application-lifecycle.md` | XCIND-ONLY | P4 | Dedicated app spec + `xcind-application` subcommands. |
+| — | `engineering/specs/hook-lifecycle.md` | XCIND-ONLY | P4 | CONFIGURED/RESOLVED/GENERATE/EXECUTE hook pipeline. Built, unspecified in canon. R2: resolved-cache refresh step + `--cached`/`--hooks-ttl` short-circuits. |
+| — | `engineering/specs/application-lifecycle.md` | XCIND-ONLY | P4 | Dedicated app spec + `xcind-application` subcommands. R2: `dispose` replaces the manual-removal story + discovered-workspace self-declaration guard. |
 | `docs/specs/appendices/generated-override-files/complete-override-example.yaml` | `engineering/specs/appendices/generated-override-files/complete-proxy-example.yaml` | PARTIAL | P4 | Scind whole merged override; Xcind only the `compose.proxy.yaml` hook slice. |
 | `docs/specs/appendices/proxy-infrastructure/traefik-compose.yaml` | `engineering/specs/appendices/proxy-infrastructure/traefik-compose.yaml` | PARTIAL | P4 | Xcind conditionalizes 443/certs/dashboard on TLS mode + `XCIND_PROXY_*`; Scind hard-codes. |
 | `docs/specs/appendices/proxy-infrastructure/traefik-config.yaml` | `engineering/specs/appendices/proxy-infrastructure/traefik-config.yaml` | PARTIAL | P4 | Xcind TLS-conditional websecure/file-provider + conditional dashboard; Scind unconditional. |
@@ -148,8 +151,8 @@ tags the downstream plan each non-`MATCH` row hands to.
 | Scind path | Xcind path | Rel | Feeds | Notes |
 |-----------|-----------|-----|-------|-------|
 | `docs/reference/README.md` | `engineering/reference/README.md` | MATCH | — | Both thin index pages; Scind adds an Appendices section. |
-| `docs/reference/cli.md` | `engineering/reference/cli.md` | PARTIAL | P4/P5 | Scind unified `scind <resource> <action>` vs Xcind six binaries. Scind-only surface (flavor cmds, clone/generate/destroy, port assign/gc/scan) → P5; Xcind-ahead (`xcind-prompt`, provenance `--version`, `--generate-*`, `application ports/urls/exports`) → P4. |
-| `docs/reference/configuration.md` | `engineering/reference/configuration.md` | PARTIAL | P4/P5 | Same concepts, opposite mechanism (Scind YAML, explicitly rejects env-vars, vs Xcind `XCIND_*`). Xcind-only vars → P4; Scind flavor/manifest/`%VAR%` template material → P5. |
+| `docs/reference/cli.md` | `engineering/reference/cli.md` | PARTIAL | P4/P5 | Scind unified `scind <resource> <action>` vs Xcind six binaries. Scind-only surface (flavor cmds, clone/generate/destroy, port assign/gc/scan) → P5; Xcind-ahead (`xcind-prompt`, provenance `--version`, `--generate-*`, `application ports/urls/exports`) → P4. R2: + `xcind-config resolve <path>`, `dispose` on proxy/workspace/application, external-mode proxy flags. |
+| `docs/reference/configuration.md` | `engineering/reference/configuration.md` | PARTIAL | P4/P5 | Same concepts, opposite mechanism (Scind YAML, explicitly rejects env-vars, vs Xcind `XCIND_*`). Xcind-only vars → P4; Scind flavor/manifest/`%VAR%` template material → P5. R2: + `XCIND_APP`, `XCIND_HOOKS_TTL`, `XCIND_PROXY_MODE/NETWORK/HTTP(S)_ENTRYPOINT/CERTRESOLVER`. |
 | `docs/reference/appendices/cli/detailed-examples.md` | — | SCIND-ONLY | P5 | Extended CLI walkthroughs; **may be covered by Xcind two-track user `docs/`** (not chased — human call). |
 | `docs/reference/appendices/cli/error-messages.md` | — | SCIND-ONLY | P5 | CLI error/exit-code catalog; no Xcind eng-reference analog (may live in user docs). |
 | `docs/reference/appendices/configuration/complete-examples.md` | — | SCIND-ONLY | P5 | Worked config examples; Xcind embeds inline in `configuration.md`. |
@@ -169,7 +172,7 @@ tags the downstream plan each non-`MATCH` row hands to.
 | `docs/implementation/appendices/tech-stack/scaffold-*.go` (16 files) | — | SCIND-ONLY | P7 | Go source scaffolds (main, cmd-root, aliases, compose-prefix, init-shell, validate, utility, workspace, app, flavor, port, proxy, config, config-types, context, generator). Each a permanent Go/Bash divergence, **not a P5 gap** — Xcind implements the same commands as Bash. *(Enumerated individually in the JSON companion.)* |
 | — | `engineering/implementation/handoffs/apex-url-reporting.md` | XCIND-ONLY | P7 | Bash impl work-record (resolved, ties to 0017). No action. |
 | — | `engineering/implementation/handoffs/assigned-hook-cache-hit-skip.md` | XCIND-ONLY | P7 | Bash impl work-record (open). No action. |
-| — | `engineering/implementation/handoffs/config-json-cache-staleness.md` | XCIND-ONLY | P7 | Bash impl work-record (open). No action. |
+| — | `engineering/implementation/handoffs/config-json-cache-staleness.md` | XCIND-ONLY | P7 | Bash impl work-record. R2: resolved by PR #88 (post-hook cache writes + schema bump); regression test still missing. No action. |
 
 ### maintenance/  — reserved for P6 (process docs); mapped here for completeness
 
@@ -209,7 +212,7 @@ decision." This table supersedes the global-context §4a seed table.
 | Traefik reverse proxy | 0008 | 0008 | Yes | MATCH | — |
 | Flexible TLS configuration | 0009 | 0009 | Yes | MATCH | (0016 corrects wildcard) |
 | up/down command semantics | 0010 | 0010 | Yes | MATCH | — |
-| Options-based targeting | 0011 | — | N/A | SCIND-ONLY | **P5** |
+| Options-based vs location-based targeting | 0011 | 0023 | **No** | **DIVERGED** | **P3** *(R2; was SCIND-ONLY)* |
 | Layered documentation system | 0012 | 0011 | Yes | RENUMBERED | **P6** |
 | **Apex URL designation vs reporting** | **0013** | **0017** | **No** | **DIVERGED** | **P3** |
 | host.docker.internal normalization | 0014 | 0013 | Yes | RENUMBERED | **P6** |
@@ -220,6 +223,8 @@ decision." This table supersedes the global-context §4a seed table.
 | Service-discovery env injection | — | 0018 | N/A | XCIND-ONLY | **P4** (`_HOST_PORT` = PROMOTE candidate) |
 | Worktree instance isolation (`XCIND_INSTANCE`) | — | 0019 | N/A | XCIND-ONLY | **P6/P3** — canon-change vs 0001 |
 | Host/container env symmetry (`XCIND_HOST_ENV_FILE`) | — | 0020 | N/A | XCIND-ONLY | **P4** (self-flagged PROMOTE) |
+| Cross-repo ADR cross-referencing (meta) | — | 0021 | N/A | XCIND-ONLY | *(R2)* policy ADR behind this table |
+| External proxy mode | 0017 | 0022 | Yes | MATCH | *(R2)* promoted Xcind→Scind (RL-116) |
 
 ### Seed-table verdict
 
@@ -241,6 +246,22 @@ The §4a seed was **confirmed with one correction**:
   Xcind's designation is positional first-proxied-entry (`0007:32`, reaffirmed
   `0018:45-49`) and Xcind 0017 adds only apex-URL *reporting* on top of that positional
   rule. Same topic, conflicting mechanism → **DIVERGED, feeds P3**.
+
+### Round-2 delta (2026-08-07)
+
+Refresh scoped by [`sync-baseline.json`](./sync-baseline.json) round 1 → Xcind PRs
+#82/#83/#85/#86/#87/#88; Scind canon `ca156eb` unchanged. Ledger:
+[`reconciliation-ledger-round-2.md`](./reconciliation-ledger-round-2.md) (RL-116..RL-142).
+
+- **Targeting flips SCIND-ONLY → DIVERGED-DECISION**: new Xcind ADR-0023 records the
+  location-only targeting deviation against Scind 0011 (same class as the 0013/0017
+  apex row). Feeds P3.
+- **External proxy mode**: new Xcind ADR-0022 (XCIND-ONLY at triage) promoted to
+  Scind as **ADR-0017** this round → row lands as MATCH.
+- **Xcind ADR-0021** (cross-repo ADR policy) added; it was created at the baseline
+  commit itself and had no row.
+- 12 file rows refreshed with `R2:` clauses (dispose, resolve, external proxy,
+  cache-schema); no other relationship codes changed.
 
 ---
 

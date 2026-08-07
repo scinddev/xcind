@@ -79,6 +79,49 @@
         "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline ca156eb..origin/main",
         "note": "Subtract round_outputs from the xcind range; what remains is known_excluded plus anything newer. The scind range is expected to be empty until canon moves independently."
       }
+    },
+    {
+      "round": 2,
+      "name": "Post-9f975e4 feature wave (external proxy mode, dispose, resolve, yq, cache refresh)",
+      "opened": "2026-08-07",
+      "completed": "2026-08-07",
+      "artifacts": [
+        "engineering/sync/artifacts/reconciliation-ledger-round-2.{md,json}",
+        "engineering/sync/artifacts/correspondence-map.{md,json} (11 rows refreshed, 2 added, ADR table updated)",
+        "engineering/sync/divergence/ (22 re-audit stamps; 0034 -> Resolved)",
+        "engineering/archive/sync-audit-2026-08-07-cross-project-round-2.md"
+      ],
+      "ledger": {
+        "file": "engineering/sync/artifacts/reconciliation-ledger-round-2.md",
+        "status": "CLOSED",
+        "rl_id_range": "RL-116..RL-142",
+        "next_rl_id": "RL-143"
+      },
+      "xcind": {
+        "reviewed_through": "ce0da4c",
+        "reviewed_through_subject": "docs(sync): resolve drift from the post-9f975e4 audit (PRs #82-#88)",
+        "head_at_close": "ce0da4c",
+        "head_at_close_note": "Plus this round's own docs(sync) bookkeeping commit, which lands immediately after this entry is written; it is a round output.",
+        "round_outputs": [
+          "docs(sync) round-2 bookkeeping commit (ledger round-2, map refresh, registry stamps + 0034 closure, report, this baseline entry)"
+        ],
+        "known_excluded": [],
+        "known_excluded_reason": "Nothing: every commit in 9f975e4..ce0da4c is either a round-1 output (already accounted) or was triaged this round."
+      },
+      "scind": {
+        "compared_against": "ca156eb",
+        "compared_against_note": "Canon at round-1 close; confirmed unchanged (ca156eb..origin/main empty at round start).",
+        "canon_at_close": "ca156eb",
+        "canon_at_close_note": "PR #8 (branch sync/round-2-canon, commit b82b9b1) was OPEN at round close - the sandbox denied 'gh pr merge', so merging is a pending human action. Once merged, canon includes every round-2 edit; the next round should treat the merge commit as round-2 output, not drift.",
+        "prs": [
+          "https://github.com/scinddev/scind/pull/8  OPEN at close (round-2 batch: ADR-0017 external proxy mode, proxy destroy, app get, +16 more rows)"
+        ]
+      },
+      "next_round_diff": {
+        "xcind": "git -C /home/dev/Code/xcind log --oneline ce0da4c..HEAD",
+        "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline ca156eb..origin/main",
+        "note": "Subtract the round-2 bookkeeping commit(s) from the xcind range. The scind range is expected to contain exactly PR #8's merge (round-2 output); anything beyond that is independent canon drift."
+      }
     }
   ]
 }

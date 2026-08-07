@@ -1,6 +1,6 @@
 # Divergence 0034: Explicit `workspace destroy`
 
-**Status**: Active
+**Status**: Resolved (2026-08-07, round 2 — Xcind converged; see below)
 **Scind canon**: `docs/reference/cli.md`, `docs/specs/workspace-lifecycle.md` (explicit `workspace destroy` — full teardown)
 **Xcind reality**: thinner teardown via `forget` / `prune`; no full `destroy` verb; `bin/xcind-workspace`
 **Category**: Design
@@ -35,6 +35,20 @@ direct consequence of it persisting less, not a disproof. Verdict:
 ## Revisit conditions
 None substantive — CLI facet of divergence 0026 (workspace state machine); resolves
 only if that does.
+
+## Resolution (2026-08-07, round 2 — RL-135)
+
+The premise "Xcind has no destroy verb" is now false. Xcind PR
+[#86](https://github.com/scinddev/xcind/pull/86) (`d9d9a8f`, 2026-08) shipped
+`dispose` subcommands on `xcind-application`, `xcind-workspace`, and `xcind-proxy`.
+`xcind-workspace dispose` performs the same cascade Scind's `workspace destroy`
+specifies: dispose every app (compose down, release assigned ports, remove generated
+`.xcind/` state), remove the workspace network, forget the registry entry, and
+optionally remove the directory (`--rm`). **Xcind converged to canon; canon was
+validated, not disproven — no Scind edit.** Residual difference is flag shape only
+(`--yes`/`--rm` split vs `--force`/`--keep-apps` pair; ledger RL-134): both reach the
+same two non-interactive outcomes, so it stays beneath registry granularity.
+Follow-up: re-check divergence 0026's destroy-facet wording next round.
 
 ## Links
 - Origin finding: P5 SA-0024 (CLI facet of SA-0010 / divergence 0026)

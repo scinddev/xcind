@@ -145,7 +145,7 @@ before P3–P5 finished; the rest are **populated** from P3/P4/P5 findings.
 | [0031](./0031-shared-volumes.md) | Shared volumes | Scope | Active | SA-0017 |
 | [0032](./0032-visibility-access-control-labels.md) | Visibility labels and label-schema shape | Scope | Active | SA-0019 |
 | [0033](./0033-explicit-workspace-generate.md) | Explicit `workspace generate` | Design | Active | SA-0023 |
-| [0034](./0034-explicit-workspace-destroy.md) | Explicit `workspace destroy` | Design | Active | SA-0024 |
+| [0034](./0034-explicit-workspace-destroy.md) | Explicit `workspace destroy` | Design | **Resolved** (R2: Xcind converged via `dispose`, PR #86) | SA-0024 |
 | [0035](./0035-reference-appendices-presentation.md) | Reference-appendices presentation | Process | Active | SA-0025 |
 | [0036](./0036-proxy-init-full-config-flags.md) | Full proxy configuration through `proxy init` flags | Structural | Active | XA-0026 |
 | [0037](./0037-workspaceless-standalone-mode.md) | Workspaceless standalone application mode | Design | Active | XA-0021 |
