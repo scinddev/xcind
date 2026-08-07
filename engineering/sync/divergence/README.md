@@ -139,7 +139,7 @@ before P3–P5 finished; the rest are **populated** from P3/P4/P5 findings.
 | [0025](./0025-port-inventory-status-model.md) | `port_inventory` status model | Design | Active | SA-0009 |
 | [0026](./0026-workspace-state-machine.md) | Workspace state machine | Design | Active | SA-0010 |
 | [0027](./0027-port-scan-gc-commands.md) | `port scan` / `port gc` | Scope | Active | SA-0011 |
-| [0028](./0028-workspace-orchestration-up-down.md) | Workspace-wide up/down/restart | Scope | Active | SA-0013 |
+| [0028](./0028-workspace-orchestration-up-down.md) | Workspace-wide up/down/restart | Scope | **Resolved** (R4: Xcind converged via `up`/`down`, `12737f8`) | SA-0013 |
 | [0029](./0029-workspace-clone-repo-urls.md) | `workspace clone` from repo URLs | Scope | Active | SA-0014 |
 | [0030](./0030-port-type-plugins-tcp-sni.md) | Port-type plugins + tcp/SNI routing | Scope | Active | SA-0015 |
 | [0031](./0031-shared-volumes.md) | Shared volumes | Scope | Active | SA-0017 |

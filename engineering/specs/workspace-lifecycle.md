@@ -1,6 +1,6 @@
 # Workspace Lifecycle
 
-> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init`, `status`, `list`, `register`, and `forget` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
+> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init`, `up`, `down`, `status`, `list`, `register`, `forget`, and `dispose` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
 
 ---
 
@@ -27,7 +27,7 @@ XCIND_PROXY_DOMAIN="xcind.localhost"
 EOF
 ```
 
-See the [CLI Reference](../reference/cli.md#xcind-workspace) for full `init`, `status`, `list`, `register`, and `forget` options.
+See the [CLI Reference](../reference/cli.md#xcind-workspace) for the full options of every subcommand.
 
 ### Managing the Workspace Registry
 
@@ -66,9 +66,32 @@ Xcind automatically:
 xcind-compose down
 ```
 
+### Running the Whole Workspace
+
+`xcind-workspace up` and `xcind-workspace down` run the per-app commands above
+across every application directory in the workspace — enumerate the app dirs,
+invoke `xcind-compose up -d` (or `down`) in each, continue past failures, and
+report the failed applications at the end:
+
+```bash
+xcind-workspace up            # xcind-compose up -d in each app dir
+xcind-workspace down --yes    # xcind-compose down in each; --yes skips the prompt
+```
+
+`down` confirms before acting because it is workspace-wide.
+
 ### Removing a Workspace
 
-Simply remove the directory. There is no state to clean up beyond Docker containers and networks:
+`xcind-workspace dispose` tears down every application (compose down, release
+assigned ports, remove generated `.xcind/` state), removes the workspace
+network and registry entry, and with `--rm` removes the directory itself:
+
+```bash
+xcind-workspace dispose dev/ --rm --volumes --yes
+```
+
+Manual removal also works — beyond Docker containers, the workspace network,
+and the registry entry, there is no state to clean up:
 
 ```bash
 # Stop all containers first
@@ -80,7 +103,8 @@ cd dev/backend && xcind-compose down
 # dev-{instance}-internal; see Naming Conventions.
 docker network rm dev-internal 2>/dev/null || true
 
-# Remove the workspace directory
+# Remove the workspace directory (drop its registry entry with
+# `xcind-workspace forget dev/`)
 rm -rf dev/
 ```
 

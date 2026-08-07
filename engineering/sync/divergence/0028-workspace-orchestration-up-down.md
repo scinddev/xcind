@@ -1,8 +1,8 @@
 # Divergence 0028: Workspace-wide up/down/restart orchestration
 
-**Status**: Active
+**Status**: Resolved (2026-08-07, round 4 — Xcind converged; see below)
 **Scind canon**: `docs/reference/cli.md`, `docs/specs/workspace-lifecycle.md` (one command brings the whole workspace up/down/restart)
-**Xcind reality**: per-app-dir operation only via `xcind-compose`; workspace surface is `init/dispose/status/list/register/forget`; `bin/xcind-workspace:1083-1092`
+**Xcind reality**: workspace-wide `xcind-workspace up` / `down` since `12737f8`; per-app path via `xcind-compose` remains
 **Category**: Scope
 **Origin**: P5 SA-0013
 
@@ -46,6 +46,21 @@ pattern, so the remaining work is wiring `xcind-compose up|down` into it). Re-te
 subcommand, so the divergence stands, now one proven loop away from closing.
 Highest-value reconsider candidate — re-check each round; likely a short-lived
 divergence.
+
+## Resolution (2026-08-07, round 4 — RL-147)
+
+The revisit condition triggered exactly as predicted. Xcind commit `12737f8`
+(2026-08-07) shipped `xcind-workspace up` and `xcind-workspace down`: the
+enumerate/invoke/collect-failures loop `dispose` proved, wired to
+`xcind-compose up -d` / `down` per application, with `down` confirming first
+(`--yes` to skip). This is the shape canon's `workspace up`/`down` specify —
+per-app compose execution across the whole workspace with per-app failure
+reporting. **Xcind converged to canon; canon was validated, not disproven — no
+Scind edit.** Residual differences stay beneath registry granularity, recorded
+as Xcind backlog instead (ledger RL-150): the `restart` verb (canon defines it
+as exactly `down` followed by `up`, so it is a composition Xcind has not
+wrapped), per-app `-a` targeting, and `down --volumes`. None contradicts the
+resolved core claim — Xcind now has one-command workspace orchestration.
 
 ## Links
 - Origin finding: P5 SA-0013 (P5's highest-value reconsider candidate; Xcind backlog)

@@ -391,14 +391,14 @@
       "file": "0028-workspace-orchestration-up-down.md",
       "title": "Workspace-wide up/down/restart",
       "category": "Scope",
-      "status": "Active",
+      "status": "Resolved",
       "origin_finding": "SA-0013",
       "source_plan": "P5",
       "scind_canon": "reference/cli.md; specs/workspace-lifecycle.md (one-command orchestration)",
-      "xcind_reality": "per-app-dir only; surface init/dispose/status/list/register/forget (bin/xcind-workspace:1083-1092)",
+      "xcind_reality": "workspace-wide up/down since 12737f8; per-app path via xcind-compose remains",
       "adversarial_recheck": "SURVIVES-STRONG",
-      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Highest-value reconsider; likely resolves. Round-3 re-test: still no up/down/restart; dispose (PR #86) proves the exact enumerate/invoke/collect-failures loop it needs (bin/xcind-workspace:1033-1053).",
-      "reaudited": "2026-08-07 round-3: STILL-JUSTIFIED (re-tested against as-built; one proven loop from closing)"
+      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Resolved 2026-08-07 (round 4, RL-147): Xcind 12737f8 shipped xcind-workspace up/down — the enumerate/invoke/collect-failures loop dispose proved, wired to xcind-compose up -d/down per app, down confirming first. Xcind converged to canon; canon validated, unchanged. Residuals beneath registry granularity, filed as Xcind backlog (RL-150): restart verb (canon: exactly down-then-up), per-app -a targeting, down --volumes.",
+      "reaudited": "2026-08-07 round-4: RESOLVED-BY-CONVERGENCE"
     },
     {
       "id": "0029",
