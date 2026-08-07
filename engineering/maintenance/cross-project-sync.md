@@ -30,7 +30,8 @@ all the plans.
 > learning is cheap and reversible (a rejected Scind proposal); a false
 > divergence permanently buries an insight (§2a).
 
-**The comparison surface** is `scind/docs/` (canon) ↔ `xcind/engineering/`
+**The comparison surface** is `scind/engineering/` (canon; was `scind/docs/`
+before the rename — see the path alias above) ↔ `xcind/engineering/`
 (eng-docs), backed by Xcind's as-built `bin/` + `lib/xcind/`. Xcind's user-facing
 `docs/` (Diátaxis) is out of scope except as corroborating behavior evidence.
 **Go-vs-Bash** language/build/packaging differences are a permanent expected
@@ -89,8 +90,21 @@ as-built code. If they have self-drifted, you would be comparing Scind against a
 Re-run the P2 method and **diff against the committed baseline** to find *new*
 divergence since the last round.
 
+**First, read the watermark.**
+[`engineering/sync/artifacts/sync-baseline.json`](../sync/artifacts/sync-baseline.json)
+records, per round, the commit in each repo that the committed artifacts reflect.
+The **last entry** is this round's starting point, and it carries the two `git
+log` commands that list exactly what changed since. Use that range to **scope**
+the rebuild — it tells you which files can possibly have moved, so you compare
+those instead of all ~165.
+
+> The range is a focusing device, **not** the source of truth. The map diff in
+> substep 2 is what decides the round's work: a file the range misses (a
+> submodule bump, a change landed outside the range, an artifact edited by hand)
+> still shows up there. Never skip the diff because the range looked empty.
+
 1. Rebuild the file↔file map + ADR reconciliation + presence/status matrix over
-   `scind/docs/` ↔ `xcind/engineering/`, keying on **topic, not ADR number**
+   `scind/engineering/` ↔ `xcind/engineering/`, keying on **topic, not ADR number**
    (see [ADR-0021](../decisions/0021-cross-repo-adr-cross-referencing.md)).
 2. Diff the new map against the committed
    [`engineering/sync/artifacts/correspondence-map.json`](../sync/artifacts/correspondence-map.json).
@@ -114,11 +128,35 @@ tree above; apply the §2a burden-of-proof (earn every DIVERGENCE).
 | Scind spec unbuilt in Xcind | `NOT-IMPLEMENTED` / `IMPLEMENTED-UNTESTED` | Xcind backlog |
 | §2 not cleanly applicable | `ESCALATE` | Human product call |
 
-Record every delta as a row in the **reconciliation ledger**
+Record every delta as a row in **this round's reconciliation ledger**, modelled
+on the `source-review-*.md` ledgers: stable ledger ID, source finding ID as join
+key, action type, target file, priority, status. Merge deltas that two directions
+surface into one edit (note the `merge_with`).
+
+**One ledger per round.** The P6 ledger
 ([`reconciliation-ledger.md`](../sync/artifacts/reconciliation-ledger.md) +
-`.json`), modelled on the `source-review-*.md` ledgers: stable ledger ID, source
-finding ID as join key, action type, target file, priority, status. Merge deltas
-that two directions surface into one edit (note the `merge_with`).
+`.json`) is **closed** — it is the historical record of the one-time P1–P7
+effort, and no new rows go into it. Each later round writes a new pair:
+
+```
+engineering/sync/artifacts/reconciliation-ledger-round-{N}.{md,json}
+```
+
+Copy the P6 ledger's structure (`meta` + `rows[]`, same field names and status
+vocabulary) so the rounds stay diffable against each other.
+
+**`RL-` IDs are global and never reused.** Allocate from one sequence across all
+rounds, so a row ID identifies a finding unambiguously no matter which ledger
+holds it. Find the next ID with:
+
+```bash
+grep -ho 'RL-[0-9]\+' engineering/sync/artifacts/reconciliation-ledger*.json \
+  | sort -u | tail -1
+```
+
+Round 2 therefore starts at **`RL-116`** (P6 ended at `RL-115`). Never renumber a
+row from an earlier round; if a finding recurs, reference the original ID rather
+than minting a second one.
 
 ### Step 4 — Reconcile
 
@@ -128,7 +166,8 @@ that two directions surface into one edit (note the `merge_with`).
   single-source-of-truth). A promoted capability gets a **new Scind ADR crediting
   Xcind as the validating implementation**. **Land via a Scind branch + PR** — never
   push to Scind `main` directly; put a ledger-row → edit mapping in the PR body.
-  Flip each applied ledger row `PLANNED → APPLIED` with the Scind PR reference.
+  Flip each applied row in **this round's** ledger `PLANNED → APPLIED` with the
+  Scind PR reference.
 - **Record divergences in the P7 registry.** Each must pass the P7 admission gate
   (an earned "why Scind should NOT adopt"); design/scope divergences get the
   adversarial re-check. **Do not** pave a learning into a divergence.
@@ -176,6 +215,22 @@ Write a dated audit report, same shape as `archive/sync-audit-*.md`:
 Commit the report and the updated ledger + correspondence map. Re-check that all
 cross-links resolve and (for any Xcind edits) `make check` is green.
 
+**Then stamp the watermark — this is what makes the next round cheap.** Append a
+round entry to
+[`sync-baseline.json`](../sync/artifacts/sync-baseline.json), following the
+`rounds[]` shape already there:
+
+- `xcind.reviewed_through` — the last Xcind commit whose content this round's
+  map and ledger actually reflect. **Not** simply `HEAD`: exclude any commit that
+  landed after you rebuilt the map, and record it under `known_excluded` with a
+  reason so the next round picks it up instead of assuming it was triaged.
+- `scind.canon_at_close` — Scind `main` after this round's PRs merged.
+- `next_round_diff` — the two `git log` commands, with this round's SHAs
+  substituted, so the next round can copy-paste them.
+
+A round is not finished until this entry exists. Skipping it costs the next round
+a full 165-file rebuild to rediscover a boundary you already knew.
+
 ---
 
 ## Quick reference
@@ -184,8 +239,10 @@ cross-links resolve and (for any Xcind edits) `make check` is green.
 
 | Artifact | Role |
 |----------|------|
+| `engineering/sync/artifacts/sync-baseline.json` | **Read first, written last.** Per-round commit watermark for both repos + the `git log` commands that scope the round. |
 | `engineering/sync/artifacts/correspondence-map.{md,json}` | The topic-keyed baseline (incl. ADR table); diffed each round. |
-| `engineering/sync/artifacts/reconciliation-ledger.{md,json}` | Authoritative status record of every action item. |
+| `engineering/sync/artifacts/reconciliation-ledger.{md,json}` | **Closed** (P6, the one-time P1–P7 effort). Historical; read-only. |
+| `engineering/sync/artifacts/reconciliation-ledger-round-{N}.{md,json}` | This round's action items. New pair per round; `RL-` IDs continue the global sequence. |
 | `engineering/sync/divergence/` | **P7-owned** divergence registry; Step 5 re-audits it. |
 | `engineering/decisions/0021-*.md` | ADR-numbering / cross-referencing policy. |
 | `archive/sync-audit-*.md` | Dated per-round reports. |
@@ -207,6 +264,10 @@ Watch these first each round; they drifted repeatedly in the source-review sweep
   mirror.
 - **Never** invent divergence IDs or write under `engineering/sync/divergence/`
   outside the P7 registry's own process.
+- **Never** add rows to the closed P6 ledger, and **never** reuse or renumber an
+  `RL-` ID — the sequence is global across rounds.
+- **Never** trust the commit range alone to define the round's work. It scopes
+  the rebuild; the map diff decides.
 - **Never** push to Scind `main` — branch + PR only.
 - **Never** flag Go-vs-Bash idiom/build/packaging as drift (§5).
 - When two directions surface the same fact, **merge to one edit** — don't apply

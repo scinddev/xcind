@@ -1,0 +1,84 @@
+{
+  "schema": "sync-baseline/1",
+  "description": "Per-round commit watermark for the Scind <-> Xcind cross-project sync. The LAST entry in rounds[] is the baseline the NEXT round starts from. Read this first in Step 2 of engineering/maintenance/cross-project-sync.md; append to it in Step 6. The recorded range SCOPES a round (which files can possibly have moved); the correspondence-map diff still DECIDES the round's work.",
+  "procedure": "engineering/maintenance/cross-project-sync.md",
+  "repos": {
+    "xcind": {
+      "role": "implementation (Bash proof-of-concept)",
+      "local_path": "/home/dev/Code/xcind",
+      "comparison_surface": "engineering/ (eng-docs), backed by as-built bin/ + lib/xcind/"
+    },
+    "scind": {
+      "role": "design canon",
+      "remote": "https://github.com/scinddev/scind",
+      "local_path": "/home/dev/Code/scind",
+      "comparison_surface": "engineering/ (was docs/ before scinddev/scind#5; see the path alias in the procedure)"
+    }
+  },
+  "field_notes": {
+    "reviewed_through": "The last commit whose CONTENT the round's correspondence map and ledger actually reflect. Deliberately not HEAD: commits that landed after the map was rebuilt belong in known_excluded, not here.",
+    "known_excluded": "Commits inside the round's calendar window that the round did NOT triage, each with a reason. The next round must treat these as unreviewed input.",
+    "round_outputs": "Commits the round itself produced. Already accounted for in canon or in the ledger; exclude them from the next round's triage."
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "name": "P1-P7 one-time reconciliation",
+      "opened": "2026-07-15",
+      "completed": "2026-08-07",
+      "artifacts": [
+        "engineering/sync/artifacts/correspondence-map.{md,json}",
+        "engineering/sync/artifacts/reconciliation-ledger.{md,json}",
+        "engineering/sync/divergence/"
+      ],
+      "ledger": {
+        "file": "engineering/sync/artifacts/reconciliation-ledger.md",
+        "status": "CLOSED",
+        "rl_id_range": "RL-001..RL-115",
+        "next_rl_id": "RL-116"
+      },
+      "xcind": {
+        "reviewed_through": "9f975e4",
+        "reviewed_through_subject": "Scind<->Xcind sync: P6 reconciliation + P7 divergence registry (#81)",
+        "head_at_close": "d295177",
+        "round_outputs": [
+          "80f083a  feat(host-gateway): expose XCIND_HOST_GATEWAY inside containers (resolves divergence 0022)",
+          "dbbc397  fix(workspace): app config cannot rename the discovered workspace",
+          "e8a8d2d  test(completion): behavioral tests for every completion function (evidence for RL-112)",
+          "c7358b4  docs(specs): document the XCIND_CACHE_SCHEMA SHA input",
+          "ffee906  docs(decisions): ADR-0005 flavors deferral + ADR-0023 targeting deviation",
+          "plus docs(sync) bookkeeping commits 4555903, 786c806, 0c7b503, 3eea739, 195aac6, 96bdd59, d295177"
+        ],
+        "known_excluded": [
+          "07de51f  #82  Support kislyuk/yq (Python) alongside mikefarah yq-go",
+          "5b4b9f4  #83  External proxy mode: serve apps through an existing host Traefik (ADR-0022)",
+          "63223d3  #85  Add single-value resolved config lookups",
+          "d9d9a8f  #86  Add dispose subcommands",
+          "a5f9494  #87  Add resolve-specific help to xcind-config",
+          "92b0ea5  #88  fix(config): refresh resolved compose cache after GENERATE hooks",
+          "1eba6ec  release: v0.6.2",
+          "8839d19  release: v0.7.0"
+        ],
+        "known_excluded_reason": "Feature work that landed 2026-07-28..2026-08-05, after the P2 correspondence map was built at 9f975e4 and while the escalation follow-up was in flight. Never triaged against canon. This is round 2's primary input, and Step 1's self-sync gate is NOT green for it: the P1 self-sync report predates every one of these commits."
+      },
+      "scind": {
+        "compared_against": "5f6ae25",
+        "compared_against_note": "Canon as it stood when the P2 map was built (the base commit of PR #3).",
+        "canon_at_close": "ca156eb",
+        "canon_at_close_note": "main after this round's four PRs merged. Round 2 diffs from here.",
+        "prs": [
+          "https://github.com/scinddev/scind/pull/3  merged 2026-07-15 as 241c991  (P6 batch)",
+          "https://github.com/scinddev/scind/pull/4  merged 2026-08-06 as a5929fe  (escalation batch)",
+          "https://github.com/scinddev/scind/pull/5  merged 2026-08-07 as 0f2b4f4  (docs/ -> engineering/ rename)",
+          "https://github.com/scinddev/scind/pull/7  merged 2026-08-07 as ca156eb  (RL-112 scind-compose binary)"
+        ],
+        "note": "Every Scind commit between 5f6ae25 and ca156eb is this round's own output. Round 2 therefore has no unaccounted canon-side drift and runs one-directionally: new Xcind as-built -> canon."
+      },
+      "next_round_diff": {
+        "xcind": "git -C /home/dev/Code/xcind log --oneline 9f975e4..HEAD",
+        "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline ca156eb..origin/main",
+        "note": "Subtract round_outputs from the xcind range; what remains is known_excluded plus anything newer. The scind range is expected to be empty until canon moves independently."
+      }
+    }
+  ]
+}

@@ -13,8 +13,10 @@ are in [`00-global-context.md`](./00-global-context.md) — **read that first.**
 > [`artifacts/reconciliation-ledger.md` §10](./artifacts/reconciliation-ledger.md#10-close-out-2026-08-07)
 > for the close-out. This tree is now a **historical record** — ongoing sync
 > rounds start from
-> [`engineering/maintenance/cross-project-sync.md`](../maintenance/cross-project-sync.md),
-> and the [`divergence/`](./divergence/) registry stays living.
+> [`engineering/maintenance/cross-project-sync.md`](../maintenance/cross-project-sync.md)
+> and the watermark in [`artifacts/sync-baseline.json`](./artifacts/sync-baseline.json),
+> writing a new per-round ledger rather than reopening the P6 one. The
+> [`divergence/`](./divergence/) registry stays living.
 
 ## The plans
 

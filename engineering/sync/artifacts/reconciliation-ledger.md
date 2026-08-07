@@ -650,7 +650,10 @@ These are tracked work, not sync debt. The sync effort does not wait on them.
 
 Future rounds start from
 [`cross-project-sync.md`](../../maintenance/cross-project-sync.md), not from this
-ledger. This ledger is now a historical record.
+ledger. This ledger is now a historical record: **no new rows go in it.** Round 2
+opens `reconciliation-ledger-round-2.{md,json}` and continues the global `RL-`
+sequence at **`RL-116`**. The commit watermark each round starts from lives in
+[`sync-baseline.json`](./sync-baseline.json).
 
 ---
 
