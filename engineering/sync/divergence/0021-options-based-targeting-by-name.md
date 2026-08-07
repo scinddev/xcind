@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Scind canon**: `docs/decisions/0011-options-based-targeting.md` (`--workspace`/`--app` name-targeting from anywhere, paired with context auto-detection)
-**Xcind reality**: no targeting flags — targets by cwd upward-walk + positional `[DIR]` + `XCIND_APP_ROOT`; `engineering/specs/context-detection.md`, `bin/xcind-*`
+**Xcind reality**: no targeting flags — targets by cwd upward-walk + positional `[DIR]` + `XCIND_APP_ROOT`; `engineering/specs/context-detection.md`, `bin/xcind-*`, and now recorded in `engineering/decisions/0023-location-based-targeting.md`
 **Category**: Scope
 **Origin**: P5 SA-0001
 
@@ -11,7 +11,9 @@ Scind (ADR-0011) supports targeting a workspace or app **by name from anywhere**
 (`--workspace foo` / `--app bar`), backed by its registry. Xcind has **zero
 targeting flags**: it resolves context by walking up from the current directory,
 accepts a positional `[DIR]`, and honors `XCIND_APP_ROOT` — you must be in or point
-at the directory. No Xcind ADR records the deviation.
+at the directory. Xcind ADR-0023 records the deviation (filed 2026-08 as
+ledger row RL-093; until then the deviation was unrecorded, which is what this
+entry's soft note asked for).
 
 ## Why Xcind diverges
 Xcind has no persisted name→location registry (see divergence 0017), so
@@ -32,7 +34,8 @@ PERFORMED — P7):** the reviewer confirmed Scind ships context-detection too *a
 a real registry that makes name-targeting a coherent superset Xcind genuinely lacks —
 Scind is a superset, not over-specified. Xcind chose the context-only subset because
 it lacks the registry. Verdict: **SURVIVES-AS-DIVERGENCE.** *Soft P6/Xcind note:
-Xcind should file an ADR recording the deliberate targeting-model deviation.*
+Xcind should file an ADR recording the deliberate targeting-model deviation — **done
+2026-08-07** (ledger row `RL-093`): Xcind ADR-0023.*
 
 ## Revisit conditions
 If Xcind adds a name→location registry, target-by-name becomes buildable and this may
@@ -40,8 +43,8 @@ resolve. Re-audit each round.
 
 ## Links
 - Origin finding: P5 SA-0001
-- Related ADR(s): Scind ADR-0011 (options-based targeting) — SCIND-ONLY, no Xcind
-  analog (recommend Xcind file one)
+- Related ADR(s): Scind ADR-0011 (options-based targeting) ↔ Xcind ADR-0023
+  (location-based targeting) — same topic, opposite decision
 - Correspondence-map row(s): ADR-topic "Options-based targeting" (SCIND-ONLY);
   `reference/cli.md` (PARTIAL)
 - Reconciliation-ledger ID(s): P6 keys off SA-0001. Tied to divergence 0017.

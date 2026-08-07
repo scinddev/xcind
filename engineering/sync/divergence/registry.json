@@ -292,7 +292,7 @@
       "scind_canon": "decisions/0011 (--workspace/--app from anywhere)",
       "xcind_reality": "no flags; cwd-walk + [DIR] + XCIND_APP_ROOT",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). Scind registry = superset. Xcind should file an ADR."
+      "notes": "Adversarial re-check performed (P7). Scind registry = superset. Xcind should file an ADR. Xcind ADR filed 2026-08-07: ADR-0023 location-based-targeting (RL-093)."
     },
     {
       "id": "0022",
@@ -331,7 +331,7 @@
       "scind_canon": "specs/configuration-schemas.md; reference/cli.md (flavors + default_flavor)",
       "xcind_reality": "flat XCIND_COMPOSE_FILES; ADR-0005 dropped flavors",
       "adversarial_recheck": "SURVIVES",
-      "notes": "Adversarial re-check performed (P7). L-0039 resolved 2026-08: Scind retains stateful flavors; no env-var source now. Reopen for a concrete CI consumer."
+      "notes": "Adversarial re-check performed (P7). L-0039 resolved 2026-08: Scind retains stateful flavors; no env-var source now. Reopen for a concrete CI consumer. ADR-0005 flavors-deferral section added 2026-08-07 (RL-092)."
     },
     {
       "id": "0025",

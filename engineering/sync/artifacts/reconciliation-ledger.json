@@ -1434,11 +1434,11 @@
       "target": "xcind: engineering/decisions/0005-structure-vs-state-separation.md",
       "edit_sketch": "Add one explicit sentence recording that flavors were dropped, so the deferral is canonical rather than implicit. Xcind doc-maintenance action.",
       "priority": "P3",
-      "status": "PROCESS",
+      "status": "APPLIED",
       "merge_with": [
         "SA-0008"
       ],
-      "notes": "Soft P6 note from P5 SA-0008."
+      "notes": "Soft P6 note from P5 SA-0008. APPLIED 2026-08-07 (escalation follow-up Step 6): ADR-0005 gained a 'Flavors are deferred, not rejected' section stating that flavor selection needs persisted active-flavor state Xcind does not keep, that ${APP_ENV} file-pattern expansion is the substitute, and that Scind rightly keeps flavors."
     },
     {
       "id": "RL-093",
@@ -1447,14 +1447,14 @@
       "source_classification": "PROCESS-ONLY",
       "action_type": "PROCESS",
       "title": "File an Xcind ADR recording the ADR-0011 (targeting) deviation",
-      "target": "xcind: engineering/decisions/ (new ADR)",
+      "target": "xcind: engineering/decisions/0023-location-based-targeting.md",
       "edit_sketch": "Record the deliberate deviation from Scind ADR-0011 options-based targeting (cwd-walk + positional DIR + XCIND_APP_ROOT), currently implicit. Xcind doc-maintenance action.",
       "priority": "P3",
-      "status": "PROCESS",
+      "status": "APPLIED",
       "merge_with": [
         "SA-0001"
       ],
-      "notes": "From P5 SA-0001 recommendation."
+      "notes": "Soft P6 note from P5 SA-0001. APPLIED 2026-08-07 (escalation follow-up Step 6): filed Xcind ADR-0023 (location-based targeting), recording that Xcind targets only by XCIND_APP_ROOT / [DIR] / cwd upward-walk and will not add --workspace/--app while it has no authoritative application roster. Divergence 0021 and the ADR-0021 cross-reference table both point at it now."
     },
     {
       "id": "RL-094",

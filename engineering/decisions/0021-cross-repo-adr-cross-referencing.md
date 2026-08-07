@@ -12,7 +12,7 @@ canon, Xcind the Bash proof-of-concept. Their numbers were aligned for
 
 | Scind ADR | Xcind ADR | Relationship |
 |-----------|-----------|--------------|
-| 0011 options-based-targeting | *(none)* | Scind-only number |
+| 0011 options-based-targeting | 0023 location-based-targeting | Same topic, **opposite decision** (Xcind records the deviation) |
 | 0012 layered-documentation-system | 0011 layered-documentation-system | Same decision, **off-by-one** |
 | 0013 apex-url-primary-designation | 0017 apex-url-reporting | Related topic, **different number and different decision** |
 | 0014 host-docker-internal-normalization | 0013 host-docker-internal-normalization | Same decision, different number |

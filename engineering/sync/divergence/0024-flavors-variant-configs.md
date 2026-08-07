@@ -33,7 +33,8 @@ standard, well-understood pattern (compose profiles) — not wrong, just higher-
 and the deeper question of whether flavors' state-coupling is heavier than needed is
 **already preserved as ESCALATE L-0039** (→ P6), so nothing is buried. Verdict:
 **SURVIVES-AS-DIVERGENCE.** *Soft P6 note (concurs with P5): make the flavors deferral
-explicit in Xcind ADR-0005.*
+explicit in Xcind ADR-0005 — **done 2026-08-07** (ledger row `RL-092`): ADR-0005 now
+carries a "Flavors are deferred, not rejected" section.*
 
 ## Revisit conditions
 The 2026-08 escalation decision resolved L-0039: Scind retains stateful flavors and

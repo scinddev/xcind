@@ -150,8 +150,8 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-089` | `L-0031` | P3 | PROCESS | P3 | PROCESS | Scind documentation process (P6) — no canon change |
 | `RL-090` | `L-0032` | P3 | PROCESS | P3 | PROCESS | Xcind maintenance / P6 — no canon change |
 | `RL-091` | `L-0033` | P3 | PROCESS | P2 | PROCESS | P6 maintenance procedure (cross-project-sync.md) |
-| `RL-092` | `PROC-0001` | P5 | PROCESS | P3 | PROCESS | xcind: engineering/decisions/0005-structure-vs-state-separation.md |
-| `RL-093` | `PROC-0002` | P5 | PROCESS | P3 | PROCESS | xcind: engineering/decisions/ (new ADR) |
+| `RL-092` | `PROC-0001` | P5 | PROCESS | P3 | APPLIED | xcind: engineering/decisions/0005-structure-vs-state-separation.md |
+| `RL-093` | `PROC-0002` | P5 | PROCESS | P3 | APPLIED | xcind: engineering/decisions/0023-location-based-targeting.md |
 | `RL-094` | `PROC-0003` | P4 | PROCESS | P3 | PROCESS | xcind + scind: engineering/behaviors/ (both) |
 | `RL-095` | `L-0034` | P3 | ESCALATE | P2 | RESOLVED | human product call → P6 + P5 |
 | `RL-096` | `L-0035` | P3 | ESCALATE | P2 | RESOLVED | human product call → P6 |
@@ -538,8 +538,8 @@ Referenced by origin ID only; **P7 owns** `engineering/sync/divergence/`, the ad
 | `RL-089` | `L-0031` | Two-track docs (user Diátaxis + engineering LDS) once a real tool exists | Scind documentation process (P6) — no canon change |
 | `RL-090` | `L-0032` | CLI argument robustness (missing values, surplus positionals, explicit-vs-auto failure) | Xcind maintenance / P6 — no canon change |
 | `RL-091` | `L-0033` | Pervasive eng-doc↔code drift → periodic source-review sweep | P6 maintenance procedure (cross-project-sync.md) |
-| `RL-092` | `PROC-0001` | Make the flavors deferral explicit in Xcind ADR-0005 | xcind: engineering/decisions/0005-structure-vs-state-separation.md |
-| `RL-093` | `PROC-0002` | File an Xcind ADR recording the ADR-0011 (targeting) deviation | xcind: engineering/decisions/ (new ADR) |
+| `RL-092` | `PROC-0001` | Make the flavors deferral explicit in Xcind ADR-0005 — **APPLIED** 2026-08-07: ADR-0005 gained a "Flavors are deferred, not rejected" section and a matching consequence | xcind: engineering/decisions/0005-structure-vs-state-separation.md |
+| `RL-093` | `PROC-0002` | File an Xcind ADR recording the ADR-0011 (targeting) deviation — **APPLIED** 2026-08-07: [ADR-0023](../../decisions/0023-location-based-targeting.md) | xcind: engineering/decisions/0023-location-based-targeting.md |
 | `RL-094` | `PROC-0003` | Drop behaviors/ from both projects (docs-process) | xcind + scind: engineering/behaviors/ (both) |
 
 ## 7. Escalations — human product call

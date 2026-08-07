@@ -30,6 +30,7 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0020](./0020-host-env-symmetry.md) | Host/Container Environment Symmetry (`XCIND_HOST_ENV_FILE`) | Accepted |
 | [0021](./0021-cross-repo-adr-cross-referencing.md) | Cross-Repo ADR Numbering & Cross-Referencing (Scind ↔ Xcind) | Accepted |
 | [0022](./0022-external-proxy-mode.md) | External Proxy Mode | Accepted |
+| [0023](./0023-location-based-targeting.md) | Location-Based Targeting (No `--workspace` / `--app` Flags) | Accepted |
 
 ## ADR Format
 
