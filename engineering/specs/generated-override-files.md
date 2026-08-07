@@ -45,6 +45,7 @@ Hook output is cached under `{app_root}/.xcind/generated/{sha}/`, keyed by a SHA
 - **Instance token** — the per-worktree isolation token `XCIND_INSTANCE`, included **only when non-empty**. An empty instance (the main checkout) contributes nothing, so its SHA is byte-identical to pre-instance builds; each linked worktree with a distinct token gets its own cache and generated directories.
 - **Host-gateway configuration** — the literal values of `XCIND_HOST_GATEWAY_ENABLED` and `XCIND_HOST_GATEWAY`.
 - **Detected host-gateway value** — when `XCIND_HOST_GATEWAY_ENABLED` is not `0`, the output of `__xcind-detect-host-gateway` is included so DHCP/VPN/WSL2-mode changes invalidate the cache even when configuration is stable.
+- **Cache artifact schema** — the literal `XCIND_CACHE_SCHEMA` value (currently `2`), a constant in `__xcind-compute-sha` rather than a user setting. Bumping it changes every SHA, so cache directories written under an older schema are abandoned instead of replayed. Bump it whenever the *meaning* of a cached artifact changes — pre-existing directories would otherwise pass the `.complete` and per-hook existence checks while holding stale-format content. Schema `2` records that `resolved-config.{yaml,json}` include post-hook overlays.
 
 A cache entry is treated as a hit only when both:
 
