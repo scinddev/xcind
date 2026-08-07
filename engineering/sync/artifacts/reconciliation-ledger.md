@@ -138,7 +138,7 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-077` | `SA-0023` | P5 | DIVERGENCE | P5 | DEFERRED-TO-P7 | engineering/sync/divergence/ (P7 registry) |
 | `RL-078` | `SA-0024` | P5 | DIVERGENCE | P5 | DEFERRED-TO-P7 | engineering/sync/divergence/ (P7 registry) |
 | `RL-079` | `SA-0025` | P5 | DIVERGENCE | P5 | DEFERRED-TO-P7 | engineering/sync/divergence/ (P7 registry) |
-| `RL-080` | `SA-0003` | P5 | XCIND-BACKLOG | P1 | XCIND-BACKLOG | xcind: test/ (behavioral completion tests) (Linear `BDS-112`) |
+| `RL-080` | `SA-0003` | P5 | XCIND-BACKLOG | P1 | DONE | xcind: `test/test-xcind-completion.sh` (behavioral completion tests) (Linear `BDS-112`) |
 | `RL-081` | `SA-0004` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: lib/xcind/ + bin/xcind-config (Linear `BDS-113`) |
 | `RL-082` | `SA-0012` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/xcind-proxy (Linear `BDS-114`) |
 | `RL-083` | `SA-0021` | P5 | XCIND-BACKLOG | P3 | XCIND-BACKLOG | xcind: bin/ context-detection error paths (Linear `BDS-115`) |
@@ -170,7 +170,7 @@ Ordered: Scind-canon rows first (by action, then priority), then P7 divergences,
 | `RL-109` | `XA-0027` | P4 | ESCALATE | P2 | RESOLVED | human product call |
 | `RL-110` | `XA-0028` | P4 | ESCALATE | P2 | RESOLVED | human product call |
 | `RL-111` | `XA-0029` | P4 | ESCALATE | P2 | RESOLVED | human product call |
-| `RL-112` | `SA-0026` | P5 | ESCALATE | P2 | RESOLVED | human product call → P6/Scind design |
+| `RL-112` | `SA-0026` | P5 | ESCALATE | P2 | RESOLVED (CANON-CHANGE) | scind: shell-integration.md — replace function + `compose-prefix` with a binary |
 | `RL-113` | `RG-0001` | P4 | ESCALATE | P3 | RESOLVED | human product call → P5/P3 |
 | `RL-114` | `RG-0002` | P4 | ESCALATE | P3 | RESOLVED | human product call → P5/P3 |
 | `RL-115` | `RL-ADR-POLICY` | P6 | ADR-POLICY | P1 | APPLIED | xcind: engineering/decisions/0021-cross-repo-adr-cross-referencing.md (+ scind note) |
@@ -291,6 +291,11 @@ Every `CANON-CHANGE` / `PROMOTE` / `CANON-OVERREACH` / `CANON-CONFIRM` row, with
 *Edit:* Amend to a HYBRID rule: explicit primary:true always wins; when none marked, fall back to POSITIONAL (first-declared proxied export) and still emit an apex, instead of 'none marked → no apex'. Requires giving exported_services a defined declaration order (sequence, or documented first-declared rule).
 *Applied:* [scinddev/scind#3](https://github.com/scinddev/scind/pull/3)
 *Notes:* Apex cluster. HUMAN PRODUCT-CALL overrode a provisional divergence. Resolves SA-0006 overreach candidacy.
+
+**`RL-112` (SA-0026, P2, PLANNED)** — `scind-compose` simplifies from a shell function to a binary
+*Target:* scind: docs/specs/shell-integration.md (function + `compose-prefix` sections)
+*Edit:* Replace the sourced `scind-compose` shell function and the `compose-prefix` eval contract with a real `scind-compose` executable that resolves context internally and execs `docker compose`; retire the empty-output error-detection workaround the eval contract required. Keep `compose-prefix` only if scripting consumers want the prefix text. Keep wrapper generation as-is (RL-033). Carry over Xcind's hardcoded fallback list for hosts whose `docker` CLI lacks Cobra `__complete`.
+*Notes:* Arrived late — flipped from the escalation brief's WONTFIX-DEFER once its named condition (RL-080) was met. `test/test-xcind-completion.sh` proves delegated `docker compose` completion — subcommands, per-subcommand flags, and compose-file service names — works from Xcind's standalone binary, disproving the "must be a shell function" premise. Not in [scinddev/scind#3](https://github.com/scinddev/scind/pull/3); needs its own Scind PR.
 
 ### 3.2 PROMOTE — capabilities Scind should adopt
 
@@ -487,7 +492,7 @@ Referenced by origin ID only; **P7 owns** `engineering/sync/divergence/`, the ad
 
 | Ledger ID | Join key | Pri | Item | Target | Linear |
 |-----------|----------|-----|------|--------|--------|
-| `RL-080` | `SA-0003` | P1 | Completion FUNCTION behavior untested (latent bug) | xcind: test/ (behavioral completion tests) | `BDS-112` |
+| `RL-080` | `SA-0003` | P1 | ~~Completion FUNCTION behavior untested (latent bug)~~ **DONE** | xcind: `test/test-xcind-completion.sh` (137 behavioral assertions) | `BDS-112` |
 | `RL-081` | `SA-0004` | P3 | Fish shell support | xcind: lib/xcind/ + bin/xcind-config | `BDS-113` |
 | `RL-082` | `SA-0012` | P3 | port assign (manual host-port pin) | xcind: bin/xcind-proxy | `BDS-114` |
 | `RL-083` | `SA-0021` | P3 | Context-detection UX (feedback, exit code 5, hints) | xcind: bin/ context-detection error paths | `BDS-115` |
@@ -495,7 +500,33 @@ Referenced by origin ID only; **P7 owns** `engineering/sync/divergence/`, the ad
 | `RL-085` | `SA-0016` | P3 | Application dependencies (depends_on) — shared future work | xcind: roadmap / future | `BDS-117` |
 | `RL-086` | `SA-0018` | P3 | Health checks — shared future work | xcind: roadmap / future | `BDS-118` |
 
-> `RL-080` (SA-0003, completion-function tests) is a **⚠️ latent-bug** item — highest-priority backlog work.
+> `RL-080` (SA-0003, completion-function tests) **is DONE** — it was the
+> **⚠️ latent-bug** item and the highest-priority backlog work.
+> `test/test-xcind-completion.sh` drives every shipped completion function the
+> way an interactive shell does (COMP_WORDS/COMP_CWORD for bash, `words`/`CURRENT`
+> for zsh) and asserts what each one offers. 137 assertions, all passing, wired
+> into `make test`, `contrib/test-all`, and CI — including the Bash 3.2 matrix.
+>
+> **No latent bug was found.** Every shipped completion function behaves as
+> documented — the three the row named, plus `xcind-workspace` and
+> `xcind-application`, added in the same pass now that the harness exists:
+>
+> | Function | Shell | Result |
+> |----------|-------|--------|
+> | `_xcind_compose_completions` (delegated) | bash | PASS — 16 assertions |
+> | `_xcind_compose_completions` (fallback) | bash | PASS — 6 assertions |
+> | `_xcind_config_completions` | bash | PASS — 22 assertions |
+> | `_xcind_proxy_completions` | bash | PASS — 30 assertions |
+> | `_xcind_workspace_completions` | bash | PASS — 23 assertions |
+> | `_xcind_application_completions` | bash | PASS — 22 assertions |
+> | all six zsh functions (`_xcind-*`) | zsh | PASS — 17 assertions |
+>
+> The decisive result for `RL-112`: delegation is real, not cosmetic. From the
+> standalone `bin/xcind-compose` binary, completion offers `docker compose`
+> subcommands absent from the hardcoded fallback (`ls`, `watch`, `cp`),
+> per-subcommand flags (`up --detach`, `logs --follow`), and **service names read
+> from the project's compose file** — which no static list can produce. See
+> `RL-112` in §7.
 
 ## 6. Process / doc-maintenance
 
@@ -533,7 +564,7 @@ Not filed as divergences (§2a: ambiguity routes up). Both readings are captured
 | `RL-109` | `XA-0027` | P4 | config doctor generation/routing diagnostic | human product call | RESOLVED | Resolved by the accepted escalation decision brief: forward-port a read-only per-app generation and routing diagnostic. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
 | `RL-110` | `XA-0028` | P4 | Zero-config default compose/env candidate resolution | human product call | RESOLVED | Resolved by the accepted escalation decision brief: forward-port zero-config Compose and env-file candidate resolution. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
 | `RL-111` | `XA-0029` | P4 | XCIND_TOOLS declarative host→container tool shortcuts | human product call | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER Xcind's tools metadata map pending a Scind consumer. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
-| `RL-112` | `SA-0026` | P5 | scind-compose shell function + compose-prefix — does Scind still need it? | human product call → P6/Scind design | RESOLVED | Resolved by the accepted escalation decision brief: WONTFIX-DEFER the compose-wrapper design decision pending RL-080 completion tests. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
+| `RL-112` | `SA-0026` | P5 | scind-compose shell function + compose-prefix — does Scind still need it? | scind design (P6) — **CANON-CHANGE** | RESOLVED | **Flipped from WONTFIX-DEFER to CANON-CHANGE.** The brief conditioned this on `RL-080`; those tests now pass and prove delegated `docker compose` completion (subcommands, per-subcommand flags, and compose-file service names) works from the standalone `bin/xcind-compose` binary. Scind's motivating assumption — that a sourced shell function is required for completion delegation — is disproven, so Scind simplifies to a real `scind-compose` binary, retiring the eval-prefix indirection and the empty-output error hack. Keep `compose-prefix` only if scripting consumers want the prefix text; keep wrapper generation as-is. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
 | `RL-113` | `RG-0001` | P4 | *_HOST_GATEWAY env injection (Xcind behind Scind) | human product call → P5/P3 | RESOLVED | Resolved by the accepted escalation decision brief: duplicate of RL-099; confirm divergence 0022 and defer optional Xcind implementation. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
 | `RL-114` | `RG-0002` | P4 | Per-export/port visibility labels (Xcind behind Scind) | human product call → P5/P3 | RESOLVED | Resolved by the accepted escalation decision brief: duplicate of RL-095; retain and extend divergence 0032 for the label-schema deltas. See [`escalation-decision-brief.md`](./escalation-decision-brief.md). |
 

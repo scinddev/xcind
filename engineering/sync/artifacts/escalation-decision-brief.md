@@ -34,7 +34,7 @@ Duplicate map applied (nothing decided twice):
 | RL-109 | Generation/routing explain diagnostic | FORWARD-PORT (`app diagnose`-style, distinct from `doctor`) | Medium |
 | RL-110 | Zero-config default compose/env detection | FORWARD-PORT | Medium-high |
 | RL-111 | Declarative tool shortcuts (`XCIND_TOOLS`) | WONTFIX-DEFER (premise corrected) | Medium |
-| RL-112 | `scind-compose` shell function + `compose-prefix` still needed? | WONTFIX-DEFER (conditioned on RL-080) | Medium |
+| RL-112 | `scind-compose` shell function + `compose-prefix` still needed? | **CANON-CHANGE** (flipped — RL-080 tests passed) | High |
 | RL-038 | Rename Scind `docs/` → `engineering/` | GO (unblocked — PR#3 already merged) | High |
 
 ---
@@ -478,6 +478,48 @@ Keep the shell-function + `compose-prefix` design in canon unchanged for now. Ex
 
 `DECISION: [X] accept  [ ] reject  — recommended: WONTFIX-DEFER (conditioned on RL-080)`
 
+### FLIP APPLIED — WONTFIX-DEFER → **CANON-CHANGE**
+
+`RL-080` has been executed. `test/test-xcind-completion.sh` (137 assertions, all
+passing, in `make test` / `contrib/test-all` / CI incl. the Bash 3.2 matrix)
+drives the completion functions the way an interactive shell does and asserts
+what they offer. The delegation claim at `tools-ide-integration.md:17` **holds**,
+so the doc needs no correction and the flip condition named above is met.
+
+The delegated completion is genuine, not a static list wearing a costume. From
+the standalone `bin/xcind-compose` binary, with no sourced shell function
+anywhere, completion offers:
+
+- `docker compose` subcommands the hardcoded fallback does not know — `ls`,
+  `watch`, `cp`;
+- per-subcommand flags — `up --detach`, `up --build`, `logs --follow`;
+- **service names read from the project's compose file** — the decisive case,
+  because no hardcoded list can ever produce them.
+
+The tests also pin the degraded path: with no working `docker __complete` on
+PATH, the function falls back to its own subcommand list and never invents
+Docker-only commands.
+
+**Consequence for Scind canon.** The motivating assumption behind Scind's
+`scind-compose` shell function — that a sourced function is required to get
+delegated `docker compose` completion — is disproven by a working existence
+proof. Scind simplifies to a **binary**:
+
+- replace the shell function + `compose-prefix` eval indirection with a real
+  `scind-compose` executable that resolves context internally and execs
+  `docker compose`;
+- retire the empty-output error-detection workaround the eval contract needed;
+- keep `compose-prefix` only if scripting consumers want the prefix text;
+- keep wrapper generation as-is (RL-033, already APPLIED, positions generated
+  wrappers as a complement).
+
+One caveat to carry into the Scind change: delegation needs a `docker` CLI that
+supports Cobra's `__complete`. Xcind covers that with a hardcoded fallback list;
+Scind's binary will need the same fallback, so the canon change trades the eval
+indirection for a fallback list, not for nothing.
+
+`FLIP: [X] applied — CANON-CHANGE (RL-080 tests passed)`
+
 ---
 
 ## RL-038 — Rename Scind `docs/` → `engineering/` (the one PLANNED row): go/no-go
@@ -506,7 +548,7 @@ No evidence found that argues against the rename itself; it makes the comparison
 
 **Recommendation counts (17 escalation units + RL-038):**
 
-- **WONTFIX-DEFER**: 9 — RL-097, RL-099(+113), RL-100, RL-101, RL-102, RL-103, RL-105, RL-111, RL-112 (three of these confirm adjudications already recorded in the P7 registry: 0022, 0024, and the 0019 contingency).
+- **WONTFIX-DEFER**: 8 — RL-097, RL-099(+113), RL-100, RL-101, RL-102, RL-103, RL-105, RL-111 (RL-112 has since flipped to CANON-CHANGE; its RL-080 flip condition was met) (three of these confirm adjudications already recorded in the P7 registry: 0022, 0024, and the 0019 contingency).
 - **DIVERGENCE**: 3 — RL-095(+114) (confirm+extend 0032), RL-096 (confirm 0023), RL-108 (new entry).
 - **FORWARD-PORT**: 3 — RL-106, RL-109, RL-110.
 - **CANON-CHANGE**: 1 full — RL-107 (apex opt-out), plus the CANON-CHANGE half of the RL-098 split and small cleanup riders on RL-095/RL-096.

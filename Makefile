@@ -22,6 +22,7 @@ SHELL_FILES = \
 	test/test-xcind.sh \
 	test/test-xcind-proxy.sh \
 	test/test-xcind-prompt.sh \
+	test/test-xcind-completion.sh \
 	test/lib/assert.sh \
 	test/lib/setup.sh \
 	install.sh \
@@ -33,6 +34,7 @@ test:
 	bash test/test-xcind.sh
 	bash test/test-xcind-proxy.sh
 	bash test/test-xcind-prompt.sh
+	bash test/test-xcind-completion.sh
 
 format:
 	shfmt --write .

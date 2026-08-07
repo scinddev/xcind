@@ -4,8 +4,8 @@
 **Date**: 2026-08-05
 
 Each step below has a short prompt you can paste into a fresh Claude session in
-the xcind repo. Steps 1–4 are sequential. Steps 5–6 can run in parallel with
-steps 2–4. Step 7 closes the effort.
+the xcind repo. Steps 1–4 are sequential (3b and 4 both wait on Step 3). Steps
+5–6 can run in parallel with steps 2–4. Step 7 closes the effort.
 
 ---
 
@@ -27,13 +27,42 @@ outcome — the later steps execute exactly what the boxes say.
 
 > In the scind repo (`/Users/beausimensen/Code/scind`): reset the checkout to origin/main (`241c991`), branch, and apply the accepted Scind edits from `xcind/engineering/sync/artifacts/escalation-decision-brief.md`: RL-107 (apex opt-out mechanism + fix the stale `behaviors/*.feature` and `naming-conventions.md:46` text that contradicts the hybrid apex rule), the RL-098 canon-change half (allow absolute/external `applications.path`, targeting via `-w`/`-a`), RL-106 (export-conditional proxy start + `proxy.auto_start` knob), RL-109 (per-app `diagnose` command at intent level), RL-110 (zero-config compose/env defaults), and the small cleanup riders from RL-095 (visibility enum + `workspace.visibility` label name + advisory-metadata wording) and RL-096 (the stale manifest "Caching" bullet). Check first whether pending PROCESS row RL-094 (drop `behaviors/`) should execute in the same PR — if yes, skip the feature-file fixes. Open one PR; reference the brief in the description.
 
+## Step 3b — RL-112 Scind binary PR (created by Step 5; after Step 3 merges)
+
+> In the scind repo, from a fresh main: execute ledger row `RL-112`, now a CANON-CHANGE. Replace the sourced `scind-compose` shell function and the `compose-prefix` eval contract in `docs/specs/shell-integration.md` with a real `scind-compose` binary that resolves context internally and execs `docker compose`, and retire the empty-output error-detection workaround. Keep `compose-prefix` only if scripting consumers want the prefix text; keep wrapper generation as-is. Carry over a hardcoded completion fallback for hosts whose `docker` CLI lacks Cobra `__complete`. Reference `xcind/engineering/sync/artifacts/escalation-decision-brief.md` (§RL-112, FLIP APPLIED) and the xcind evidence in `test/test-xcind-completion.sh`. Then flip §3.1's `RL-112` entry in the xcind ledger from PLANNED to APPLIED with the PR reference.
+
+**Why this is a separate step:** the flip happened during Step 5, after Step 3's
+batch was already defined, so this edit is *not* in
+[scinddev/scind#3](https://github.com/scinddev/scind/pull/3). Step 7 will not
+catch the omission on its own — `RL-112`'s row status is already terminal
+(RESOLVED); only the §3.1 planned-edits list still shows it as PLANNED.
+
 ## Step 4 — RL-038 rename PR (after Step 3 merges)
 
 > In the scind repo, from a fresh main: `git mv docs engineering`, fix every relative link and path reference repo-wide, and add a placeholder `docs/README.md` stating the intent to house a future user-facing Diátaxis track (per XA-0043). Then in xcind, add a one-line path-alias rule ("scind `docs/` ≡ `engineering/` as of this PR") to `engineering/maintenance/cross-project-sync.md` and flip ledger row RL-038 to APPLIED with the PR reference. Do not mass-rewrite the existing sync artifacts' `docs/` paths — the alias rule covers them.
 
-## Step 5 — RL-080: completion-function tests (decides RL-112)
+## Step 5 — RL-080: completion-function tests (decides RL-112) — ✅ DONE
 
 > Execute ledger row RL-080 (P1, latent-bug): write behavioral tests in `test/` for the shell completion functions of `xcind-config`, `xcind-proxy`, and especially `xcind-compose`'s delegated docker-compose completion — the claim at `docs/guides/tools-ide-integration.md:17` is currently untested. Run them via `make test` and report pass/fail per function. Then apply the RL-112 flip recorded in the decision brief: if delegation works, note that RL-112 should become a CANON-CHANGE (Scind simplifies to a binary); if it fails, note the canon validation and fix the overstated Xcind doc claim.
+
+**Done.** `test/test-xcind-completion.sh` — 137 assertions, all passing, wired into
+`make test`, `contrib/test-all`, and CI (including the Bash 3.2 matrix). Every
+shipped function passes: bash `_xcind_compose_completions` (delegated and
+fallback), `_xcind_config_completions`, `_xcind_proxy_completions`,
+`_xcind_workspace_completions`, `_xcind_application_completions`, plus all six
+zsh `_xcind-*` functions. (The last two pairs were outside the row's named scope
+but cost little once the harness existed.) No latent bug
+found. Delegation is real — the binary's completion offers `docker compose`
+subcommands absent from the fallback (`ls`, `watch`, `cp`), per-subcommand flags,
+and compose-file service names — so the `tools-ide-integration.md:17` claim
+stands unchanged and **RL-112 flipped to CANON-CHANGE**. Ledger rows RL-080 and
+RL-112 and the decision brief are updated.
+
+**New work this created:** RL-112 is now a PLANNED Scind canon change
+(ledger §3.1) and is *not* in [scinddev/scind#3](https://github.com/scinddev/scind/pull/3).
+It needs its own Scind PR, now written up as **Step 3b** above. Step 7's "no
+PLANNED rows remain" check will *not* catch it — the row's status is already
+terminal (RESOLVED); only §3.1's planned-edits list still carries it.
 
 ## Step 6 — Xcind small fixes (parallel-safe)
 

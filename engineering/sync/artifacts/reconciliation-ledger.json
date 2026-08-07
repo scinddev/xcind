@@ -1254,12 +1254,12 @@
       "source_classification": "IMPLEMENTED-UNTESTED",
       "action_type": "XCIND-BACKLOG",
       "title": "Completion FUNCTION behavior untested (latent bug)",
-      "target": "xcind: test/ (behavioral completion tests)",
+      "target": "xcind: test/test-xcind-completion.sh (behavioral completion tests)",
       "edit_sketch": "Add behavioral tests that source the emitted completion script, set COMP_WORDS/COMP_CWORD, invoke _xcind_*_completions and assert COMPREPLY. Docker __complete fallback path is highest risk.",
       "priority": "P1",
-      "status": "XCIND-BACKLOG",
+      "status": "DONE",
       "merge_with": [],
-      "notes": "\u26a0\ufe0f Latent-bug risk. Xcind test/behavior backlog.",
+      "notes": "DONE. test/test-xcind-completion.sh drives every shipped completion function the way an interactive shell does (COMP_WORDS/COMP_CWORD for bash, words/CURRENT for zsh) and asserts what each offers \u2014 including the xcind-workspace and xcind-application functions, added once the harness existed: 137 assertions, all passing, wired into make test, contrib/test-all and CI (including the Bash 3.2 matrix). No latent bug found \u2014 bash _xcind_compose_completions (delegated + fallback), _xcind_config_completions and _xcind_proxy_completions all PASS, as do the zsh _xcind-compose/_xcind-config/_xcind-proxy functions. Delegation is real: from the standalone bin/xcind-compose binary, completion offers docker compose subcommands absent from the hardcoded fallback (ls, watch, cp), per-subcommand flags (up --detach, logs --follow), and service names read from the project compose file. This result flips RL-112 to CANON-CHANGE.",
       "linear_id": "BDS-112"
     },
     {
@@ -1713,14 +1713,14 @@
       "join_key": "SA-0026",
       "plan": "P5",
       "source_classification": "ESCALATE",
-      "action_type": "ESCALATE",
+      "action_type": "CANON-CHANGE",
       "title": "scind-compose shell function + compose-prefix \u2014 does Scind still need it?",
-      "target": "human product call \u2192 P6/Scind design",
-      "edit_sketch": "Open canon question: keep the shell-function/compose-prefix architecture, adopt Xcind's binary, or support both. Not a settled divergence nor a plain Xcind gap.",
+      "target": "scind: shell-integration.md \u2014 replace the scind-compose shell function + compose-prefix eval indirection with a real binary",
+      "edit_sketch": "Replace the sourced shell function + compose-prefix eval contract with a real scind-compose executable that resolves context internally and execs docker compose, retiring the empty-output error-detection workaround. Keep compose-prefix only if scripting consumers want the prefix text; keep wrapper generation as-is.",
       "priority": "P2",
       "status": "RESOLVED",
       "merge_with": [],
-      "notes": "Resolved by the accepted escalation decision brief: WONTFIX-DEFER the compose-wrapper design decision pending RL-080 completion tests. See `engineering/sync/artifacts/escalation-decision-brief.md`."
+      "notes": "Flipped from WONTFIX-DEFER to CANON-CHANGE on the flip condition the brief named. RL-080 completion tests now pass and prove delegated docker compose completion (subcommands, per-subcommand flags, and compose-file service names) works from a standalone binary, disproving the assumption that a sourced shell function is required for completion delegation. See `engineering/sync/artifacts/escalation-decision-brief.md`."
     },
     {
       "id": "RL-113",

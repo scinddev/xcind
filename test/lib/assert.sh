@@ -46,6 +46,35 @@ assert_not_contains() {
   fi
 }
 
+# Assert that a newline-separated haystack contains an exact whole line.
+# Used by the completion suite, where "up" must not match "unpause" or
+# "--build". Compares literally, so flags like --detach are safe.
+assert_line() {
+  local label="$1" needle="$2" haystack="$3"
+  if printf '%s\n' "$haystack" | grep -qxF -- "$needle"; then
+    echo "  ✓ $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ $label"
+    echo "    expected a line: $needle"
+    echo "    actual lines:    $(printf '%s' "$haystack" | tr '\n' ' ')"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+assert_no_line() {
+  local label="$1" needle="$2" haystack="$3"
+  if printf '%s\n' "$haystack" | grep -qxF -- "$needle"; then
+    echo "  ✗ $label"
+    echo "    expected NO line: $needle"
+    echo "    actual lines:     $(printf '%s' "$haystack" | tr '\n' ' ')"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $label"
+    PASS=$((PASS + 1))
+  fi
+}
+
 assert_file_exists() {
   local label="$1" path="$2"
   if [ -f "$path" ]; then

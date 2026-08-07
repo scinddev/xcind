@@ -61,6 +61,7 @@ jobs:
             test/test-xcind.sh \
             test/test-xcind-proxy.sh \
             test/test-xcind-prompt.sh \
+            test/test-xcind-completion.sh \
             test/lib/assert.sh \
             test/lib/setup.sh \
             install.sh \
@@ -92,6 +93,12 @@ jobs:
       # portability gaps), so it runs on all four matrix OSes — no OS gate.
       - name: Run prompt tests
         run: bash test/test-xcind-prompt.sh
+      # The completion suite is pure bash + coreutils too. Blocks that need
+      # optional tooling report themselves as skipped rather than failing:
+      # the delegated docker-compose assertions need a docker CLI, and the
+      # zsh assertions need zsh.
+      - name: Run completion tests
+        run: bash test/test-xcind-completion.sh
 
   kislyuk-yq-compat:
     # Xcind's yq usage is read-only jq-syntax filters, compatible with both
@@ -163,8 +170,10 @@ jobs:
       - name: Build image (bash ${{ matrix.bashver }})
         run: docker build --build-arg "BASHVER=${{ matrix.bashver }}" -t "xcind-test:${{ matrix.bashver }}" .
       - name: Run tests in container
-        # bash-version exercises test-xcind.sh + test-xcind-prompt.sh (both pure
-        # bash + coreutils, so they must pass on the project min, Bash 3.2). The
+        # bash-version exercises test-xcind.sh, test-xcind-prompt.sh and
+        # test-xcind-completion.sh (all pure bash + coreutils, so they must
+        # pass on the project min, Bash 3.2 — the completion suite most of
+        # all, since COMPREPLY/compgen idioms differ across versions). The
         # proxy suite has preexisting portability gaps against Alpine / bash 3.2
         # and stays out of this matrix. Track as follow-up.
         run: |
@@ -180,3 +189,9 @@ jobs:
             --entrypoint bash \
             "xcind-test:${{ matrix.bashver }}" \
             test/test-xcind-prompt.sh
+          docker run --rm \
+            -v "$PWD:/opt/xcind:ro" \
+            -w /opt/xcind \
+            --entrypoint bash \
+            "xcind-test:${{ matrix.bashver }}" \
+            test/test-xcind-completion.sh
