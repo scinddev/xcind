@@ -1,7 +1,7 @@
 # Application Lifecycle
 
-> Xcind provides `xcind-application init`, `status`, `list`, `ports`,
-> `urls`, and `exports` subcommands (aliased as `xcind-app`). An
+> Xcind provides `xcind-application init`, `dispose`, `status`, `list`,
+> `ports`, `urls`, and `exports` subcommands (aliased as `xcind-app`). An
 > application exists when a directory contains a `.xcind.sh` file that
 > does **not** set `XCIND_IS_WORKSPACE=1`.
 
@@ -10,8 +10,9 @@
 ## Overview
 
 Xcind applications are lightweight — initialization creates a `.xcind.sh`
-file, and there is no separate state store, no manifest, and no removal
-command. An application exists when a directory contains a `.xcind.sh`
+file, and there is no separate state store and no manifest.
+`xcind-application dispose` removes an application in one step, but manual
+removal also works. An application exists when a directory contains a `.xcind.sh`
 file without the workspace marker. The runtime pipeline
 (`xcind-compose`, `xcind-config`) discovers applications by walking
 upward from `$PWD`, so moving, copying, or deleting an application is as
@@ -36,7 +37,7 @@ EOF
 ```
 
 See the [CLI Reference](../reference/cli.md#xcind-application) for full
-`init`, `status`, `list`, `ports`, `urls`, and `exports` options.
+`init`, `dispose`, `status`, `list`, `ports`, `urls`, and `exports` options.
 
 ### Running the Application
 
@@ -76,7 +77,21 @@ xcind-compose down
 
 ### Removing an Application
 
-Remove the directory. There is no state to clean up beyond Docker
+Use `xcind-application dispose`:
+
+```bash
+xcind-application dispose webapp --volumes --rm --yes
+```
+
+`dispose` runs `docker compose down --remove-orphans` (with `-v` when
+`--volumes` is given), releases the application's assigned-port entries
+under the assigned-state lock, removes `{app_root}/.xcind`, and removes
+the directory itself when `--rm` is given. Safety rails: it refuses to
+dispose a workspace directory, refuses `--rm` on a directory that is not
+an application, refuses unsafe paths, and exits `0` with "Application
+already disposed" when the directory is already gone.
+
+Manual removal still works — there is no state to clean up beyond Docker
 containers, networks, and assigned-port entries:
 
 ```bash
@@ -84,8 +99,11 @@ cd webapp && xcind-compose down
 cd .. && rm -rf webapp
 ```
 
-Assigned-port entries referencing the deleted application are cleaned
-up by `xcind-proxy prune`.
+Assigned-port entries referencing a manually deleted application are
+cleaned up by `xcind-proxy prune`. To tear down every application in a
+workspace at once, use `xcind-workspace dispose`, which cascades into
+each application, removes the workspace network, and forgets the
+registry entry.
 
 ---
 

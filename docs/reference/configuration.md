@@ -62,8 +62,8 @@ apps through a Traefik that already runs on the host (e.g. Coolify's), see
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `XCIND_HOOKS_GENERATE` | (built-ins: naming, app-env, host-gateway, proxy, workspace) | Hooks that emit compose overlay files |
-| `XCIND_HOOKS_EXECUTE` | (built-ins: proxy-execute, workspace-execute) | Hooks that run preconditions every invocation |
+| `XCIND_HOOKS_GENERATE` | (built-ins: naming, app, app-env, host-gateway, proxy, assigned, workspace, discovery) | Hooks that emit compose overlay files |
+| `XCIND_HOOKS_EXECUTE` | (built-ins: proxy-execute, workspace-execute, hostenv-execute) | Hooks that run preconditions every invocation |
 | `XCIND_HOST_GATEWAY_ENABLED` | `1` | Disable the host-gateway hook for this app |
 | `XCIND_HOST_GATEWAY` | _(auto-detected)_ | Override the detected host-gateway value |
 | `XCIND_HOOKS_TTL` | `5` | Seconds that `xcind-config resolve` can reuse a completed cache-refresh leg; `0` disables reuse |
@@ -84,6 +84,7 @@ Walkthrough: [IDE and tool integration](../guides/tools-ide-integration.md).
 |----------|---------|
 | `XCIND_BAKE_FILES` | Docker Bake file patterns; tracked in `xcind-config --json`, not yet passed to `docker compose` |
 | `XCIND_NO_REGISTRY` | When set (non-empty), skip the automatic workspace-registry write during discovery — for read-only callers that must not mutate shared state. Discovery and all `XCIND_*` resolution are unaffected. |
+| `XCIND_DEBUG` | Set to `1` to enable trace logging of file resolution and hook execution |
 | URL / router templates (`XCIND_*_TEMPLATE`) | Customize generated hostnames and Traefik router names |
 
 For the full list of templates and their placeholders, see [`engineering/reference/configuration.md`](../../engineering/reference/configuration.md).

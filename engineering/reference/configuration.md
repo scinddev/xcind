@@ -119,6 +119,18 @@ Set to `1` in a workspace root's `.xcind.sh` to mark the directory as a workspac
 XCIND_IS_WORKSPACE=1
 ```
 
+### `XCIND_APP`
+
+Override the application name. The name feeds the naming hook (project
+name), discovery, assigned-port state, and proxy hostnames, and it is
+folded into the configuration SHA.
+
+**Default:** *(basename of the application root directory)*
+
+```bash
+XCIND_APP="storefront"
+```
+
 ### `XCIND_INSTANCE`
 
 Per-worktree isolation token. When set to a non-empty value, it is folded into
@@ -219,6 +231,12 @@ services:
 A service that sets `XCIND_HOST_GATEWAY` in its own compose file keeps that
 value; the overlay only fills the variable in where it is absent.
 
+The hook writes no overlay at all in two cases: when detection yields an
+empty value (Docker Desktop, where `host.docker.internal` resolves
+natively — so no in-container `XCIND_HOST_GATEWAY` variable is injected
+there), and when every service already carries both the `extra_hosts`
+entry and the environment variable.
+
 > The host-gateway hook requires `yq`. If `yq` is not installed, the hook is
 > skipped with a warning. The hook's generated output is cached by SHA; changes
 > to `XCIND_HOST_GATEWAY` or `XCIND_HOST_GATEWAY_ENABLED` automatically
@@ -238,7 +256,8 @@ All built-in hooks are registered automatically. Override to `()` to disable all
 XCIND_HOOKS_GENERATE=()  # disable all generation hooks
 ```
 
-When `yq` is missing at runtime, default-registered hooks behave in one of
+Both common `yq` implementations work: mikefarah `yq` (Go) and kislyuk
+`yq` (Python). When `yq` is missing at runtime, default-registered hooks behave in one of
 two ways: non-load-bearing hooks (`xcind-app-hook`,
 `xcind-host-gateway-hook`, `xcind-workspace-hook`, `xcind-discovery-hook`)
 soft-skip with a consolidated warning at the end of the run; hooks with
@@ -262,6 +281,19 @@ XCIND_HOOKS_EXECUTE=()  # disable all execute hooks
 ```
 
 See [Hook Lifecycle](../specs/hook-lifecycle.md) for details on all hook phases.
+
+### `XCIND_HOOKS_TTL`
+
+Seconds that `xcind-config resolve` can reuse a completed cache-refresh
+leg before it re-runs hooks. `0` disables reuse. An explicit
+`--hooks-ttl=N` flag overrides this variable. Only the `resolve` path
+honors the TTL.
+
+**Default:** `5`
+
+```bash
+XCIND_HOOKS_TTL=0  # always refresh on resolve
+```
 
 ### `XCIND_PROXY_EXPORTS`
 

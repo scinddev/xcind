@@ -1,7 +1,15 @@
 # Handoff: cached config.json reflects pre-hook TSV state
 
-**Status**: open
+**Status**: resolved (2026-08-05, PR #88 — see Follow-up below; line numbers in this document predate the fix)
 **Surfaced**: 2026-04-16, during review of the assigned-ports "port isn't sticking" bug
+
+> **Resolution note (2026-08-07 audit)**: `config.json` is now written only
+> after `__xcind-run-hooks`, by `__xcind-write-cache-config-json`
+> (`lib/xcind/xcind-lib.bash` — proposed fix option 2 shipped). The first
+> two acceptance criteria are met in code. The third — a regression test
+> that reads `.xcind/cache/<sha>/config.json` directly and asserts
+> `assignedExports.<name>.host_port` against the TSV — is still missing;
+> `test/test-xcind.sh` covers the resolved-config artifacts only.
 
 ## Symptom
 

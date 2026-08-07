@@ -26,6 +26,9 @@ xcind-application init [DIR] [--name NAME]    # scaffold .xcind.sh
 xcind-application dispose [DIR] [--volumes] [--rm] [--yes]
 xcind-application status [DIR] [--json]       # status of one app
 xcind-application list [DIR] [--json]         # list apps in the enclosing workspace
+xcind-application ports [DIR] [--json]        # port bindings for one app
+xcind-application urls [DIR] [--json]         # proxy URLs for one app
+xcind-application exports [DIR]               # shell exports for assigned ports
 ```
 
 ## `xcind-config`
@@ -79,6 +82,7 @@ Code generators:
 xcind-config --generate-docker-wrapper                 # POSIX docker wrapper
 xcind-config --generate-docker-compose-wrapper         # POSIX docker-compose wrapper
 xcind-config --generate-docker-compose-configuration[=FILE]   # resolved compose config
+xcind-config --generate-starship                       # starship prompt module config
 ```
 
 ## `xcind-proxy`
@@ -87,14 +91,22 @@ Manage the shared Traefik proxy infrastructure.
 
 ```bash
 xcind-proxy init                  # one-time setup
+xcind-proxy init --mode external  # use an existing host Traefik instead of a managed one
 xcind-proxy up                    # start the proxy
 xcind-proxy up --force            # recreate proxy container + network
 xcind-proxy down                  # stop the proxy
 xcind-proxy dispose [--purge] [--yes]  # remove generated state; keep config by default
 xcind-proxy status [--json]       # is it running?
 xcind-proxy logs [-f]             # tail Traefik logs
+xcind-proxy release PORT          # release one assigned port binding
+xcind-proxy prune                 # drop assigned-port entries for removed apps
 xcind-proxy --version
 ```
+
+In external mode, `up` only verifies the external proxy; `down`, `logs`, and
+`up --force` refuse because Xcind does not own the proxy container. External
+mode adds `init` flags for the entrypoints and certresolver of the host
+Traefik.
 
 Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
 

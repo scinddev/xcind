@@ -56,10 +56,13 @@ A missing marker, a missing per-hook output, or a hook newly added to `XCIND_HOO
 
 Hooks listed in `XCIND_HOOKS_ALWAYS` (currently `xcind-assigned-hook` and `xcind-discovery-hook`) are exempt from the replay-only behavior: on a cache hit they are re-run against current live state, their persisted `.hook-output-{name}` is refreshed, and any deleted overlay file they own is regenerated. (`xcind-discovery-hook` is always-run because its assigned `*_HOST_PORT` values embed the same live-allocated host ports.) Pure GENERATE hooks (naming, app, app-env, host-gateway, proxy, workspace) continue to replay from `.hook-output-{name}` without re-execution. See [Hook Lifecycle: GENERATE](./hook-lifecycle.md#generate) for the full contract.
 
-A separate cache directory, `{app_root}/.xcind/cache/{sha}/` (distinct from the `.xcind/generated/{sha}/` overlays above), stores two sibling artifacts that are not part of hook output:
+A separate cache directory, `{app_root}/.xcind/cache/{sha}/` (distinct from the `.xcind/generated/{sha}/` overlays above), stores three sibling artifacts that are not part of hook output:
 
-- `resolved-config.yaml` — `docker compose config` output, written **before** hooks run so hooks that need the resolved service list can read it.
-- `config.json` — `xcind-config --json` output, written **after** `__xcind-run-hooks` so the cached JSON reflects post-hook updates such as `assignedExports` populated by `xcind-assigned-hook`. Written via a `.tmp` sidecar and `mv` so a failed `jq` run never leaves a corrupt file; the write is a no-op when `jq` is unavailable.
+- `resolved-config.yaml` — `docker compose config` output. Written **before** hooks run so hooks that need the resolved service list can read it, then **rewritten after** `__xcind-run-hooks` so the cached YAML includes the hook-generated overlays.
+- `resolved-config.json` — the JSON form of the post-hook `docker compose config` output, written by the same post-hook refresh. `xcind-config resolve compose.*` reads this file.
+- `config.json` — `xcind-config --json` output, written **after** `__xcind-run-hooks` so the cached JSON reflects post-hook updates such as `assignedExports` populated by `xcind-assigned-hook`; the write is a no-op when `jq` is unavailable.
+
+All three writes go through an atomic temp-file-then-`mv` step so a failed run never leaves a corrupt artifact.
 
 ---
 

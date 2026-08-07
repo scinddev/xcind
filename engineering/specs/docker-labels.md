@@ -102,9 +102,11 @@ Generated automatically by `xcind-proxy-hook` based on `XCIND_PROXY_EXPORTS`. Th
 | `traefik.http.routers.{name}.entrypoints` | Entry points to use (`XCIND_PROXY_HTTP_ENTRYPOINT` / `XCIND_PROXY_HTTPS_ENTRYPOINT`) | `web` / `websecure` |
 | `traefik.http.routers.{name}.tls` | Enable TLS termination (HTTPS routers) | `true` |
 | `traefik.http.routers.{name}.tls.certresolver` | ACME resolver for HTTPS routers; only when `XCIND_PROXY_CERTRESOLVER` is set | `letsencrypt` |
-| `traefik.http.routers.{name}.service` | Service name for load balancer | `myapp-api-http` |
+| `traefik.http.routers.{name}.service` | Service name for load balancer; redirect-only HTTP routers pin `noop@internal` instead | `myapp-api-http` |
 | `traefik.http.routers.{name}.middlewares` | Attached middlewares (redirect) | `xcind-redirect-to-https@docker` |
-| `traefik.http.services.{name}.loadbalancer.server.port` | Container port | `3000` |
+| `traefik.http.services.{name}.loadbalancer.server.port` | Container port; not emitted for redirect-only routers | `3000` |
+| `traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.scheme` | Redirect middleware definition (with `tls=require` exports) | `https` |
+| `traefik.http.middlewares.xcind-redirect-to-https.redirectscheme.permanent` | Redirect middleware definition (with `tls=require` exports) | `true` |
 
 The network name and entrypoint names are configuration-driven (defaults shown) so the labels can target an external proxy's Docker provider — see [ADR-0022](../decisions/0022-external-proxy-mode.md).
 
@@ -131,7 +133,7 @@ Which routers are emitted per export is controlled by the `tls` metadata key on 
 | Effective mode | HTTP router | HTTPS router |
 |---|---|---|
 | `auto` (default, proxy TLS on) | Yes | Yes |
-| `require` (proxy TLS on) | Yes — redirect-only, attaches `xcind-redirect-to-https@docker` middleware | Yes |
+| `require` (proxy TLS on) | Yes — redirect-only: attaches `xcind-redirect-to-https@docker` middleware, pins `service=noop@internal`, and emits no loadbalancer port | Yes |
 | `disable` / proxy TLS disabled | Yes | No |
 
 When any export on the app uses `tls=require`, a shared `xcind-redirect-to-https` `redirectscheme` middleware is emitted on **every** rendered service block of the compose overlay. Traefik's Docker provider only loads labels from running containers, so emitting the middleware on a single "first" service would leave it unresolved whenever that service wasn't running. Repeated middleware definitions with the same name/value are idempotent in Traefik.

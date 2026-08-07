@@ -109,6 +109,12 @@ so a managed→external migration can be completed without raw docker commands.
 entrypoints, certresolver, detected proxy container) and gains a `mode` field
 in both modes' JSON.
 
+`dispose` still runs in external mode: it can stop a retained xcind-managed
+proxy via the old compose file and removes generated state, but it never
+removes the shared external network. See the
+[proxy infrastructure spec](../specs/proxy-infrastructure.md#external-proxy-mode)
+for the full command table.
+
 ### Precedence and cache invalidation
 
 The new keys follow the established precedence: `config.sh` is sourced after

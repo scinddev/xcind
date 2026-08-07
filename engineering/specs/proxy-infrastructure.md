@@ -33,7 +33,7 @@ Entrypoint *names* are configurable so generated router labels can target an
 external proxy's entrypoints (see [External Proxy Mode](#external-proxy-mode));
 the managed defaults are `web`/`websecure`.
 
-The dashboard entrypoint is only added when `XCIND_PROXY_DASHBOARD=true`.
+When `XCIND_PROXY_DASHBOARD=true`, `init` adds `--api.dashboard=true`, an `api: {dashboard: true, insecure: true}` block, and a host publish of the dashboard port; no separate entrypoint is generated — the dashboard rides Traefik's built-in insecure-API listener.
 The HTTPS entrypoint and a `file` provider (watching `$XCIND_PROXY_STATE_DIR/dynamic/`) are only emitted when TLS is enabled.
 
 ### Dynamic Routing
@@ -51,7 +51,7 @@ See [Docker Labels — Traefik Routing Labels](./docker-labels.md#traefik-routin
 Creates proxy infrastructure across two directories:
 
 - **Config** (`~/.config/xcind/proxy/`): `config.sh` containing persisted proxy settings; optional `certs/wildcard.{crt,key}` for user-supplied certificates
-- **State** (`~/.local/state/xcind/proxy/`): generated `compose.yaml`, `traefik.yaml`, `dynamic/tls.yaml`, and `certs/`
+- **State** (`~/.local/state/xcind/proxy/`): generated `compose.yaml`, `traefik.yaml`, `dynamic/tls.yaml`, and `certs/`. The same directory also holds the assigned-port state (`assigned-ports.tsv` and its `assigned-ports.lock`), which `dispose` removes together with the generated files.
 
 Steps:
 
@@ -65,8 +65,11 @@ Steps:
 8. Removes any stale generated files from legacy locations — `docker-compose.yaml` / `traefik.yaml` in the config dir (pre-config/state split) and `docker-compose.yaml` in the state dir (pre-rename to Compose-Specification-standard `compose.yaml`)
 9. Creates the configured proxy Docker network (`XCIND_PROXY_NETWORK`, default `xcind-proxy`) if it doesn't exist
 
-In external mode (`XCIND_PROXY_MODE=external`) steps 5–7 are skipped and stale
-managed artifacts are removed instead — see [External Proxy Mode](#external-proxy-mode).
+In external mode (`XCIND_PROXY_MODE=external`) steps 5–8 are skipped. Instead,
+the external branch removes the stale managed `traefik.yaml` and
+`dynamic/tls.yaml`; it removes `compose.yaml` only when no xcind-managed proxy
+container is still running, and it leaves `certs/` in place — see
+[External Proxy Mode](#external-proxy-mode).
 
 `xcind-proxy init` rewrites `config.sh` on each invocation using the current known proxy values plus any provided flags. The lower-level auto-init path used by hooks only creates `config.sh` when it is missing, but still regenerates the state files from the current config.
 
@@ -82,15 +85,29 @@ With `--force`: tears down existing containers, removes the network, re-initiali
 
 Stops the Traefik container via `docker compose down`.
 
+### `xcind-proxy dispose [--purge] [--yes]`
+
+Stops the proxy, removes its network, and removes the state directory —
+including `assigned-ports.tsv`, so the confirmation prompt reports how
+many assigned-port bindings will be lost. `--purge` also removes the
+config directory; without it, `config.sh` (and `certs/`) survive.
+`--yes`/`-y` skips the prompt. When nothing exists to remove, exits `0`
+without prompting.
+
 ### `xcind-proxy status [--json]`
 
 Reports:
 - Running/stopped state and proxy mode
 - Traefik image version
-- HTTP port
+- HTTP port (and HTTPS port when TLS is enabled)
+- TLS mode and whether TLS is enabled
+- Whether the generated files are current or stale relative to `config.sh`
 - Dashboard URL (if enabled)
 - Network existence
 - Assigned ports (the current entries from `assigned-ports.tsv`)
+
+JSON output additionally carries `http_entrypoint`, `https_entrypoint`,
+and `certresolver`.
 
 In external mode a mode-specific report is rendered instead — see
 [External Proxy Mode](#external-proxy-mode). JSON output carries a `mode`
@@ -125,7 +142,10 @@ the configured shared network (`XCIND_PROXY_NETWORK`, pointed at the external
 proxy's network) and emits router labels using the configured entrypoint names
 and optional `tls.certresolver`. No `compose.yaml`/`traefik.yaml` are
 generated, no certificates are provisioned (the external proxy terminates
-TLS), and `--tls-mode custom` is rejected at `init`.
+TLS), and `--tls-mode custom` is rejected at `init`. One retention rule:
+when a running xcind-managed proxy container is detected, `init` keeps the
+old managed `compose.yaml` — it is the only remaining handle for stopping
+that proxy — and warns that the managed Traefik is still running.
 
 Typical initialization for a Coolify host:
 
@@ -139,20 +159,28 @@ Command behavior in external mode:
 
 | Command | Behavior | Exit |
 |---------|----------|------|
-| `init` | Writes config, removes stale managed artifacts, verifies/creates the network | 0 |
+| `init` | Writes config, removes stale managed artifacts (retains `compose.yaml` and warns when a managed proxy still runs), verifies/creates the network | 0 |
 | `up` | Verifies the network; reports a detected proxy-like container; starts nothing | 0 |
 | `up --force` | Refuses (would remove a network shared with the external proxy) | 1 |
-| `down` | Refuses; exception: stops a leftover xcind-managed Traefik when the old managed compose file still exists (migration escape hatch) | 1 / 0 |
+| `down` | Refuses; exception: stops a leftover xcind-managed Traefik when **both** a running `xcind.component=proxy` container and the old managed compose file exist (migration escape hatch) | 1 / 0 |
 | `logs` | Refuses, with a `docker logs <container>` hint | 1 |
-| `status [--json]` | External report: mode, network existence, entrypoints, certresolver, detected proxy container, assigned ports | 0 |
+| `status [--json]` | External report: mode, initialized, domain, TLS mode, network existence, entrypoints, certresolver, detected proxy container, assigned ports | 0 |
+| `dispose [--purge] [--yes]` | Runs: stops a retained xcind-managed proxy via the old compose file (leaving state intact for a retry if that teardown fails), removes generated state including `assigned-ports.tsv`, but **never** removes the shared external network | 0 |
 | `release` / `prune` | Unchanged (assigned ports are orthogonal to proxy mode) | 0 |
 
 `__xcind-proxy-ensure-running` (the EXECUTE-hook path) reduces to "ensure the
 configured network exists" — it never starts Traefik and never matches on
 `xcind.component=proxy` containers.
 
-Auto-start via `XCIND_PROXY_AUTO_START=0` and external mode converge on the
-same behavior (network only); they do not conflict.
+External mode short-circuits before `XCIND_PROXY_AUTO_START` is read, so
+the two settings do not conflict. The observable effect matches
+`XCIND_PROXY_AUTO_START=0` (network only), but error handling differs:
+the external path propagates a network-creation failure in strict mode,
+while the auto-start opt-out swallows it.
+
+`xcind-config doctor` also reports the proxy mode and, in external mode,
+flags a missing proxy network as a diagnostic (app overlays would fail to
+start).
 
 ---
 
@@ -231,6 +259,9 @@ networks:
   xcind-proxy:
     external: true
 ```
+
+The network name comes from `XCIND_PROXY_NETWORK` (default `xcind-proxy`
+shown); the compose project name (`name: xcind-proxy`) is hardcoded.
 
 Dashboard port mapping and `--api.dashboard=true` command are added when `XCIND_PROXY_DASHBOARD=true`.
 HTTPS port mapping, `./certs`, and `./dynamic` bind mounts are only added when `XCIND_PROXY_TLS_MODE != disabled`.

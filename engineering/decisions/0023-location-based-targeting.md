@@ -9,13 +9,20 @@ lets a user target a workspace or an application **by name from anywhere**:
 `--workspace foo` / `--app bar`, resolved against the roster in
 `workspace.yaml`, paired with context auto-detection for the common case.
 
-Xcind ships no targeting flags at all. Every `bin/xcind-*` command resolves its
-target by **location**:
+Xcind ships no targeting flags at all. Commands resolve their target by
+**location**, through some subset of three mechanisms:
 
 1. `XCIND_APP_ROOT`, when set, is used directly.
 2. Otherwise a positional `[DIR]` argument, when given.
 3. Otherwise an upward walk from the current directory to the first `.xcind.sh`
    that does not set `XCIND_IS_WORKSPACE=1`.
+
+Which mechanisms apply varies by command: the pipeline commands
+(`xcind-compose`, `xcind-config`) honor `XCIND_APP_ROOT` and the walk but
+take no `[DIR]`; the `xcind-application`/`xcind-workspace` subcommands take
+`[DIR]` and walk but do not consult `XCIND_APP_ROOT`; `xcind-proxy` is
+global-scoped and has no target. The decision — location, never name flags —
+holds across all of them.
 
 The workspace is then the parent directory, when that parent declares itself a
 workspace. So the user must be in, or point at, the directory.

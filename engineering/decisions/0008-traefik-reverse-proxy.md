@@ -21,3 +21,4 @@ Traefik's Docker integration allows dynamic routing without config file changes.
 - [ADR-0002: Two-Layer Networking](0002-two-layer-networking.md) - Network architecture that Traefik operates within
 - [ADR-0007: Port Type System](0007-port-type-system.md) - Defines proxied vs assigned port types
 - [ADR-0009: Flexible TLS Configuration](0009-flexible-tls-configuration.md) - TLS termination at Traefik
+- [ADR-0022: External Proxy Mode](0022-external-proxy-mode.md) - Serving apps through an existing host Traefik instead of the managed one
