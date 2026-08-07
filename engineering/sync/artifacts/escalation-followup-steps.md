@@ -92,9 +92,42 @@ It needs its own Scind PR, now written up as **Step 3b** above. Step 7's "no
 PLANNED rows remain" check will *not* catch it — the row's status is already
 terminal (RESOLVED); only §3.1's planned-edits list still carries it.
 
-## Step 6 — Xcind small fixes (parallel-safe)
+## Step 6 — Xcind small fixes (parallel-safe) — ✅ DONE
 
 > Four small Xcind items from the escalation brief, one commit each: (1) inject `XCIND_HOST_GATEWAY` into `environment:` in `lib/xcind/xcind-host-gateway-lib.bash` (value already computed) and flip divergence 0022 to Resolved; (2) fix the guard gap where an app `.xcind.sh` setting `XCIND_WORKSPACE` silently overwrites the discovered workspace name in `__xcind-load-config`, matching `self-declaration.feature:17-22`, with a test; (3) document the `XCIND_CACHE_SCHEMA` SHA input in `engineering/specs/generated-override-files.md` and `hook-lifecycle.md`; (4) execute PROCESS rows RL-092 (explicit flavors-deferral sentence in ADR-0005) and RL-093 (new ADR recording the targeting-model deviation, per divergence 0021's note). Run `make check` before each commit.
+
+**Done.** Four commits, one per item.
+
+1. **`XCIND_HOST_GATEWAY` injection** (`80f083a`) — the hook now writes an
+   `environment:` half beside `extra_hosts`. The two halves are independent per
+   service: an already-mapped service still gets the variable, and a service
+   that sets the variable itself keeps its own value. Divergence **0022 flipped
+   to Resolved** (entry, `registry.json`, README index). One residual gap
+   recorded rather than papered over: on Docker Desktop detection returns
+   nothing, so the hook emits no file at all and no variable reaches those
+   containers. Closing that means emitting an env-only overlay carrying the
+   literal `host.docker.internal` on every Docker Desktop host — a separate
+   decision.
+2. **Workspace guard gap** (`dbbc397`) — `__xcind-guard-discovered-workspace`
+   restores the discovered name after the app-side configs are sourced, and
+   warns. Captured after the workspace's *own* additional configs, so a
+   workspace may still name itself. Self-declaration is untouched when nothing
+   was discovered. **Behavior change worth knowing:** `xcind-workspace status`
+   no longer skips a nested app that declares another workspace, because such
+   an app now resolves to the workspace it lives in. Its mismatch filter stays
+   as defense-in-depth, and its test was rewritten to assert the new behavior.
+   Divergence 0038 notes that self-declaration is a fallback, not an override.
+3. **`XCIND_CACHE_SCHEMA`** (`c7358b4`) — documented in both SHA-input lists
+   (`generated-override-files.md` §Caching and `hook-lifecycle.md` GENERATE),
+   as a constant rather than a user setting, with what a bump does.
+4. **RL-092 / RL-093** (`ffee906`) — ADR-0005 gained a "Flavors are deferred,
+   not rejected" section; new **ADR-0023** records the location-based targeting
+   deviation from Scind ADR-0011. Both ledger rows flipped `PROCESS → APPLIED`
+   in the `.md` and `.json`; divergences 0021 and 0024 carry done-markers on
+   their soft notes, and the ADR-0021 cross-reference table now maps Scind 0011
+   ↔ Xcind 0023.
+
+`make check` passed before each commit.
 
 ## Step 7 — Close out the effort
 
