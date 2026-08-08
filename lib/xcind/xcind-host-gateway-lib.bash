@@ -142,9 +142,19 @@ __xcind-service-has-host-gateway-env() {
   # `docker compose config` emits environment as a map, but a service that
   # is only present in an app compose file may still use the "NAME=value"
   # list form — accept both.
+  #
+  # `type` (not yq-go's `tag`) is used here because `tag` is a mikefarah/
+  # yq-go extension that stock jq — and therefore kislyuk/yq, which is a
+  # thin wrapper around jq — doesn't define. `type` is a real jq builtin,
+  # but the two implementations disagree on its return value for YAML
+  # collections: yq-go reports the YAML tag ("!!map"/"!!seq"), kislyuk/yq
+  # reports the JSON type ("object"/"array"). Matching both spellings
+  # keeps this expression portable across both flavors. Likewise `sub`
+  # takes its arguments separated by `;` in standard jq; yq-go tolerates
+  # a `,` separator, but jq (and kislyuk/yq) does not.
   local has_env
   has_env=$(yq -r \
-    "(.services.\"$service\".environment // {}) | ((select(tag == \"!!map\") | keys | .[]), (select(tag == \"!!seq\") | .[] | sub(\"=.*\", \"\"))) | select(. == \"XCIND_HOST_GATEWAY\")" \
+    "(.services.\"$service\".environment // {}) | ((select(type == \"!!map\" or type == \"object\") | keys | .[]), (select(type == \"!!seq\" or type == \"array\") | .[] | sub(\"=.*\"; \"\"))) | select(. == \"XCIND_HOST_GATEWAY\")" \
     "$resolved_config" 2>/dev/null)
 
   [[ -n $has_env ]]
