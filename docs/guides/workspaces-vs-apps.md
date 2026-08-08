@@ -55,6 +55,16 @@ xcind-workspace restart  # down, then up, across every app (confirms first)
 
 All three walk up from the current directory to find the workspace (or take an explicit directory), continue past a failing application within each pass, and list the failures at the end. `down --yes` and `restart --yes` skip the confirmation prompt. `restart` never removes volumes, and its up pass runs even if an application failed to come down.
 
+Pass `-a NAME` (or `--app NAME`, repeatable) to target specific applications instead of every application in the workspace:
+
+```bash
+xcind-workspace down -a api -a worker  # bring down only "api" and "worker"
+```
+
+`NAME` matches an application directory's basename inside the already-located workspace. An unrecognized name errors out — listing the available applications — before anything runs, and the confirmation prompt lists only the selected applications. This is a filter on the app loop only; workspace discovery is still purely location-based (cwd walk-up or an explicit `[DIR]`), never by name.
+
+`xcind-workspace down --volumes` also removes each application's Docker volumes (`xcind-compose down -v`); the confirmation prompt calls this out explicitly. `restart` and `up` reject `--volumes` — restart's internal down pass always preserves volumes.
+
 ## Dispose a workspace
 
 To remove a workspace and its runtime state in one command, run:

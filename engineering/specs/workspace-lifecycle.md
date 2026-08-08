@@ -97,6 +97,37 @@ second pass is not made conditional on the first, matching the existing
 continue-past-failure behavior within a pass. Failures from both passes are
 reported together, and the command exits non-zero if either pass had one.
 
+All three verbs accept `-a NAME`/`--app NAME` (repeatable) to limit the pass
+loop to specific application directories instead of enumerating every one.
+`NAME` matches an application directory's basename within the workspace root
+that was already located (via walk-up or an explicit `[DIR]`). An
+unrecognized name errors out before anything runs, naming the unknown app and
+listing the available ones; the confirmation prompt lists only the selected
+applications:
+
+```bash
+xcind-workspace down -a api -a worker --yes    # down only "api" and "worker"
+```
+
+This is strictly a filter on the per-app loop already inside the located
+workspace — it does not add name-based workspace discovery. Xcind targets a
+workspace by location only (cwd walk-up or a positional `[DIR]`); see ADR
+[0023](../decisions/0023-location-based-targeting.md) and divergence
+[0021](../sync/divergence/0021-options-based-targeting-by-name.md) for why
+`-w`/`--workspace` name resolution "from anywhere" is deliberately out of
+scope.
+
+`down` also accepts `--volumes`, which forwards `-v` to each application's
+`xcind-compose down` call, removing that application's Docker volumes. The
+confirmation prompt states plainly that volumes will also be removed when
+`--volumes` is given (`--yes` still skips the prompt). `up` and `restart`
+reject `--volumes` — `restart`'s internal down pass always preserves volumes,
+so accepting the flag there would be misleading:
+
+```bash
+xcind-workspace down --volumes    # down every app, also remove each app's volumes
+```
+
 ### Removing a Workspace
 
 `xcind-workspace dispose` tears down every application (compose down, release

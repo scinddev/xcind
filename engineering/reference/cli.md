@@ -395,9 +395,9 @@ Manages xcind workspaces.
 | Subcommand | Description |
 |------------|-------------|
 | `init [DIR] [OPTIONS]` | Initialize a workspace directory |
-| `up [DIR]` | Run `xcind-compose up -d` in every application directory |
-| `down [DIR] [--yes]` | Run `xcind-compose down` in every application directory (confirms first) |
-| `restart [DIR] [--yes]` | Run `down` then `up` across every application directory (confirms first); volumes are never removed |
+| `up [DIR] [-a NAME...]` | Run `xcind-compose up -d` in every (or selected) application directory |
+| `down [DIR] [-a NAME...] [--volumes] [--yes]` | Run `xcind-compose down` in every (or selected) application directory (confirms first) |
+| `restart [DIR] [-a NAME...] [--yes]` | Run `down` then `up` across every (or selected) application directory (confirms first); volumes are never removed |
 | `status [DIR] [OPTIONS]` | Show workspace-wide status |
 | `list [OPTIONS]` | List all workspaces the registry knows about |
 | `register PATH` | Add an existing workspace directory to the registry |
@@ -411,11 +411,13 @@ Manages xcind workspaces.
 | `--name NAME` | Set `XCIND_WORKSPACE` explicitly (default: directory name) |
 | `--proxy-domain DOMAIN` | Set `XCIND_PROXY_DOMAIN` in workspace config |
 
-### Down and Restart Options
+### Up, Down, and Restart Options
 
 | Option | Description |
 |--------|-------------|
-| `--yes`, `-y` | Skip the confirmation prompt |
+| `-a NAME`, `--app NAME` | Limit the pass loop to the named application (repeatable); NAME is an application directory basename within the workspace |
+| `--volumes` | `down` only: forward `-v` to each application's `xcind-compose down` call |
+| `--yes`, `-y` | `down`/`restart` only: skip the confirmation prompt |
 
 ### Status Options
 
@@ -438,7 +440,10 @@ xcind-workspace init ~/Workspaces/dev        # Initialize specific directory
 xcind-workspace init --proxy-domain xcind.localhost  # With proxy domain
 xcind-workspace init --name myws             # With explicit workspace name
 xcind-workspace up                           # Bring up every app in the workspace
+xcind-workspace up -a api -a worker          # Bring up only "api" and "worker"
 xcind-workspace down --yes                   # Bring down every app, no prompt
+xcind-workspace down --volumes               # Bring down every app, also remove volumes
+xcind-workspace down -a api --yes            # Bring down only "api", no prompt
 xcind-workspace restart --yes                # Down then up every app, no prompt
 xcind-workspace status                       # Show workspace status
 xcind-workspace status --json                # JSON output
@@ -461,9 +466,11 @@ xcind-workspace dispose ~/code/acme --rm --volumes --yes
 
 **Up / down / restart:**
 
-- Discovers the workspace root by walking up from `DIR` (default: current directory), then runs `xcind-compose up -d` (`up`) or `xcind-compose down` (`down`) in every immediate application directory. `restart` is `down` followed by `up`, composed from the same per-app loop: a full down pass across every application, then a full up pass across every application. Volumes are never touched (`restart` never passes `-v`/`--volumes` to `down`).
+- Discovers the workspace root by walking up from `DIR` (default: current directory), then runs `xcind-compose up -d` (`up`) or `xcind-compose down` (`down`) in every immediate application directory. `restart` is `down` followed by `up`, composed from the same per-app loop: a full down pass across every application, then a full up pass across every application. Volumes are never touched during `restart` (its internal `down` never passes `-v`).
+- `-a NAME`/`--app NAME` (repeatable, all three verbs) limits the pass loop to the named application directories instead of every enumerated application. `NAME` matches an application directory's basename within the already-discovered workspace root — this is a filter on the per-app loop only, not a name-based workspace lookup (workspace discovery stays purely location-based; see ADR [0023](../decisions/0023-location-based-targeting.md)). An unrecognized name errors out before any application is touched, naming the unknown app and listing the available ones.
+- `down --volumes` forwards `-v` to each application's `xcind-compose down` call, removing that application's Docker volumes. `up` and `restart` reject `--volumes` — `restart`'s down pass always preserves volumes, matching canon.
 - Each pass continues past a failing application and reports the failed directories at the end; any failure in either pass makes the command exit non-zero. For `restart`, the up pass still runs even if applications failed to come down in the down pass — this matches the continue-past-failure behavior within a single pass, rather than making the second pass conditional on the first. Failures from both passes are reported together.
-- `down` and `restart` confirm before acting, listing every application that will be affected; `--yes`/`-y` skips the prompt. `up` takes no options.
+- `down` and `restart` confirm before acting, listing only the applications that will be affected (all of them, or the `-a`-selected subset); `--yes`/`-y` skips the prompt. The `down` prompt also states when `--volumes` will remove data. `up` takes no confirmation option (no prompt).
 
 **Status:**
 

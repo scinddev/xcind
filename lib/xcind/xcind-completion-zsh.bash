@@ -317,6 +317,34 @@ _xcind-proxy() {
 # xcind-workspace: native completion
 # -----------------------------------------------------------------------------
 
+# Best-effort: walk up from $PWD to find a workspace root (.xcind.sh
+# heuristically matching XCIND_IS_WORKSPACE=1), then list immediate
+# subdirectories that look like application directories (have their own
+# .xcind.sh that does not itself look like a workspace). This is a
+# lightweight heuristic (grep, not sourcing) suitable only for completion —
+# the completion scripts must stay self-contained and not source workspace
+# config.
+_xcind_workspace_app_names() {
+  local dir="$PWD" root=""
+  while :; do
+    if [[ -f "$dir/.xcind.sh" ]] && grep -q '^XCIND_IS_WORKSPACE=1' "$dir/.xcind.sh" 2>/dev/null; then
+      root="$dir"
+      break
+    fi
+    [[ $dir == "/" ]] && break
+    dir="$(dirname "$dir")"
+  done
+  [[ -n $root ]] || return
+  local sub
+  for sub in "$root"/*/; do
+    [[ -d $sub ]] || continue
+    sub="${sub%/}"
+    [[ -f "$sub/.xcind.sh" ]] || continue
+    grep -q '^XCIND_IS_WORKSPACE=1' "$sub/.xcind.sh" 2>/dev/null && continue
+    print -r -- "$(basename "$sub")"
+  done
+}
+
 _xcind-workspace() {
   local -a main_commands=(
     'init:Initialize a workspace directory'
@@ -351,7 +379,23 @@ _xcind-workspace() {
     _files -/
     return
     ;;
+  -a | --app)
+    if [[ " ${words[*]} " == *' up '* || " ${words[*]} " == *' down '* || " ${words[*]} " == *' restart '* ]]; then
+      local -a app_names
+      local app_name
+      while IFS= read -r app_name; do
+        [[ -n $app_name ]] && app_names+=("$app_name")
+      done < <(_xcind_workspace_app_names)
+      compadd -- "${app_names[@]}"
+    fi
+    return
+    ;;
   up)
+    local -a up_opts=(
+      '-a:Limit to the named application (repeatable)'
+      '--app:Limit to the named application (repeatable)'
+    )
+    _describe 'up option' up_opts
     _files -/
     return
     ;;
@@ -359,6 +403,9 @@ _xcind-workspace() {
     local -a down_opts=(
       '--yes:Skip confirmation prompt'
       '-y:Skip confirmation prompt'
+      '--volumes:Also remove Docker volumes'
+      '-a:Limit to the named application (repeatable)'
+      '--app:Limit to the named application (repeatable)'
     )
     _describe 'down option' down_opts
     _files -/
@@ -368,6 +415,8 @@ _xcind-workspace() {
     local -a restart_opts=(
       '--yes:Skip confirmation prompt'
       '-y:Skip confirmation prompt'
+      '-a:Limit to the named application (repeatable)'
+      '--app:Limit to the named application (repeatable)'
     )
     _describe 'restart option' restart_opts
     _files -/
