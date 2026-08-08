@@ -231,6 +231,34 @@ _xcind_proxy_completions() {
 # xcind-workspace: native completion
 # -----------------------------------------------------------------------------
 
+# Best-effort: walk up from $PWD to find a workspace root (.xcind.sh
+# heuristically matching XCIND_IS_WORKSPACE=1), then list immediate
+# subdirectories that look like application directories (have their own
+# .xcind.sh that does not itself look like a workspace). This is a
+# lightweight heuristic (grep, not sourcing) suitable only for completion —
+# the completion scripts must stay self-contained and not source workspace
+# config.
+_xcind_workspace_app_names() {
+  local dir="$PWD" root=""
+  while :; do
+    if [[ -f "$dir/.xcind.sh" ]] && grep -q '^XCIND_IS_WORKSPACE=1' "$dir/.xcind.sh" 2>/dev/null; then
+      root="$dir"
+      break
+    fi
+    [[ $dir == "/" ]] && break
+    dir="$(dirname "$dir")"
+  done
+  [[ -n $root ]] || return
+  local sub
+  for sub in "$root"/*/; do
+    [[ -d $sub ]] || continue
+    sub="${sub%/}"
+    [[ -f "$sub/.xcind.sh" ]] || continue
+    grep -q '^XCIND_IS_WORKSPACE=1' "$sub/.xcind.sh" 2>/dev/null && continue
+    basename "$sub"
+  done
+}
+
 _xcind_workspace_completions() {
   local cur prev
   cur="${COMP_WORDS[COMP_CWORD]}"
@@ -253,28 +281,39 @@ _xcind_workspace_completions() {
     return
   fi
 
-  # After "up", complete directories
-  if [[ $prev == "up" ]]; then
-    COMPREPLY=($(compgen -d -- "$cur"))
+  # After "-a"/"--app" following up/down/restart, complete app-directory
+  # basenames of the workspace enclosing $PWD (best-effort).
+  if [[ $prev == "-a" || $prev == "--app" ]] && [[ " ${COMP_WORDS[*]} " == *" up "* || " ${COMP_WORDS[*]} " == *" down "* || " ${COMP_WORDS[*]} " == *" restart "* ]]; then
+    COMPREPLY=($(compgen -W "$(_xcind_workspace_app_names)" -- "$cur"))
     return
   fi
 
-  # After "down", offer --yes and directory completion
-  if [[ $prev == "down" ]]; then
+  # After "up", offer -a/--app and directory completion
+  if [[ $prev == "up" ]]; then
     if [[ $cur == -* ]]; then
-      COMPREPLY=($(compgen -W "--yes -y" -- "$cur"))
+      COMPREPLY=($(compgen -W "-a --app" -- "$cur"))
     else
-      COMPREPLY=($(compgen -W "--yes -y" -- "$cur") $(compgen -d -- "$cur"))
+      COMPREPLY=($(compgen -W "-a --app" -- "$cur") $(compgen -d -- "$cur"))
     fi
     return
   fi
 
-  # After "restart", offer --yes and directory completion
+  # After "down", offer --yes, --volumes, -a/--app, and directory completion
+  if [[ $prev == "down" ]]; then
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--yes -y --volumes -a --app" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--yes -y --volumes -a --app" -- "$cur") $(compgen -d -- "$cur"))
+    fi
+    return
+  fi
+
+  # After "restart", offer --yes, -a/--app, and directory completion
   if [[ $prev == "restart" ]]; then
     if [[ $cur == -* ]]; then
-      COMPREPLY=($(compgen -W "--yes -y" -- "$cur"))
+      COMPREPLY=($(compgen -W "--yes -y -a --app" -- "$cur"))
     else
-      COMPREPLY=($(compgen -W "--yes -y" -- "$cur") $(compgen -d -- "$cur"))
+      COMPREPLY=($(compgen -W "--yes -y -a --app" -- "$cur") $(compgen -d -- "$cur"))
     fi
     return
   fi

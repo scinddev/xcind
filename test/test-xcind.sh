@@ -5566,13 +5566,13 @@ WORKSPACE_UPDOWN_WS="$WORKSPACE_UPDOWN_ROOT/workspace"
 WORKSPACE_UPDOWN_STATE="$WORKSPACE_UPDOWN_ROOT/state"
 WORKSPACE_UPDOWN_BIN="$WORKSPACE_UPDOWN_ROOT/bin"
 WORKSPACE_UPDOWN_LOG="$WORKSPACE_UPDOWN_ROOT/docker.log"
-mkdir -p "$WORKSPACE_UPDOWN_WS/api" "$WORKSPACE_UPDOWN_WS/web" \
+mkdir -p "$WORKSPACE_UPDOWN_WS/api" "$WORKSPACE_UPDOWN_WS/web" "$WORKSPACE_UPDOWN_WS/worker" \
   "$WORKSPACE_UPDOWN_STATE/xcind" "$WORKSPACE_UPDOWN_BIN"
 cat >"$WORKSPACE_UPDOWN_WS/.xcind.sh" <<'CFGEOF'
 XCIND_IS_WORKSPACE=1
 XCIND_WORKSPACE="updown-ws"
 CFGEOF
-for workspace_updown_app in api web; do
+for workspace_updown_app in api web worker; do
   cat >"$WORKSPACE_UPDOWN_WS/$workspace_updown_app/.xcind.sh" <<'CFGEOF'
 XCIND_COMPOSE_FILES=("compose.yaml")
 CFGEOF
@@ -5636,12 +5636,114 @@ assert_contains "workspace down: brings down the second application" \
   "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
 assert_contains "workspace down: runs compose down" " down" "$workspace_updown_log"
 
+# `-a NAME` limits the pass loop to the named application(s).
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_up_a_out=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" -a api)
+assert_contains "workspace up -a: reports success" "Workspace up at" "$workspace_up_a_out"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace up -a: brings up the named application" \
+  "$WORKSPACE_UPDOWN_WS/api/compose.yaml" "$workspace_updown_log"
+assert_not_contains "workspace up -a: skips the unselected application" \
+  "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
+assert_not_contains "workspace up -a: skips the other unselected application" \
+  "$WORKSPACE_UPDOWN_WS/worker/compose.yaml" "$workspace_updown_log"
+
+# Repeatable `-a`/`--app` selects multiple applications.
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_up_multi_a_out=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" -a api --app web)
+assert_contains "workspace up -a -a: reports success" "Workspace up at" "$workspace_up_multi_a_out"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace up -a -a: brings up the first named application" \
+  "$WORKSPACE_UPDOWN_WS/api/compose.yaml" "$workspace_updown_log"
+assert_contains "workspace up -a -a: brings up the second named application" \
+  "$WORKSPACE_UPDOWN_WS/web/compose.yaml" "$workspace_updown_log"
+assert_not_contains "workspace up -a -a: skips the unselected application" \
+  "$WORKSPACE_UPDOWN_WS/worker/compose.yaml" "$workspace_updown_log"
+
+# An unknown `-a` name errors out before anything runs, and lists the
+# available applications.
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_up_a_unknown_err=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" -a bogus 2>&1 || true)
+assert_contains "workspace up -a bogus: names the unknown app" \
+  'Unknown application "bogus"' "$workspace_up_a_unknown_err"
+assert_contains "workspace up -a bogus: lists available applications" \
+  "Available applications:" "$workspace_up_a_unknown_err"
+assert_contains "workspace up -a bogus: available list names api" \
+  "api" "$workspace_up_a_unknown_err"
+assert_eq "workspace up -a bogus: runs no compose commands" "false" \
+  "$([ -s "$WORKSPACE_UPDOWN_LOG" ] && echo true || echo false)"
+
+# The `down` confirmation prompt lists only the `-a`-selected applications,
+# and `--volumes` is called out explicitly. `script` fakes a tty so the
+# non-interactive-refusal path in __xcind-confirm doesn't short-circuit
+# before the prompt is printed.
+if command -v script >/dev/null 2>&1; then
+  : >"$WORKSPACE_UPDOWN_LOG"
+  workspace_down_a_prompt_out=$(printf 'n\n' | PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+    XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+    XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+    script -qec "$XCIND_ROOT/bin/xcind-workspace down $WORKSPACE_UPDOWN_WS -a api" /dev/null || true)
+  assert_contains "workspace down -a: prompt lists the selected app" \
+    "bring down application api" "$workspace_down_a_prompt_out"
+  assert_not_contains "workspace down -a: prompt excludes an unselected app" \
+    "bring down application web" "$workspace_down_a_prompt_out"
+  assert_not_contains "workspace down -a: prompt excludes the other unselected app" \
+    "bring down application worker" "$workspace_down_a_prompt_out"
+
+  workspace_down_volumes_prompt_out=$(printf 'n\n' | PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+    XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+    XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+    script -qec "$XCIND_ROOT/bin/xcind-workspace down $WORKSPACE_UPDOWN_WS --volumes" /dev/null || true)
+  assert_contains "workspace down --volumes: prompt mentions volume removal" \
+    "remove each application's Docker volumes" "$workspace_down_volumes_prompt_out"
+else
+  echo "  … SKIP: 'script' not available for prompt-content tests"
+  SKIP=$((SKIP + 1))
+fi
+
+# `down --volumes` forwards -v to each application's compose call.
+: >"$WORKSPACE_UPDOWN_LOG"
+workspace_down_volumes_out=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" down "$WORKSPACE_UPDOWN_WS" --volumes --yes)
+assert_contains "workspace down --volumes: reports success" "Workspace down at" \
+  "$workspace_down_volumes_out"
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_contains "workspace down --volumes: passes -v" " -v" "$workspace_updown_log"
+
+# Plain `down` (no --volumes) never passes -v.
+: >"$WORKSPACE_UPDOWN_LOG"
+PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" down "$WORKSPACE_UPDOWN_WS" --yes >/dev/null
+workspace_updown_log=$(<"$WORKSPACE_UPDOWN_LOG")
+assert_not_contains "workspace down: never passes -v without --volumes" \
+  " -v" "$workspace_updown_log"
+
 # `up` rejects down-only options.
 workspace_up_yes_status=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
   XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
   XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
   capture_status "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" --yes)
 assert_eq "workspace up: rejects --yes" "1" "$workspace_up_yes_status"
+
+# `up` also rejects `--volumes` — it only means something for `down`.
+workspace_up_volumes_status=$(PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
+  XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" up "$WORKSPACE_UPDOWN_WS" --volumes)
+assert_eq "workspace up: rejects --volumes" "1" "$workspace_up_volumes_status"
 
 # One failing application does not stop the loop; the rest still run and
 # the failure is reported at the end. The failing app (api) sorts first, so
@@ -5771,6 +5873,27 @@ workspace_restart_fail_err=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
   "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS" --yes 2>&1 || true)
 assert_contains "workspace restart: down failure names the failed app" \
   "$WORKSPACE_RESTART_WS/api" "$workspace_restart_fail_err"
+
+# `-a NAME` limits restart's pass loop to the named application too.
+: >"$WORKSPACE_RESTART_LOG"
+workspace_restart_a_out=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS" -a web --yes)
+assert_contains "workspace restart -a: reports success" "Workspace restart at" \
+  "$workspace_restart_a_out"
+workspace_restart_log=$(<"$WORKSPACE_RESTART_LOG")
+assert_contains "workspace restart -a: restarts the named application" \
+  "$WORKSPACE_RESTART_WS/web/compose.yaml" "$workspace_restart_log"
+assert_not_contains "workspace restart -a: skips the unselected application" \
+  "$WORKSPACE_RESTART_WS/api/compose.yaml" "$workspace_restart_log"
+
+# `restart` rejects `--volumes` — its down pass must always preserve volumes.
+workspace_restart_volumes_status=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS" --volumes --yes)
+assert_eq "workspace restart: rejects --volumes" "1" "$workspace_restart_volumes_status"
 
 # Outside a workspace, restart refuses like up/down.
 mkdir -p "$WORKSPACE_RESTART_ROOT/not-a-workspace"

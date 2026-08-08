@@ -311,26 +311,52 @@ out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
   xcind-workspace up)
 assert_line "'up ' offers a directory" "svc-alpha" "$out"
 assert_no_line "'up ' excludes --yes" "--yes" "$out"
+assert_line "'up ' offers -a" "-a" "$out"
+assert_line "'up ' offers --app" "--app" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
   xcind-workspace down)
 assert_line "'down ' offers --yes" "--yes" "$out"
 assert_line "'down ' offers a directory" "svc-alpha" "$out"
+assert_line "'down ' offers --volumes" "--volumes" "$out"
+assert_line "'down ' offers -a" "-a" "$out"
+assert_line "'down ' offers --app" "--app" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run partial _xcind_workspace_completions \
   xcind-workspace down --)
 assert_line "'down --' offers --yes" "--yes" "$out"
+assert_line "'down --' offers --volumes" "--volumes" "$out"
 assert_no_line "'down --' drops directories" "svc-alpha" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
   xcind-workspace restart)
 assert_line "'restart ' offers --yes" "--yes" "$out"
 assert_line "'restart ' offers a directory" "svc-alpha" "$out"
+assert_line "'restart ' offers -a" "-a" "$out"
+assert_line "'restart ' offers --app" "--app" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run partial _xcind_workspace_completions \
   xcind-workspace restart --)
 assert_line "'restart --' offers --yes" "--yes" "$out"
 assert_no_line "'restart --' drops directories" "svc-alpha" "$out"
+
+# `-a`/`--app` after up/down/restart completes app-directory basenames when
+# $PWD is inside a workspace (heuristic: grep for XCIND_IS_WORKSPACE=1,
+# not a full source — the completion scripts must stay self-contained).
+WS_FIXTURE=$(mktemp_d)
+mkdir -p "$WS_FIXTURE/api" "$WS_FIXTURE/web"
+printf 'XCIND_IS_WORKSPACE=1\n' >"$WS_FIXTURE/.xcind.sh"
+printf 'XCIND_COMPOSE_FILES=("compose.yaml")\n' >"$WS_FIXTURE/api/.xcind.sh"
+printf 'XCIND_COMPOSE_FILES=("compose.yaml")\n' >"$WS_FIXTURE/web/.xcind.sh"
+
+out=$(cd "$WS_FIXTURE" && comp_run fresh _xcind_workspace_completions \
+  xcind-workspace down -a)
+assert_line "'down -a ' offers an app-directory basename" "api" "$out"
+assert_line "'down -a ' offers the other app-directory basename" "web" "$out"
+
+out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
+  xcind-workspace up -a)
+assert_eq "'up -a ' offers nothing outside a workspace" "" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
   xcind-workspace dispose)
@@ -449,6 +475,13 @@ _describe() {
 }
 _files() { print -r -- '<files>' }
 _arguments() { print -r -- '<files>' }
+compadd() {
+  local arg
+  for arg in "$@"; do
+    [[ $arg == "--" ]] && continue
+    print -r -- "$arg"
+  done
+}
 
 source $completion_file
 $func
@@ -494,8 +527,38 @@ ZSHEOF
   out=$(zcomp_run _xcind-workspace 3 xcind-workspace restart)
   assert_line "zsh: workspace 'restart ' offers --yes" \
     "--yes:Skip confirmation prompt" "$out"
+  assert_line "zsh: workspace 'restart ' offers -a" \
+    "-a:Limit to the named application (repeatable)" "$out"
   assert_line "zsh: workspace 'restart ' completes directories" \
     "<files>" "$out"
+
+  out=$(zcomp_run _xcind-workspace 3 xcind-workspace up)
+  assert_line "zsh: workspace 'up ' offers -a" \
+    "-a:Limit to the named application (repeatable)" "$out"
+  assert_line "zsh: workspace 'up ' completes directories" \
+    "<files>" "$out"
+
+  out=$(zcomp_run _xcind-workspace 3 xcind-workspace down)
+  assert_line "zsh: workspace 'down ' offers --volumes" \
+    "--volumes:Also remove Docker volumes" "$out"
+  assert_line "zsh: workspace 'down ' offers -a" \
+    "-a:Limit to the named application (repeatable)" "$out"
+  assert_line "zsh: workspace 'down ' completes directories" \
+    "<files>" "$out"
+
+  # `-a`/`--app` after up/down/restart completes app-directory basenames
+  # when $PWD is inside a workspace (same heuristic as the bash function).
+  ZSH_WS_FIXTURE=$(mktemp_d)
+  mkdir -p "$ZSH_WS_FIXTURE/api" "$ZSH_WS_FIXTURE/web"
+  printf 'XCIND_IS_WORKSPACE=1\n' >"$ZSH_WS_FIXTURE/.xcind.sh"
+  printf 'XCIND_COMPOSE_FILES=("compose.yaml")\n' >"$ZSH_WS_FIXTURE/api/.xcind.sh"
+  printf 'XCIND_COMPOSE_FILES=("compose.yaml")\n' >"$ZSH_WS_FIXTURE/web/.xcind.sh"
+
+  out=$(cd "$ZSH_WS_FIXTURE" && zcomp_run _xcind-workspace 4 xcind-workspace down -a)
+  assert_line "zsh: workspace 'down -a ' offers an app-directory basename" \
+    "api" "$out"
+  assert_line "zsh: workspace 'down -a ' offers the other app-directory basename" \
+    "web" "$out"
 
   out=$(zcomp_run _xcind-application 2 xcind-application)
   assert_line "zsh: application top level offers ports" \

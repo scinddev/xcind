@@ -1089,6 +1089,8 @@ __xcind-workspace-updown() {
   local dir="."
   local dir_set=false
   local yes=false
+  local volumes=false
+  local -a want_apps=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1100,6 +1102,22 @@ __xcind-workspace-updown() {
       yes=true
       shift
       ;;
+    --volumes)
+      if [[ $verb != down ]]; then
+        echo "Error: Unknown option for $verb: $1" >&2
+        return 1
+      fi
+      volumes=true
+      shift
+      ;;
+    -a | --app)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: Missing value for $1" >&2
+        return 1
+      fi
+      want_apps+=("$2")
+      shift 2
+      ;;
     --help | -h)
       echo "Usage: xcind-workspace $verb [DIR] [OPTIONS]"
       echo ""
@@ -1107,6 +1125,9 @@ __xcind-workspace-updown() {
         echo "Bring up every application in the workspace at DIR (default: walk"
         echo "up from the current directory) by running 'xcind-compose up -d'"
         echo "in each application directory."
+        echo ""
+        echo "Options:"
+        echo "  -a, --app NAME  Limit to the named application (repeatable)"
       elif [[ $verb == restart ]]; then
         echo "Restart every application in the workspace at DIR (default: walk"
         echo "up from the current directory): run 'xcind-compose down' in every"
@@ -1118,14 +1139,17 @@ __xcind-workspace-updown() {
         echo "failures from either pass are reported at the end."
         echo ""
         echo "Options:"
-        echo "  --yes, -y      Skip the confirmation prompt"
+        echo "  -a, --app NAME  Limit to the named application (repeatable)"
+        echo "  --yes, -y       Skip the confirmation prompt"
       else
         echo "Bring down every application in the workspace at DIR (default:"
         echo "walk up from the current directory) by running 'xcind-compose"
         echo "down' in each application directory."
         echo ""
         echo "Options:"
-        echo "  --yes, -y      Skip the confirmation prompt"
+        echo "  -a, --app NAME  Limit to the named application (repeatable)"
+        echo "  --volumes       Also remove each application's Docker volumes"
+        echo "  --yes, -y       Skip the confirmation prompt"
       fi
       return 0
       ;;
@@ -1170,12 +1194,41 @@ __xcind-workspace-updown() {
     __xcind-is-workspace-dir "$subdir" || app_dirs+=("$subdir")
   done
 
+  local app_dir
+  if [[ ${#want_apps[@]} -gt 0 ]]; then
+    local -a available_names=()
+    for app_dir in "${app_dirs[@]+"${app_dirs[@]}"}"; do
+      available_names+=("$(basename "$app_dir")")
+    done
+    local -a selected=()
+    local want found
+    for want in "${want_apps[@]}"; do
+      found=false
+      for app_dir in "${app_dirs[@]+"${app_dirs[@]}"}"; do
+        if [[ "$(basename "$app_dir")" == "$want" ]]; then
+          selected+=("$app_dir")
+          found=true
+          break
+        fi
+      done
+      if [[ $found != true ]]; then
+        echo "Error: Unknown application \"$want\" in workspace \"$ws_name\"." >&2
+        if [[ ${#available_names[@]} -gt 0 ]]; then
+          echo "Available applications: ${available_names[*]}" >&2
+        else
+          echo "No applications found in workspace \"$ws_name\" at $ws_root." >&2
+        fi
+        return 1
+      fi
+    done
+    app_dirs=("${selected[@]}")
+  fi
+
   if [[ ${#app_dirs[@]} -eq 0 ]]; then
     echo "No applications found in workspace \"$ws_name\" at $ws_root."
     return 0
   fi
 
-  local app_dir
   if [[ ($verb == down || $verb == restart) && $yes != true ]]; then
     local prompt
     if [[ $verb == restart ]]; then
@@ -1188,6 +1241,9 @@ __xcind-workspace-updown() {
       for app_dir in "${app_dirs[@]}"; do
         prompt+=$'\n'"  - bring down application $(basename "$app_dir")"
       done
+      if [[ $volumes == true ]]; then
+        prompt+=$'\n'"  - also remove each application's Docker volumes (--volumes)"
+      fi
     fi
     __xcind-confirm "$prompt" || return 1
   fi
@@ -1231,6 +1287,7 @@ __xcind-workspace-updown() {
 
   local -a compose_args=(down)
   [[ $verb == up ]] && compose_args=(up -d)
+  [[ $verb == down && $volumes == true ]] && compose_args+=(-v)
 
   local -a failed_apps=()
   for app_dir in "${app_dirs[@]}"; do
@@ -1269,7 +1326,7 @@ __xcind-workspace-help() {
   echo ""
   echo "Subcommands:"
   echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
-  echo "  up [DIR]                 Bring up every application in the workspace"
+  echo "  up [DIR] [OPTIONS]       Bring up every application in the workspace"
   echo "  down [DIR] [OPTIONS]     Bring down every application in the workspace"
   echo "  restart [DIR] [OPTIONS]  Restart every application (down, then up)"
   echo "  dispose [DIR] [OPTIONS]  Tear down a workspace"
@@ -1281,6 +1338,12 @@ __xcind-workspace-help() {
   echo "Init options:"
   echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
   echo "  --proxy-domain DOMAIN    Set XCIND_PROXY_DOMAIN in workspace config"
+  echo ""
+  echo "Up, Down, and Restart options:"
+  echo "  -a, --app NAME           Limit to the named application (repeatable)"
+  echo ""
+  echo "Down options:"
+  echo "  --volumes                Also remove each application's Docker volumes"
   echo ""
   echo "Down and Restart options:"
   echo "  --yes, -y                Skip the confirmation prompt"
