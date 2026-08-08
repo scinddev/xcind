@@ -2,16 +2,18 @@
 
 **Status**: Active
 **Scind canon**: `docs/decisions/0011-options-based-targeting.md` (`--workspace`/`--app` name-targeting from anywhere, paired with context auto-detection)
-**Xcind reality**: no targeting flags — targets by cwd upward-walk + positional `[DIR]` + `XCIND_APP_ROOT`; `engineering/specs/context-detection.md`, `bin/xcind-*`, and now recorded in `engineering/decisions/0023-location-based-targeting.md`
+**Xcind reality**: no name-targeting flags — targets by cwd upward-walk + positional `[DIR]` + `XCIND_APP_ROOT`; `engineering/specs/context-detection.md`, `bin/xcind-*`, and now recorded in `engineering/decisions/0023-location-based-targeting.md`. (The `-a`/`--app` option on `xcind-workspace up`/`down`/`restart`, added 2026-08-08 by PR #91, is a per-app **loop filter inside a located workspace**, not name targeting — see the ADR-0023 clarification.)
 **Category**: Scope
 **Origin**: P5 SA-0001
 
 ## What differs
 Scind (ADR-0011) supports targeting a workspace or app **by name from anywhere**
 (`--workspace foo` / `--app bar`), backed by its registry. Xcind has **zero
-targeting flags**: it resolves context by walking up from the current directory,
-accepts a positional `[DIR]`, and honors `XCIND_APP_ROOT` — you must be in or point
-at the directory. Xcind ADR-0023 records the deviation (filed 2026-08 as
+name-targeting flags**: it resolves context by walking up from the current
+directory, accepts a positional `[DIR]`, and honors `XCIND_APP_ROOT` — you must
+be in or point at the directory. (Since PR #91 the workspace verbs take
+`-a`/`--app`, but only to filter the per-app loop within the workspace already
+located this way; it resolves nothing by name from anywhere.) Xcind ADR-0023 records the deviation (filed 2026-08 as
 ledger row RL-093; until then the deviation was unrecorded, which is what this
 entry's soft note asked for).
 
@@ -39,7 +41,10 @@ Xcind should file an ADR recording the deliberate targeting-model deviation — 
 
 ## Revisit conditions
 If Xcind adds a name→location registry, target-by-name becomes buildable and this may
-resolve. Re-audit each round.
+resolve. Re-audit each round. Re-tested 2026-08-08 (round 5, RL-154): PR #91's
+`-a`/`--app` loop filter does **not** trigger this condition — no name→location
+resolution was added, workspace discovery stays location-only (ADR-0023
+clarification). **STILL-JUSTIFIED.**
 
 ## Links
 - Origin finding: P5 SA-0001

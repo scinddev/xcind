@@ -205,6 +205,48 @@
         "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline c63cbc6..origin/main",
         "note": "Subtract the round-4 bookkeeping commit from the xcind range. The scind range is expected to be empty until canon moves independently. No carried follow-ups: 0028's resolution owes no wording check elsewhere (it is not a facet of 0026). Xcind backlog RL-150 (restart verb, -a targeting, down --volumes) is tracked in the round-4 ledger, not a sync watch item."
       }
+    },
+    {
+      "round": 5,
+      "name": "Backlog-closure round: #90/#91 ship the RL-150 residuals (restart, -a targeting, down --volumes)",
+      "opened": "2026-08-08",
+      "completed": "2026-08-08",
+      "artifacts": [
+        "engineering/sync/artifacts/reconciliation-ledger-round-5.{md,json}",
+        "engineering/sync/artifacts/correspondence-map.{md,json} (2 rows refreshed: specs/workspace-lifecycle.md, reference/cli.md)",
+        "engineering/sync/divergence/ (0021 re-audit STILL-JUSTIFIED + wording refresh; 0028 RL-150-closure addendum; registry.json + README index)",
+        "engineering/decisions/0023-location-based-targeting.md (RL-153 clarification: -a is a loop filter, not name targeting)",
+        "engineering/archive/sync-audit-2026-08-08-cross-project-round-5.md"
+      ],
+      "ledger": {
+        "file": "engineering/sync/artifacts/reconciliation-ledger-round-5.md",
+        "status": "CLOSED",
+        "rl_id_range": "RL-152..RL-156",
+        "next_rl_id": "RL-157"
+      },
+      "xcind": {
+        "reviewed_through": "b3b7fa7",
+        "reviewed_through_subject": "feat(workspace): per-app -a targeting and down --volumes (RL-150) (#91)",
+        "head_at_close": "b3b7fa7",
+        "head_at_close_note": "Plus this round's own docs(sync) bookkeeping commit (single-commit pattern, no Scind PR so no separate close-out), which lands immediately after this entry is written; it is a round output. 5f4bd5f in 12737f8..HEAD is the round-4 output, already accounted.",
+        "round_outputs": [
+          "docs(sync) round-5 bookkeeping commit (ledger round-5, RL-152 closure record + 0028 addendum, 0021 re-audit + wording, ADR-0023 clarification, map refresh, report, this baseline entry)"
+        ],
+        "known_excluded": [],
+        "known_excluded_reason": "Nothing: 12737f8..b3b7fa7 is 5f4bd5f (round-4 output) plus 1357d8a/#89 (triaged, RL-155), a663573/#90 and b3b7fa7/#91 (triaged, RL-152)."
+      },
+      "scind": {
+        "compared_against": "c63cbc6",
+        "compared_against_note": "Canon at round-2/3/4 close; confirmed unchanged (c63cbc6..origin/main empty at round start, verified by fetch).",
+        "canon_at_close": "c63cbc6",
+        "canon_at_close_note": "Unchanged — #90/#91 are pure convergence (canon validated a second time on the workspace-orchestration surface, not edited); zero canon-affecting rows and no Scind PR. Round 6 diffs from here.",
+        "prs": []
+      },
+      "next_round_diff": {
+        "xcind": "git -C /home/dev/Code/xcind log --oneline b3b7fa7..HEAD",
+        "scind": "git -C /home/dev/Code/scind fetch origin && git -C /home/dev/Code/scind log --oneline c63cbc6..origin/main",
+        "note": "Subtract the round-5 bookkeeping commit from the xcind range. The scind range is expected to be empty until canon moves independently. No carried follow-ups: the RL-150 backlog is fully closed (RL-152), 0021 stands re-audited against its most direct test, and the workspace orchestration surface is fully converged — remaining Scind-only workspace surface (clone/generate, state machine, flavors) is standing P5 divergence territory, not a watch item."
+      }
     }
   ]
 }

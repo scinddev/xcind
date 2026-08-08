@@ -1,0 +1,103 @@
+{
+  "meta": {
+    "plan": "R5",
+    "title": "Reconciliation Ledger — Round 5 (RL-150 backlog closes: restart, -a targeting, down --volumes)",
+    "date": "2026-08-08",
+    "description": "Round-5 ledger of the standing cross-project-sync procedure (engineering/maintenance/cross-project-sync.md). Scope: xcind 12737f8..HEAD minus the round-4 bookkeeping commit (5f4bd5f) = 1357d8a (#89 yq-portability fix), a663573 (#90 workspace restart), b3b7fa7 (#91 per-app -a targeting + down --volumes); scind c63cbc6..origin/main empty (verified by fetch). #90+#91 ship every item of the round-4 RL-150 backlog; this round records the closure as a new row (the closed round-4 ledger is not edited) and re-checks divergence 0021/ADR-0023. RL- IDs continue the global sequence (round 4 ended at RL-151). Same field names and status vocabulary as the P6 ledger.",
+    "inputs": [
+      "engineering/sync/artifacts/sync-baseline.json (round-4 entry: next_round_diff)",
+      "xcind a663573 feat(workspace): add restart subcommand (RL-150) (#90)",
+      "xcind b3b7fa7 feat(workspace): per-app -a targeting and down --volumes (RL-150) (#91)",
+      "xcind 1357d8a fix(host-gateway): make env-detection yq expression jq-portable (#89)",
+      "Round-4 ledger row RL-150 (XCIND-BACKLOG): restart verb, -a targeting, down --volumes",
+      "Step-1 gate: make check green at b3b7fa7 (932+727+189+171 assertions, 0 failures); both feature PRs updated eng-docs in-commit, spot-checked faithful against bin/xcind-workspace"
+    ],
+    "action_types": {
+      "CANON-CONFIRM": "Xcind built what canon specifies, validating an unproven canon decision; canon unchanged (annotation beneath threshold per round-4 precedent).",
+      "XCIND-DOC-FIX": "Xcind self-drift doc correction landing via Xcind's normal flow (Step 1/4, Xcind-side).",
+      "REGISTRY-UPDATE": "Status/wording change to an existing P7 registry entry (Step 5 outcome).",
+      "NO-ACTION": "Input commit triaged; no doc, canon, or registry impact. Recorded for traceability.",
+      "PROCESS": "Sync-artifact bookkeeping."
+    },
+    "rl_id_range": "RL-152..RL-156",
+    "status_vocabulary": ["PLANNED", "APPLIED", "RESOLVED", "DONE", "XCIND-BACKLOG", "DEFERRED-TO-P7"],
+    "scind_pr": "none (zero canon-affecting rows; #90/#91 are pure convergence — canon validated a second time on the workspace-orchestration surface, unchanged)"
+  },
+  "rows": [
+    {
+      "id": "RL-152",
+      "join_key": "F5-rl150-closure",
+      "plan": "R5",
+      "source_classification": "CANON-CONFIRM",
+      "action_type": "CANON-CONFIRM",
+      "title": "RL-150 backlog closed by convergence: #90 restart + #91 -a targeting / down --volumes",
+      "target": "this ledger row (closure record; closes round-4 RL-150 without editing the closed ledger) + divergence 0028 addendum (file + registry.json notes)",
+      "edit_sketch": "#90 restart = canon's exact definition: full down pass then full up pass over the same per-app loop, volumes always preserved, confirms first, up pass unconditional on down failures, combined failure report, non-zero exit. #91: repeatable -a/--app on all three verbs (basename filter over enumerated app dirs; unknown name errors before anything runs) + down --volumes (per-app -v; prompt states data loss; up/restart reject it). Matches canon point for point; canon validated, unchanged. 0028 resolution note gains a dated addendum so 'residuals filed as RL-150' does not read as still-open.",
+      "priority": "P1",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Closes RL-150 (round-4 ledger, untouched). No Scind PR: annotation beneath threshold, consistent with round-4 pure-convergence precedent.",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-153",
+      "join_key": "F5-adr-0023-wording",
+      "plan": "R5",
+      "source_classification": "XCIND-DOC-FIX",
+      "action_type": "XCIND-DOC-FIX",
+      "title": "ADR-0023 literal wording stale: workspace verbs now accept --app (as a loop filter)",
+      "target": "xcind: engineering/decisions/0023-location-based-targeting.md (Decision section clarification)",
+      "edit_sketch": "ADR read 'does not accept --workspace NAME or --app NAME' — literally false since #91. Dated clarification paragraph: -a filters the per-app pass loop inside a workspace already located by walk-up/[DIR]; no name→location resolution; unknown name = error against enumerated dirs, not a registry lookup. Decision substance unchanged.",
+      "priority": "P2",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "#91's spec text already cross-referenced ADR-0023 and divergence 0021 correctly; only the ADR itself lagged.",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-154",
+      "join_key": "F5-0021-reaudit",
+      "plan": "R5",
+      "source_classification": "REGISTRY-UPDATE",
+      "action_type": "REGISTRY-UPDATE",
+      "title": "Divergence 0021 re-audit: -a does not trigger the revisit condition — STILL-JUSTIFIED",
+      "target": "xcind: engineering/sync/divergence/0021-options-based-targeting-by-name.md + registry.json 0021 entry",
+      "edit_sketch": "Full re-check: revisit condition is 'Xcind adds a name→location registry' — #91 adds none; workspace discovery stays location-only. Canon-neutrality sentence holds (Scind registry = coherent superset). Re-stamped 2026-08-08 round-5: STILL-JUSTIFIED. Wording refreshed 'zero targeting flags' → 'zero name-targeting flags' + loop-filter carve-out so the entry stays literally true.",
+      "priority": "P2",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Only standing divergence this round's inputs could touch; the other 19 Active Design/Scope entries keep their round-2/3 stamps (yq fix is §5 substrate territory).",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-155",
+      "join_key": "F5-yq-portability-triage",
+      "plan": "R5",
+      "source_classification": "NO-ACTION",
+      "action_type": "NO-ACTION",
+      "title": "1357d8a (#89) yq-portability fix: no drift — eng-docs do not describe the expression",
+      "target": "none (triage record only)",
+      "edit_sketch": "Host-gateway env-detection yq expression made jq-portable (tag→type both spellings; sub separator ,→;) so kislyuk/yq stops silently failing. High-drift area, so checked: grep confirms no eng-doc describes the expression internals; documented behavior (inject XCIND_HOST_GATEWAY unless present) was the intent — the fix repairs it under one yq flavor. Go canon parses YAML natively; permanent Go-vs-Bash substrate (§5).",
+      "priority": "P3",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "No doc, canon, or registry impact.",
+      "scind_pr": null
+    },
+    {
+      "id": "RL-156",
+      "join_key": "F5-artifacts-refresh",
+      "plan": "R5",
+      "source_classification": "PROCESS",
+      "action_type": "PROCESS",
+      "title": "Round-5 artifact refresh: ledger, report, registry stamps, map rows, baseline entry",
+      "target": "xcind: engineering/sync/artifacts/* + sync/divergence/{0021,0028,registry.json,README.md} + engineering/archive/ report",
+      "edit_sketch": "This ledger pair, round-5 report, 0021 re-audit stamp + wording, 0028 addendum (file + registry.json + README index), correspondence-map refreshes for specs/workspace-lifecycle.md and reference/cli.md (both stay PARTIAL; R5 notes record full orchestration convergence — Scind-only workspace surface narrows to clone/generate), round-5 baseline entry. No ADR-table change: ADR-0023 ↔ ADR-0011 stays DIVERGED-DECISION; the clarification amends wording, not the decision.",
+      "priority": "P1",
+      "status": "DONE",
+      "merge_with": [],
+      "notes": "Step-5 scope: 0021 full re-check (STILL-JUSTIFIED); no other entry's canon-neutrality test is touched by this round's inputs.",
+      "scind_pr": null
+    }
+  ]
+}

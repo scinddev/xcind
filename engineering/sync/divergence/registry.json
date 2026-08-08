@@ -298,10 +298,10 @@
       "origin_finding": "SA-0001",
       "source_plan": "P5",
       "scind_canon": "decisions/0011 (--workspace/--app from anywhere)",
-      "xcind_reality": "no flags; cwd-walk + [DIR] + XCIND_APP_ROOT",
+      "xcind_reality": "no name-targeting flags; cwd-walk + [DIR] + XCIND_APP_ROOT (workspace verbs' -a since PR #91 is a loop filter, not name targeting)",
       "adversarial_recheck": "SURVIVES",
       "notes": "Adversarial re-check performed (P7). Scind registry = superset. Xcind should file an ADR. Xcind ADR filed 2026-08-07: ADR-0023 location-based-targeting (RL-093).",
-      "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
+      "reaudited": "2026-08-08 round-5: STILL-JUSTIFIED (-a filters the per-app loop inside a located workspace; no name\u2192location resolution added)"
     },
     {
       "id": "0022",
@@ -395,9 +395,9 @@
       "origin_finding": "SA-0013",
       "source_plan": "P5",
       "scind_canon": "reference/cli.md; specs/workspace-lifecycle.md (one-command orchestration)",
-      "xcind_reality": "workspace-wide up/down since 12737f8; per-app path via xcind-compose remains",
+      "xcind_reality": "full workspace up/down/restart with -a targeting and down --volumes since PRs #90/#91; per-app path via xcind-compose remains",
       "adversarial_recheck": "SURVIVES-STRONG",
-      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Resolved 2026-08-07 (round 4, RL-147): Xcind 12737f8 shipped xcind-workspace up/down — the enumerate/invoke/collect-failures loop dispose proved, wired to xcind-compose up -d/down per app, down confirming first. Xcind converged to canon; canon validated, unchanged. Residuals beneath registry granularity, filed as Xcind backlog (RL-150): restart verb (canon: exactly down-then-up), per-app -a targeting, down --volumes.",
+      "notes": "Adversarial re-check performed (P7). Overreach INVERTED: Xcind under-built. Resolved 2026-08-07 (round 4, RL-147): Xcind 12737f8 shipped xcind-workspace up/down \u2014 the enumerate/invoke/collect-failures loop dispose proved, wired to xcind-compose up -d/down per app, down confirming first. Xcind converged to canon; canon validated, unchanged. Residuals beneath registry granularity, filed as Xcind backlog (RL-150): restart verb (canon: exactly down-then-up), per-app -a targeting, down --volumes. R5 addendum (RL-152): RL-150 residuals shipped 2026-08-08 \u2014 #90 restart (down-then-up, volumes preserved), #91 -a targeting + down --volumes; surface now matches canon in full.",
       "reaudited": "2026-08-07 round-4: RESOLVED-BY-CONVERGENCE"
     },
     {

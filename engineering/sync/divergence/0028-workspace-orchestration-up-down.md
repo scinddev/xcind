@@ -62,6 +62,13 @@ as exactly `down` followed by `up`, so it is a composition Xcind has not
 wrapped), per-app `-a` targeting, and `down --volumes`. None contradicts the
 resolved core claim — Xcind now has one-command workspace orchestration.
 
+**Addendum (2026-08-08, round 5 — RL-152)**: the RL-150 residuals shipped the
+next day. PR #90 (`a663573`) adds `xcind-workspace restart` — exactly `down`
+then `up`, volumes always preserved, per canon. PR #91 (`b3b7fa7`) adds
+repeatable `-a`/`--app` targeting on all three verbs and `down --volumes`.
+Xcind's workspace orchestration surface now matches canon's
+`up`/`down`/`restart` spec in full; canon again validated, unchanged.
+
 ## Links
 - Origin finding: P5 SA-0013 (P5's highest-value reconsider candidate; Xcind backlog)
 - Related ADR(s): Scind/Xcind ADR-0010 (up/down verb semantics — the *verbs* MATCH)

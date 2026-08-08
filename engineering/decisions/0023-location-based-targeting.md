@@ -60,6 +60,15 @@ application roster.**
 The three resolution paths above are the complete targeting surface. Scripts
 that need to act on a specific application set `XCIND_APP_ROOT` or pass `[DIR]`.
 
+**Clarification (2026-08-08)**: `xcind-workspace up`/`down`/`restart` accept a
+repeatable `-a NAME`/`--app NAME` option (PR #91). That option is not name-based
+targeting and does not deviate from this decision: the workspace is still
+located purely by walk-up or `[DIR]`, and `-a` only filters which of the
+located workspace's application directories the per-app pass loop visits. No
+name→location resolution happens — an unrecognized name is an error against the
+enumerated directories, not a registry lookup. The decision stands: no flag
+replaces being in, or pointing at, the directory.
+
 This is a **subset** of Scind's model, not a contradiction of it: Scind's flags
 are additive over the same context auto-detection Xcind implements. Scind should
 keep them — its registry makes name targeting a coherent superset capability
