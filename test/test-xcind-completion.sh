@@ -282,7 +282,7 @@ DIR_FIXTURE=$(mktemp_d)
 mkdir -p "$DIR_FIXTURE/svc-alpha" "$DIR_FIXTURE/svc-beta"
 
 out=$(comp_run fresh _xcind_workspace_completions xcind-workspace)
-for sub in init up down dispose status list register forget; do
+for sub in init up down restart dispose status list register forget; do
   assert_line "top level offers '$sub'" "$sub" "$out"
 done
 assert_line "top level offers --version" "--version" "$out"
@@ -321,6 +321,16 @@ out=$(cd "$DIR_FIXTURE" && comp_run partial _xcind_workspace_completions \
   xcind-workspace down --)
 assert_line "'down --' offers --yes" "--yes" "$out"
 assert_no_line "'down --' drops directories" "svc-alpha" "$out"
+
+out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
+  xcind-workspace restart)
+assert_line "'restart ' offers --yes" "--yes" "$out"
+assert_line "'restart ' offers a directory" "svc-alpha" "$out"
+
+out=$(cd "$DIR_FIXTURE" && comp_run partial _xcind_workspace_completions \
+  xcind-workspace restart --)
+assert_line "'restart --' offers --yes" "--yes" "$out"
+assert_no_line "'restart --' drops directories" "svc-alpha" "$out"
 
 out=$(cd "$DIR_FIXTURE" && comp_run fresh _xcind_workspace_completions \
   xcind-workspace dispose)
@@ -479,6 +489,12 @@ ZSHEOF
 
   out=$(zcomp_run _xcind-workspace 3 xcind-workspace register)
   assert_line "zsh: workspace 'register ' completes directories" \
+    "<files>" "$out"
+
+  out=$(zcomp_run _xcind-workspace 3 xcind-workspace restart)
+  assert_line "zsh: workspace 'restart ' offers --yes" \
+    "--yes:Skip confirmation prompt" "$out"
+  assert_line "zsh: workspace 'restart ' completes directories" \
     "<files>" "$out"
 
   out=$(zcomp_run _xcind-application 2 xcind-application)

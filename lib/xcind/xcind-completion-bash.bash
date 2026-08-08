@@ -269,6 +269,16 @@ _xcind_workspace_completions() {
     return
   fi
 
+  # After "restart", offer --yes and directory completion
+  if [[ $prev == "restart" ]]; then
+    if [[ $cur == -* ]]; then
+      COMPREPLY=($(compgen -W "--yes -y" -- "$cur"))
+    else
+      COMPREPLY=($(compgen -W "--yes -y" -- "$cur") $(compgen -d -- "$cur"))
+    fi
+    return
+  fi
+
   if [[ $prev == "dispose" ]]; then
     if [[ $cur == -* ]]; then
       COMPREPLY=($(compgen -W "--volumes --rm --yes -y" -- "$cur"))
@@ -290,7 +300,7 @@ _xcind_workspace_completions() {
     return
   fi
 
-  local opts="init up down dispose status list register forget --help -h --version -V"
+  local opts="init up down restart dispose status list register forget --help -h --version -V"
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

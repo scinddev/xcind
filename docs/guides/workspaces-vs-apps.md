@@ -48,11 +48,12 @@ That's it. Each app's `.xcind.sh` works as before — when Xcind discovers an ap
 To start or stop every application in one command, run:
 
 ```bash
-xcind-workspace up      # xcind-compose up -d in each app directory
-xcind-workspace down    # xcind-compose down in each app directory (confirms first)
+xcind-workspace up       # xcind-compose up -d in each app directory
+xcind-workspace down     # xcind-compose down in each app directory (confirms first)
+xcind-workspace restart  # down, then up, across every app (confirms first)
 ```
 
-Both walk up from the current directory to find the workspace (or take an explicit directory), continue past a failing application, and list the failures at the end. `down --yes` skips the confirmation prompt.
+All three walk up from the current directory to find the workspace (or take an explicit directory), continue past a failing application within each pass, and list the failures at the end. `down --yes` and `restart --yes` skip the confirmation prompt. `restart` never removes volumes, and its up pass runs even if an application failed to come down.
 
 ## Dispose a workspace
 
