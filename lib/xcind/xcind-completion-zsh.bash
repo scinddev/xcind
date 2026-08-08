@@ -322,6 +322,7 @@ _xcind-workspace() {
     'init:Initialize a workspace directory'
     'up:Bring up every application in the workspace'
     'down:Bring down every application in the workspace'
+    'restart:Restart every application (down, then up)'
     'dispose:Tear down a workspace'
     'status:Show workspace-wide status'
     'list:List all known workspaces'
@@ -360,6 +361,15 @@ _xcind-workspace() {
       '-y:Skip confirmation prompt'
     )
     _describe 'down option' down_opts
+    _files -/
+    return
+    ;;
+  restart)
+    local -a restart_opts=(
+      '--yes:Skip confirmation prompt'
+      '-y:Skip confirmation prompt'
+    )
+    _describe 'restart option' restart_opts
     _files -/
     return
     ;;

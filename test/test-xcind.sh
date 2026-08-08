@@ -5675,6 +5675,116 @@ assert_eq "workspace up: refuses outside a workspace" "1" "$workspace_up_outside
 rm -rf "$WORKSPACE_UPDOWN_ROOT"
 
 # ======================================================================
+# xcind-workspace restart CLI
+
+echo ""
+echo "=== Test: xcind-workspace restart CLI ==="
+
+WORKSPACE_RESTART_ROOT=$(mktemp_d)
+WORKSPACE_RESTART_WS="$WORKSPACE_RESTART_ROOT/workspace"
+WORKSPACE_RESTART_STATE="$WORKSPACE_RESTART_ROOT/state"
+WORKSPACE_RESTART_BIN="$WORKSPACE_RESTART_ROOT/bin"
+WORKSPACE_RESTART_LOG="$WORKSPACE_RESTART_ROOT/docker.log"
+mkdir -p "$WORKSPACE_RESTART_WS/api" "$WORKSPACE_RESTART_WS/web" \
+  "$WORKSPACE_RESTART_STATE/xcind" "$WORKSPACE_RESTART_BIN"
+cat >"$WORKSPACE_RESTART_WS/.xcind.sh" <<'CFGEOF'
+XCIND_IS_WORKSPACE=1
+XCIND_WORKSPACE="restart-ws"
+CFGEOF
+for workspace_restart_app in api web; do
+  cat >"$WORKSPACE_RESTART_WS/$workspace_restart_app/.xcind.sh" <<'CFGEOF'
+XCIND_COMPOSE_FILES=("compose.yaml")
+CFGEOF
+  printf '%s\n' 'services: {}' >"$WORKSPACE_RESTART_WS/$workspace_restart_app/compose.yaml"
+done
+cat >"$WORKSPACE_RESTART_BIN/docker" <<'MOCKEOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XCIND_WORKSPACE_RESTART_DOCKER_LOG"
+case "$*" in
+*"/api/"*" up "*) [ -n "${XCIND_WORKSPACE_RESTART_FAIL_API_UP:-}" ] && exit 1 ;;
+*"/api/"*" down"*) [ -n "${XCIND_WORKSPACE_RESTART_FAIL_API_DOWN:-}" ] && exit 1 ;;
+esac
+exit 0
+MOCKEOF
+chmod +x "$WORKSPACE_RESTART_BIN/docker"
+
+# `restart` is workspace-wide (it starts with a down pass), so it confirms
+# before acting, exactly like `down`.
+workspace_restart_prompt_status=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS")
+assert_eq "workspace restart: default form prompts without --yes" "1" \
+  "$workspace_restart_prompt_status"
+assert_eq "workspace restart: prompt refusal runs no compose commands" "false" \
+  "$([ -s "$WORKSPACE_RESTART_LOG" ] && echo true || echo false)"
+
+# --yes skips the prompt and restart runs down then up for every app.
+workspace_restart_out=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS" --yes)
+assert_contains "workspace restart: --yes skips prompt and reports success" \
+  "Workspace restart at" "$workspace_restart_out"
+workspace_restart_log=$(<"$WORKSPACE_RESTART_LOG")
+assert_contains "workspace restart: brings down the first application" \
+  "$WORKSPACE_RESTART_WS/api/compose.yaml" "$workspace_restart_log"
+assert_contains "workspace restart: brings down the second application" \
+  "$WORKSPACE_RESTART_WS/web/compose.yaml" "$workspace_restart_log"
+assert_contains "workspace restart: runs compose down" " down" "$workspace_restart_log"
+assert_contains "workspace restart: runs compose up detached" "up -d" "$workspace_restart_log"
+assert_no_line "workspace restart: never passes --volumes" "--volumes" "$workspace_restart_log"
+assert_no_line "workspace restart: never passes -v" " -v" "$workspace_restart_log"
+
+# The down pass for every app must fully precede the up pass for any app —
+# restart is `down` followed by `up`, not per-app down-then-up.
+workspace_restart_last_down_line=$(grep -n -F " down" "$WORKSPACE_RESTART_LOG" | tail -1 | cut -d: -f1)
+workspace_restart_first_up_line=$(grep -n -F "up -d" "$WORKSPACE_RESTART_LOG" | head -1 | cut -d: -f1)
+workspace_restart_order_ok=false
+if [ -n "$workspace_restart_last_down_line" ] && [ -n "$workspace_restart_first_up_line" ] &&
+  [ "$workspace_restart_last_down_line" -lt "$workspace_restart_first_up_line" ]; then
+  workspace_restart_order_ok=true
+fi
+assert_eq "workspace restart: down pass fully precedes up pass" "true" \
+  "$workspace_restart_order_ok"
+
+# A down-pass failure for one app does not stop the loop, and the up pass
+# still runs afterward (for every app, including the one that failed to
+# come down) — failures from both passes are collected and reported.
+: >"$WORKSPACE_RESTART_LOG"
+workspace_restart_fail_status=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  XCIND_WORKSPACE_RESTART_FAIL_API_DOWN=1 \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS" --yes)
+assert_eq "workspace restart: down-pass failure exits non-zero" "1" \
+  "$workspace_restart_fail_status"
+workspace_restart_log=$(<"$WORKSPACE_RESTART_LOG")
+assert_contains "workspace restart: down failure still brings down the other app" \
+  "$WORKSPACE_RESTART_WS/web/compose.yaml" "$workspace_restart_log"
+assert_contains "workspace restart: down failure still runs the up pass" \
+  "up -d" "$workspace_restart_log"
+workspace_restart_fail_err=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  XCIND_WORKSPACE_RESTART_FAIL_API_DOWN=1 \
+  "$XCIND_ROOT/bin/xcind-workspace" restart "$WORKSPACE_RESTART_WS" --yes 2>&1 || true)
+assert_contains "workspace restart: down failure names the failed app" \
+  "$WORKSPACE_RESTART_WS/api" "$workspace_restart_fail_err"
+
+# Outside a workspace, restart refuses like up/down.
+mkdir -p "$WORKSPACE_RESTART_ROOT/not-a-workspace"
+workspace_restart_outside_status=$(PATH="$WORKSPACE_RESTART_BIN:$PATH" \
+  XDG_STATE_HOME="$WORKSPACE_RESTART_STATE" \
+  XCIND_WORKSPACE_RESTART_DOCKER_LOG="$WORKSPACE_RESTART_LOG" \
+  capture_status "$XCIND_ROOT/bin/xcind-workspace" restart \
+  "$WORKSPACE_RESTART_ROOT/not-a-workspace")
+assert_eq "workspace restart: refuses outside a workspace" "1" \
+  "$workspace_restart_outside_status"
+
+rm -rf "$WORKSPACE_RESTART_ROOT"
+
+# ======================================================================
 # Cleanup
 rm -rf "$MOCK_APP"
 

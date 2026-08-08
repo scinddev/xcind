@@ -397,6 +397,7 @@ Manages xcind workspaces.
 | `init [DIR] [OPTIONS]` | Initialize a workspace directory |
 | `up [DIR]` | Run `xcind-compose up -d` in every application directory |
 | `down [DIR] [--yes]` | Run `xcind-compose down` in every application directory (confirms first) |
+| `restart [DIR] [--yes]` | Run `down` then `up` across every application directory (confirms first); volumes are never removed |
 | `status [DIR] [OPTIONS]` | Show workspace-wide status |
 | `list [OPTIONS]` | List all workspaces the registry knows about |
 | `register PATH` | Add an existing workspace directory to the registry |
@@ -410,7 +411,7 @@ Manages xcind workspaces.
 | `--name NAME` | Set `XCIND_WORKSPACE` explicitly (default: directory name) |
 | `--proxy-domain DOMAIN` | Set `XCIND_PROXY_DOMAIN` in workspace config |
 
-### Down Options
+### Down and Restart Options
 
 | Option | Description |
 |--------|-------------|
@@ -438,6 +439,7 @@ xcind-workspace init --proxy-domain xcind.localhost  # With proxy domain
 xcind-workspace init --name myws             # With explicit workspace name
 xcind-workspace up                           # Bring up every app in the workspace
 xcind-workspace down --yes                   # Bring down every app, no prompt
+xcind-workspace restart --yes                # Down then up every app, no prompt
 xcind-workspace status                       # Show workspace status
 xcind-workspace status --json                # JSON output
 xcind-workspace list                         # List all known workspaces
@@ -457,11 +459,11 @@ xcind-workspace dispose ~/code/acme --rm --volumes --yes
 - If `.xcind.sh` exists without `XCIND_IS_WORKSPACE=1` (an app config), the command prints a helpful error suggesting the correct workspace directory.
 - On success, the workspace is added to the global registry at `$XDG_STATE_HOME/xcind/workspaces.tsv`.
 
-**Up / down:**
+**Up / down / restart:**
 
-- Discovers the workspace root by walking up from `DIR` (default: current directory), then runs `xcind-compose up -d` (`up`) or `xcind-compose down` (`down`) in every immediate application directory.
-- Continues past a failing application and reports the failed directories at the end; any failure makes the command exit non-zero.
-- `down` confirms before acting, listing every application it will bring down; `--yes` skips the prompt. `up` takes no options.
+- Discovers the workspace root by walking up from `DIR` (default: current directory), then runs `xcind-compose up -d` (`up`) or `xcind-compose down` (`down`) in every immediate application directory. `restart` is `down` followed by `up`, composed from the same per-app loop: a full down pass across every application, then a full up pass across every application. Volumes are never touched (`restart` never passes `-v`/`--volumes` to `down`).
+- Each pass continues past a failing application and reports the failed directories at the end; any failure in either pass makes the command exit non-zero. For `restart`, the up pass still runs even if applications failed to come down in the down pass — this matches the continue-past-failure behavior within a single pass, rather than making the second pass conditional on the first. Failures from both passes are reported together.
+- `down` and `restart` confirm before acting, listing every application that will be affected; `--yes`/`-y` skips the prompt. `up` takes no options.
 
 **Status:**
 

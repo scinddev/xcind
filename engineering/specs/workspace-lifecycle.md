@@ -1,6 +1,6 @@
 # Workspace Lifecycle
 
-> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init`, `up`, `down`, `status`, `list`, `register`, `forget`, and `dispose` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
+> Rewritten from the [Scind specification](https://github.com/scinddev/scind). Xcind provides `xcind-workspace init`, `up`, `down`, `restart`, `status`, `list`, `register`, `forget`, and `dispose` commands for workspace management. A workspace exists when a directory contains a `.xcind.sh` file with `XCIND_IS_WORKSPACE=1`.
 
 ---
 
@@ -79,6 +79,23 @@ xcind-workspace down --yes    # xcind-compose down in each; --yes skips the prom
 ```
 
 `down` confirms before acting because it is workspace-wide.
+
+`xcind-workspace restart` composes the same loop twice: a full `down` pass
+across every application directory, then a full `up` pass across every
+application directory — matching the canon definition of `restart` as `down`
+followed by `up`, with volumes always preserved (`restart` never passes
+`-v`/`--volumes`):
+
+```bash
+xcind-workspace restart --yes    # down every app, then up every app; --yes skips the prompt
+```
+
+`restart` confirms before acting too, since it starts with a workspace-wide
+down. Each pass continues past a failing application on its own, and the up
+pass still runs even if one or more applications failed to come down — the
+second pass is not made conditional on the first, matching the existing
+continue-past-failure behavior within a pass. Failures from both passes are
+reported together, and the command exits non-zero if either pass had one.
 
 ### Removing a Workspace
 

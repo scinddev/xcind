@@ -1093,7 +1093,7 @@ __xcind-workspace-updown() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --yes | -y)
-      if [[ $verb != down ]]; then
+      if [[ $verb != down && $verb != restart ]]; then
         echo "Error: Unknown option for $verb: $1" >&2
         return 1
       fi
@@ -1107,6 +1107,18 @@ __xcind-workspace-updown() {
         echo "Bring up every application in the workspace at DIR (default: walk"
         echo "up from the current directory) by running 'xcind-compose up -d'"
         echo "in each application directory."
+      elif [[ $verb == restart ]]; then
+        echo "Restart every application in the workspace at DIR (default: walk"
+        echo "up from the current directory): run 'xcind-compose down' in every"
+        echo "application directory, then 'xcind-compose up -d' in every"
+        echo "application directory. Volumes are never removed."
+        echo ""
+        echo "The up pass runs even if some applications failed to come down"
+        echo "(consistent with continuing past a failure within a pass); any"
+        echo "failures from either pass are reported at the end."
+        echo ""
+        echo "Options:"
+        echo "  --yes, -y      Skip the confirmation prompt"
       else
         echo "Bring down every application in the workspace at DIR (default:"
         echo "walk up from the current directory) by running 'xcind-compose"
@@ -1164,12 +1176,57 @@ __xcind-workspace-updown() {
   fi
 
   local app_dir
-  if [[ $verb == down && $yes != true ]]; then
-    local prompt="Bring down workspace \"$ws_name\" at $ws_root:"
-    for app_dir in "${app_dirs[@]}"; do
-      prompt+=$'\n'"  - bring down application $(basename "$app_dir")"
-    done
+  if [[ ($verb == down || $verb == restart) && $yes != true ]]; then
+    local prompt
+    if [[ $verb == restart ]]; then
+      prompt="Restart workspace \"$ws_name\" at $ws_root (down, then up):"
+      for app_dir in "${app_dirs[@]}"; do
+        prompt+=$'\n'"  - restart application $(basename "$app_dir")"
+      done
+    else
+      prompt="Bring down workspace \"$ws_name\" at $ws_root:"
+      for app_dir in "${app_dirs[@]}"; do
+        prompt+=$'\n'"  - bring down application $(basename "$app_dir")"
+      done
+    fi
     __xcind-confirm "$prompt" || return 1
+  fi
+
+  if [[ $verb == restart ]]; then
+    # Two full passes over every app: down, then up. Volumes are never
+    # touched (plain 'xcind-compose down', no -v). A failure in the down
+    # pass does not skip that app's up pass — this keeps the same
+    # continue-past-failure behavior within each pass that 'up'/'down'
+    # already have, rather than making restart's second pass depend on
+    # the first. Failures from both passes are collected and reported
+    # together, and the command exits non-zero if either pass had one.
+    local -a failed_down=()
+    local -a failed_up=()
+    for app_dir in "${app_dirs[@]}"; do
+      if ! (cd "$app_dir" && "$XCIND_ROOT/bin/xcind-compose" down); then
+        failed_down+=("$app_dir")
+      fi
+    done
+    for app_dir in "${app_dirs[@]}"; do
+      if ! (cd "$app_dir" && "$XCIND_ROOT/bin/xcind-compose" up -d); then
+        failed_up+=("$app_dir")
+      fi
+    done
+
+    if [[ ${#failed_down[@]} -gt 0 || ${#failed_up[@]} -gt 0 ]]; then
+      if [[ ${#failed_down[@]} -gt 0 ]]; then
+        echo "Error: Could not bring down ${#failed_down[@]} application(s):" >&2
+        printf '  %s\n' "${failed_down[@]}" >&2
+      fi
+      if [[ ${#failed_up[@]} -gt 0 ]]; then
+        echo "Error: Could not bring up ${#failed_up[@]} application(s):" >&2
+        printf '  %s\n' "${failed_up[@]}" >&2
+      fi
+      return 1
+    fi
+
+    echo "Workspace restart at $ws_root (${#app_dirs[@]} application(s))"
+    return 0
   fi
 
   local -a compose_args=(down)
@@ -1199,6 +1256,10 @@ __xcind-workspace-down() {
   __xcind-workspace-updown down "$@"
 }
 
+__xcind-workspace-restart() {
+  __xcind-workspace-updown restart "$@"
+}
+
 # --------------------------------------------------------------------------
 # Help
 # --------------------------------------------------------------------------
@@ -1210,6 +1271,7 @@ __xcind-workspace-help() {
   echo "  init [DIR] [OPTIONS]     Initialize a workspace directory"
   echo "  up [DIR]                 Bring up every application in the workspace"
   echo "  down [DIR] [OPTIONS]     Bring down every application in the workspace"
+  echo "  restart [DIR] [OPTIONS]  Restart every application (down, then up)"
   echo "  dispose [DIR] [OPTIONS]  Tear down a workspace"
   echo "  status [DIR] [OPTIONS]   Show workspace-wide status"
   echo "  list [OPTIONS]           List all known workspaces"
@@ -1220,7 +1282,7 @@ __xcind-workspace-help() {
   echo "  --name NAME              Set XCIND_WORKSPACE explicitly"
   echo "  --proxy-domain DOMAIN    Set XCIND_PROXY_DOMAIN in workspace config"
   echo ""
-  echo "Down options:"
+  echo "Down and Restart options:"
   echo "  --yes, -y                Skip the confirmation prompt"
   echo ""
   echo "Dispose options:"
@@ -1269,6 +1331,10 @@ up)
 down)
   shift
   __xcind-workspace-down "$@"
+  ;;
+restart)
+  shift
+  __xcind-workspace-restart "$@"
   ;;
 dispose)
   shift
