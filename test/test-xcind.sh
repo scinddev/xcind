@@ -5685,13 +5685,32 @@ assert_eq "workspace up -a bogus: runs no compose commands" "false" \
 # The `down` confirmation prompt lists only the `-a`-selected applications,
 # and `--volumes` is called out explicitly. `script` fakes a tty so the
 # non-interactive-refusal path in __xcind-confirm doesn't short-circuit
-# before the prompt is printed.
-if command -v script >/dev/null 2>&1; then
+# before the prompt is printed. `script`'s CLI differs by platform (GNU
+# util-linux takes `-c COMMAND`; BSD/macOS takes the command as trailing
+# args instead and rejects `-c`), so probe the exact invocation shape
+# rather than trusting `command -v script` alone — a `command -v`-only
+# gate passes on macOS but then silently captures nothing.
+workspace_prompt_script_style=""
+if script -qec true /dev/null </dev/null >/dev/null 2>&1; then
+  workspace_prompt_script_style="gnu"
+elif script -q /dev/null true </dev/null >/dev/null 2>&1; then
+  workspace_prompt_script_style="bsd"
+fi
+
+workspace_confirm_prompt_capture() {
+  case "$workspace_prompt_script_style" in
+  gnu) script -qec "$1" /dev/null ;;
+  bsd) script -q /dev/null sh -c "$1" ;;
+  esac
+}
+
+if [ -n "$workspace_prompt_script_style" ]; then
   : >"$WORKSPACE_UPDOWN_LOG"
   workspace_down_a_prompt_out=$(printf 'n\n' | PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
     XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
     XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
-    script -qec "$XCIND_ROOT/bin/xcind-workspace down $WORKSPACE_UPDOWN_WS -a api" /dev/null || true)
+    workspace_confirm_prompt_capture \
+    "$XCIND_ROOT/bin/xcind-workspace down $WORKSPACE_UPDOWN_WS -a api" || true)
   assert_contains "workspace down -a: prompt lists the selected app" \
     "bring down application api" "$workspace_down_a_prompt_out"
   assert_not_contains "workspace down -a: prompt excludes an unselected app" \
@@ -5702,12 +5721,12 @@ if command -v script >/dev/null 2>&1; then
   workspace_down_volumes_prompt_out=$(printf 'n\n' | PATH="$WORKSPACE_UPDOWN_BIN:$PATH" \
     XDG_STATE_HOME="$WORKSPACE_UPDOWN_STATE" \
     XCIND_WORKSPACE_UPDOWN_DOCKER_LOG="$WORKSPACE_UPDOWN_LOG" \
-    script -qec "$XCIND_ROOT/bin/xcind-workspace down $WORKSPACE_UPDOWN_WS --volumes" /dev/null || true)
+    workspace_confirm_prompt_capture \
+    "$XCIND_ROOT/bin/xcind-workspace down $WORKSPACE_UPDOWN_WS --volumes" || true)
   assert_contains "workspace down --volumes: prompt mentions volume removal" \
     "remove each application's Docker volumes" "$workspace_down_volumes_prompt_out"
 else
-  echo "  … SKIP: 'script' not available for prompt-content tests"
-  SKIP=$((SKIP + 1))
+  echo "  … SKIP: no working 'script' tty-fake available for prompt-content tests"
 fi
 
 # `down --volumes` forwards -v to each application's compose call.
