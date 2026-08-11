@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Scind canon**: `docs/reference/cli.md`, `docs/specs/state-management.md` (`port scan` + `port gc`)
-**Xcind reality**: auto-running `prune` (dead-path GC) only; no `scan`, no unbound reclamation; `lib/xcind/xcind-assigned-lib.bash`
+**Xcind reality**: explicit-only `prune` (dead-path GC) as of PR #92; no auto-prune, no `scan`, no unbound reclamation; `lib/xcind/xcind-assigned-lib.bash`
 **Category**: Scope
 **Origin**: P5 SA-0011
 
@@ -33,6 +33,17 @@ flow; Xcind's statelessness making them moot is a scope choice, not a disproof.
 Verdict: **SURVIVES-AS-DIVERGENCE.** ⚠ **Soft P6 note (carry forward):** revisit
 `scan`'s role in the SA-0005 error flow when P6 fixes SA-0005 — that specific framing
 inherits the overreach taint.
+
+**Addendum (2026-08-11, pre-round-6 — PR #92)**: auto-prune is gone. PR #92
+removed the silent prune from `init`, `up`, and `status` because it made
+read-looking commands write state and masked a row-loss bug (fresh allocation
+stole assigned-but-idle ports; upsert then deleted the victim's row). `prune`
+is now explicit-only and `status` is read-only. This *narrows* Xcind further
+from canon's `scan`/`gc` surface, so the Scope divergence stands — but the
+"Why Xcind diverges" paragraph above leaned on auto-prune ("the piece that
+works without a status inventory") and is now historical: what Xcind built is
+the dead-path subset as a manual command only. The next round's Step 5
+re-audit must re-test this entry against that reduced reality.
 
 ## Revisit conditions
 Reopen alongside P6's SA-0005 fix, or if Xcind adds a persisted inventory (divergence

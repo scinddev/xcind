@@ -42,6 +42,17 @@ Verdict: **SURVIVES-AS-DIVERGENCE (narrowed)** — the reviewer noted it would h
 promoted outright had SA-0005 not already existed. **Do not let this entry absorb the
 SA-0005 learning.**
 
+**Addendum (2026-08-11, pre-round-6 — PR #92)**: sticky trust itself is
+unchanged (the no-probe block now sits at `lib/xcind/xcind-assigned-lib.bash`
+~879–893), but PR #92 changed everything around it. Fresh allocation now
+honors TSV rows as reservations — an assigned-but-idle port belonging to
+another app is skipped, not stolen — and upsert refuses to evict a foreign
+row: an unexpected host-port collision fails loudly and names the owner.
+So Xcind now *is* fail-closed on state-file collisions; the divergence is
+narrowed further, to exactly the no-bind-probe compromise on the app's own
+sticky row. This strengthens the entry's narrowed framing and does not
+absorb SA-0005, which stays routed to P6.
+
 ## Revisit conditions
 Reopen if P6's SA-0005 fix (exclude self-owned running containers before declaring a
 conflict) changes the calculus — Scind may then have a fail-closed model that no

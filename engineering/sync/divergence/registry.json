@@ -228,9 +228,9 @@
       "origin_finding": "XA-0035",
       "source_plan": "P4",
       "scind_canon": "specs/state-management.md (fail-closed conflict error)",
-      "xcind_reality": "sticky-trust, no bind-probe (xcind-assigned-lib.bash:789-797)",
+      "xcind_reality": "sticky-trust on own row, no bind-probe (xcind-assigned-lib.bash ~879-893); TSV rows honored as reservations + fail-loud upsert collision since PR #92",
       "adversarial_recheck": "SURVIVES-NARROWED",
-      "notes": "Adversarial re-check performed (P7). Promotable half = SA-0005 (CANON-OVERREACH \u2192 P6); keep routed.",
+      "notes": "Adversarial re-check performed (P7). Promotable half = SA-0005 (CANON-OVERREACH \u2192 P6); keep routed. Addendum 2026-08-11 (PR #92): reservations + fail-loud collision narrow entry to the no-probe compromise on the own sticky row.",
       "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
@@ -381,9 +381,9 @@
       "origin_finding": "SA-0011",
       "source_plan": "P5",
       "scind_canon": "reference/cli.md; specs/state-management.md (scan + gc)",
-      "xcind_reality": "auto-running prune only",
+      "xcind_reality": "explicit-only prune (auto-prune on init/up/status removed in PR #92)",
       "adversarial_recheck": "SURVIVES-SOFTNOTE",
-      "notes": "Adversarial re-check performed (P7). Soft P6 note: scan's role in SA-0005 error flow. Tied to 0025.",
+      "notes": "Adversarial re-check performed (P7). Soft P6 note: scan's role in SA-0005 error flow. Tied to 0025. Addendum 2026-08-11 (PR #92): auto-prune removed (masked row-loss bug; status now read-only); re-test at next Step 5 re-audit.",
       "reaudited": "2026-08-07 round-2: STILL-JUSTIFIED"
     },
     {
