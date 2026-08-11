@@ -259,9 +259,6 @@ __xcind-proxy-init() {
   # Run full init (sources config, generates compose/traefik, creates network)
   __xcind-proxy-ensure-init
 
-  # Prune stale assigned-port entries so the next run starts from a clean slate
-  __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
-
   echo "Proxy config at $XCIND_PROXY_CONFIG_DIR"
   if __xcind-proxy-is-external; then
     echo "Proxy mode: external — xcind will attach apps to network '$XCIND_PROXY_NETWORK'"
@@ -306,7 +303,6 @@ __xcind-proxy-up() {
     fi
     # "up" in external mode means: verify the shared network is in place.
     __xcind-proxy-ensure-network || exit 1
-    __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
     echo "Proxy is externally managed — nothing to start."
     echo "Network: $XCIND_PROXY_NETWORK"
     local detected=""
@@ -327,9 +323,6 @@ __xcind-proxy-up() {
 
   # Always regenerate files from current config.sh
   __xcind-proxy-ensure-init
-
-  # Prune stale assigned-port entries before bringing the stack up
-  __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
 
   if [ "$force" = true ]; then
     docker compose -f "$XCIND_PROXY_COMPOSE" up -d || return $?
@@ -519,10 +512,6 @@ __xcind-proxy-status() {
     echo "Error: jq is required for --json output." >&2
     exit 1
   fi
-
-  # Prune stale assigned-port entries so the status display never carries
-  # orphaned rows from deleted apps.
-  __xcind-with-assigned-lock __xcind-assigned-prune >/dev/null
 
   # Config was loaded at dispatch; external mode renders its own report
   # (there is no managed compose file or Traefik container to inspect).
@@ -794,7 +783,10 @@ __xcind-proxy-prune() {
   fi
 
   local pruned
-  pruned=$(__xcind-with-assigned-lock __xcind-assigned-prune)
+  if ! pruned=$(__xcind-with-assigned-lock __xcind-assigned-prune); then
+    echo "Error: prune failed — assigned-ports state file left unchanged" >&2
+    exit 1
+  fi
   echo "Pruned $pruned stale assigned port entries"
 }
 

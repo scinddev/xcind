@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Assigned host ports are now true reservations: allocation skips any port
+  present in `assigned-ports.tsv` (except the caller's own row), and upsert
+  fails loudly instead of evicting another app's row on a host-port
+  collision. Previously an assigned-but-not-listening port could be stolen
+  by another app, silently deleting the victim's row.
+- Legacy 6-column `assigned-ports.tsv` rows (pre-workspace schema) now
+  parse correctly and upgrade to 7 columns on the next rewrite. Previously
+  `prune` misparsed and deleted them.
+- `xcind-proxy prune` now reports a failure when the state-file rewrite
+  fails instead of printing a count.
+
+### Changed
+
+- Pruning of stale assigned-port entries is now explicit-only. `xcind-proxy
+  init`, `up`, and `status` no longer prune silently; run `xcind-proxy
+  prune` to remove entries for deleted app directories.
+
 ## [0.7.0] - 2026-08-05
 
 ### Added

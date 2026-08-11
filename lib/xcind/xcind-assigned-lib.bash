@@ -73,12 +73,23 @@ __xcind-assigned-ensure-state-file() {
 #
 # Consumes one line argument; sets the seven L_* variables in the caller's
 # scope. The caller must declare them `local` so they don't leak.
+#
+# Legacy compatibility: state files written before the workspace column was
+# added hold 6-field rows (port, app, export, container_port, app_path,
+# assigned_at). Those parse with an empty L_workspace; the old `app` and
+# `export` columns map onto L_application and L_service. Any later rewrite
+# re-emits the row in 7-column form, upgrading the file in place.
 __xcind-assigned-split-row() {
   local line="$1"
+  local tabs="${1//[!$'\t']/}"
   L_port="${line%%$'\t'*}"
   line="${line#*$'\t'}"
-  L_workspace="${line%%$'\t'*}"
-  line="${line#*$'\t'}"
+  if [[ ${#tabs} -eq 5 ]]; then
+    L_workspace=""
+  else
+    L_workspace="${line%%$'\t'*}"
+    line="${line#*$'\t'}"
+  fi
   L_application="${line%%$'\t'*}"
   line="${line#*$'\t'}"
   L_service="${line%%$'\t'*}"
@@ -499,30 +510,43 @@ __xcind-assigned-lookup-match() {
   return 0
 }
 
-# Insert-or-update a single assignment. Any pre-existing row with the same
-# (app_path, service) identity OR the same host port is removed first, then
-# the new row is appended.
+# Insert-or-update a single assignment. A pre-existing row with the same
+# (app_path, service) identity is replaced. A row holding the same host
+# port under a DIFFERENT identity is an error: assignments are reservations,
+# so upsert must never evict another app's row. Allocation consults the
+# state file first, so this collision is unreachable short of a race or a
+# hand-edited file — fail loudly instead of hiding it.
 __xcind-assigned-upsert() {
   local port="$1" workspace="$2" application="$3" service="$4" \
     cport="$5" app_path="$6"
   __xcind-assigned-ensure-state-file
 
+  # Step 0: refuse to steal. Scan for a row with the same host port but a
+  # different (app_path, service) identity.
+  __xcind_assigned_upsert_owner=""
+  __xcind-assigned-iter __xcind-assigned-upsert-find-owner \
+    "$port" "$app_path" "$service" || true
+  if [[ -n $__xcind_assigned_upsert_owner ]]; then
+    echo "Error: host port $port is already assigned to ${__xcind_assigned_upsert_owner}" >&2
+    unset __xcind_assigned_upsert_owner
+    return 1
+  fi
+  unset __xcind_assigned_upsert_owner
+
   local ts
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
 
-  # Step 1: rewrite the state file, dropping any row that collides with the
-  # incoming assignment on (app_path, service) identity or on host port.
+  # Step 1: rewrite the state file, dropping any row with the incoming
+  # (app_path, service) identity.
   __xcind_assigned_upsert_path="$app_path"
   __xcind_assigned_upsert_service="$service"
-  __xcind_assigned_upsert_port="$port"
   __xcind-assigned-rewrite __xcind-assigned-upsert-keep
   local rewrite_status=$?
-  unset __xcind_assigned_upsert_path __xcind_assigned_upsert_service \
-    __xcind_assigned_upsert_port
+  unset __xcind_assigned_upsert_path __xcind_assigned_upsert_service
   # If the rewrite failed (e.g. mv couldn't replace the state file), bail
   # out before appending — otherwise we'd emit a new row on top of the
-  # unmodified file and silently leave behind the identity/port collision
-  # the rewrite was meant to drop.
+  # unmodified file and silently leave behind the identity collision the
+  # rewrite was meant to drop.
   [[ $rewrite_status -eq 0 ]] || return "$rewrite_status"
 
   # Step 2: append the new row.
@@ -531,11 +555,21 @@ __xcind-assigned-upsert() {
     >>"$XCIND_ASSIGNED_PORTS_FILE"
 }
 
-__xcind-assigned-upsert-keep() {
+__xcind-assigned-upsert-find-owner() {
   local L_port="$1" L_service="$4" L_path="$6"
+  local target_port="$8" target_path="$9" target_service="${10}"
+  if [[ $L_port == "$target_port" ]] &&
+    [[ $L_path != "$target_path" || $L_service != "$target_service" ]]; then
+    __xcind_assigned_upsert_owner="${L_path}/${L_service}"
+    return 1
+  fi
+  return 0
+}
+
+__xcind-assigned-upsert-keep() {
+  local L_service="$4" L_path="$6"
   [[ $L_path == "$__xcind_assigned_upsert_path" &&
     $L_service == "$__xcind_assigned_upsert_service" ]] && return 1
-  [[ $L_port == "$__xcind_assigned_upsert_port" ]] && return 1
   return 0
 }
 
@@ -590,10 +624,12 @@ __xcind-assigned-keep-not-port() {
 }
 
 # Remove all entries whose app_path no longer exists on disk. Prints the
-# number of entries pruned to stdout.
+# number of entries pruned to stdout. Returns non-zero (with no output)
+# when the state-file rewrite fails, so callers never report a count for
+# a prune that did not happen.
 __xcind-assigned-prune() {
   __xcind_assigned_prune_count=0
-  __xcind-assigned-rewrite __xcind-assigned-keep-existing-path
+  __xcind-assigned-rewrite __xcind-assigned-keep-existing-path || return $?
   printf '%s\n' "$__xcind_assigned_prune_count"
 }
 
@@ -613,13 +649,22 @@ __xcind-assigned-keep-existing-path() {
 # Scan upward from the declared port for an available host port.
 # Prints the first free port; errors after XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS.
 #
+# A port is available only when nothing listens on it AND no row in the
+# assigned-ports state file reserves it. The reservation check is what makes
+# an assignment durable: an assigned-but-not-currently-listening port must
+# never be handed to a different app. The optional (app_path, service) pair
+# excludes the caller's own row so an app can keep its existing port.
+#
 # Primes the listener cache with a single ss/netstat call so the scan loop
 # answers each port via an in-bash substring check instead of spawning
 # ss|awk|grep per attempt. On a loaded WSL2 + Docker Desktop host the
 # per-iteration fanout was previously the dominant cost of the hook (100
 # attempts × ~1 listener-snapshot each); batching drops that to one.
+#
+# Callers must hold the assigned-ports lock when the state file may be
+# mutated concurrently (the hook already does).
 __xcind-assigned-allocate-new() {
-  local declared="$1"
+  local declared="$1" own_path="${2-}" own_service="${3-}"
 
   # Validate here so a malformed port surfaces as a clean error instead of
   # the 100-iteration scan that the defensive check in port-available
@@ -631,14 +676,17 @@ __xcind-assigned-allocate-new() {
   fi
 
   __xcind-assigned-prime-listener-cache
-  __xcind-debug "allocate-new: declared=$declared probe=$__xcind_assigned_listener_cache_source max_attempts=$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS"
+  __xcind-assigned-prime-reserved-ports "$own_path" "$own_service"
+  __xcind-debug "allocate-new: declared=$declared probe=$__xcind_assigned_listener_cache_source reserved=[${__xcind_assigned_reserved_ports}] max_attempts=$XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS"
 
   local port="$declared"
   local attempts=0
   while [[ $attempts -lt $XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS ]]; do
-    if __xcind-assigned-port-available "$port"; then
+    if [[ $__xcind_assigned_reserved_ports != *" $port "* ]] &&
+      __xcind-assigned-port-available "$port"; then
       __xcind-debug "allocate-new: chose port=$port attempts=$attempts"
       __xcind-assigned-clear-listener-cache
+      __xcind_assigned_reserved_ports=""
       printf '%s\n' "$port"
       return 0
     fi
@@ -646,8 +694,35 @@ __xcind-assigned-allocate-new() {
     attempts=$((attempts + 1))
   done
   __xcind-assigned-clear-listener-cache
+  __xcind_assigned_reserved_ports=""
   echo "Error: no free host port found in ${XCIND_ASSIGNED_PORTS_MAX_ATTEMPTS} attempts from $declared" >&2
   return 1
+}
+
+# Space-wrapped set of host ports reserved in the assigned-ports state file
+# ("" when unprimed, " PORT PORT " when primed). Same membership idiom as the
+# listener cache above.
+__xcind_assigned_reserved_ports=""
+
+# Populate the reserved-port set from the state file. Rows matching the
+# given (app_path, service) identity are skipped so the caller's own
+# existing assignment does not block re-allocating the same port.
+__xcind-assigned-prime-reserved-ports() {
+  local own_path="${1-}" own_service="${2-}"
+  __xcind_assigned_reserved_ports=" "
+  __xcind-assigned-iter __xcind-assigned-collect-reserved \
+    "$own_path" "$own_service"
+}
+
+__xcind-assigned-collect-reserved() {
+  local L_port="$1" L_service="$4" L_path="$6"
+  local own_path="$8" own_service="$9"
+  if [[ -n $own_path && $L_path == "$own_path" &&
+    $L_service == "$own_service" ]]; then
+    return 0
+  fi
+  __xcind_assigned_reserved_ports+="$L_port "
+  return 0
 }
 
 # --------------------------------------------------------------------------
@@ -813,7 +888,7 @@ __xcind-assigned-hook-locked() {
     fi
 
     if [[ -z $host_port ]]; then
-      host_port=$(__xcind-assigned-allocate-new "$cport") || return 1
+      host_port=$(__xcind-assigned-allocate-new "$cport" "$app_root" "$xport") || return 1
       __xcind-debug "assigned-hook: allocate xport=$xport cport=$cport host_port=$host_port source=fresh"
     fi
 

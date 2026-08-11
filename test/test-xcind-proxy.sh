@@ -2305,13 +2305,24 @@ assert_eq "upsert replaces identity" "3307" "$looked"
 row_count=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
 assert_eq "upsert keeps three rows" "3" "$row_count"
 
-# Upsert that collides with an existing host port removes the old collider
-__xcind-assigned-upsert 6379 dev bar cache 6379 "$ASSIGNED_HOME/bar"
-# Now (foo, cache, 6379) should be gone; (bar, cache, 6379) should exist
-__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache" >/dev/null && collided_rc=0 || collided_rc=$?
-assert_eq "collision removes old owner" "1" "$collided_rc"
-looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/bar" "cache")
-assert_eq "collision keeps new owner" "6379" "$looked"
+# Upsert that collides with a different identity's host port must fail
+# loudly and leave the state file untouched — assignments are reservations,
+# never stolen (the allocator consults the TSV, so this is unreachable in
+# normal operation).
+collide_err=$(__xcind-assigned-upsert 6379 dev bar cache 6379 "$ASSIGNED_HOME/bar" 2>&1) &&
+  collided_rc=0 || collided_rc=$?
+assert_eq "foreign-port collision → rc 1" "1" "$collided_rc"
+assert_contains "foreign-port collision names owner" \
+  "already assigned to $ASSIGNED_HOME/foo/cache" "$collide_err"
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache")
+assert_eq "foreign-port collision keeps existing owner" "6379" "$looked"
+__xcind-assigned-lookup "$ASSIGNED_HOME/bar" "cache" >/dev/null && bar_cache_rc=0 || bar_cache_rc=$?
+assert_eq "foreign-port collision adds no new row" "1" "$bar_cache_rc"
+
+# Re-upserting the same port under the SAME identity is not a collision
+__xcind-assigned-upsert 6379 "" foo cache 6379 "$ASSIGNED_HOME/foo"
+looked=$(__xcind-assigned-lookup "$ASSIGNED_HOME/foo" "cache")
+assert_eq "same-identity re-upsert keeps port" "6379" "$looked"
 
 # Remove entry
 __xcind-assigned-remove-entry "$ASSIGNED_HOME/foo" "db"
@@ -2461,16 +2472,50 @@ __xcind-assigned-upsert 3306 "" alive db 3306 "$PRUNE_HOME/alive"
 __xcind-assigned-upsert 5432 "" gone db 5432 "$PRUNE_HOME/deleted"
 __xcind-assigned-upsert 6379 "" alive cache 6379 "$PRUNE_HOME/alive"
 
+# Legacy 6-column row (pre-workspace schema): must parse with an empty
+# workspace, survive prune when its directory exists, and be upgraded to
+# 7 columns by the next rewrite — never misparsed and deleted.
+mkdir -p "$PRUNE_HOME/legacy"
+printf '4406\tlegacyapp\tdb\t3306\t%s\t2026-01-01T00:00:00Z\n' \
+  "$PRUNE_HOME/legacy" >>"$XCIND_ASSIGNED_PORTS_FILE"
+legacy_port=$(__xcind-assigned-lookup "$PRUNE_HOME/legacy" "db")
+assert_eq "legacy 6-col row: lookup finds port" "4406" "$legacy_port"
+
 pruned_count=$(__xcind-assigned-prune)
 assert_eq "prune removed stale entry" "1" "$pruned_count"
 
 # The alive entries should remain, the gone entry should not
 remaining=$(grep -cv '^#' "$XCIND_ASSIGNED_PORTS_FILE" || true)
-assert_eq "prune leaves two live entries" "2" "$remaining"
+assert_eq "prune leaves three live entries" "3" "$remaining"
 __xcind-assigned-lookup "$PRUNE_HOME/alive" "db" >/dev/null && alive_rc=0 || alive_rc=1
 assert_eq "prune keeps alive/db" "0" "$alive_rc"
 __xcind-assigned-lookup "$PRUNE_HOME/deleted" "db" >/dev/null && gone_rc=0 || gone_rc=1
 assert_eq "prune drops deleted/db" "1" "$gone_rc"
+
+# The prune's rewrite upgraded the legacy row to 7 columns with an empty
+# workspace field.
+legacy_cols=$(awk -F'\t' '$6 == path { print NF; exit }' \
+  path="$PRUNE_HOME/legacy" "$XCIND_ASSIGNED_PORTS_FILE")
+assert_eq "legacy row upgraded to 7 columns" "7" "$legacy_cols"
+legacy_ws=$(awk -F'\t' '$6 == path { print $2; exit }' \
+  path="$PRUNE_HOME/legacy" "$XCIND_ASSIGNED_PORTS_FILE")
+assert_eq "legacy row upgraded with empty workspace" "" "$legacy_ws"
+legacy_app=$(awk -F'\t' '$6 == path { print $3; exit }' \
+  path="$PRUNE_HOME/legacy" "$XCIND_ASSIGNED_PORTS_FILE")
+assert_eq "legacy row app maps to application column" "legacyapp" "$legacy_app"
+
+# Prune must propagate a rewrite failure instead of printing a bogus count.
+# A read-only state dir makes mktemp fail. Root ignores directory perms, so
+# skip there.
+if [[ $(id -u) -ne 0 ]]; then
+  chmod 555 "$XCIND_ASSIGNED_DIR"
+  prune_fail_out=$(__xcind-assigned-prune 2>/dev/null) && prune_fail_rc=0 || prune_fail_rc=$?
+  chmod 755 "$XCIND_ASSIGNED_DIR"
+  assert_eq "prune rewrite failure → non-zero rc" "1" "$prune_fail_rc"
+  assert_eq "prune rewrite failure → no count printed" "" "$prune_fail_out"
+else
+  echo "  (skipped prune-failure test: running as root)"
+fi
 
 export HOME="$_orig_prune_home"
 [[ -n $_orig_prune_xdg ]] && export XDG_STATE_HOME="$_orig_prune_xdg"
@@ -2878,6 +2923,13 @@ unset _bsdnc_orig_PATH
 echo ""
 echo "=== Test: __xcind-assigned-allocate-new ==="
 
+# The allocator reads the assigned-ports state file (reserved set), so
+# point it at an isolated temp file for the duration of this block.
+ALLOC_STATE_DIR=$(mktemp_d)
+_orig_alloc_state_file="$XCIND_ASSIGNED_PORTS_FILE"
+XCIND_ASSIGNED_PORTS_FILE="$ALLOC_STATE_DIR/assigned-ports.tsv"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+
 # Stub port availability so the allocator sees a deterministic view
 # instead of whatever ports happen to be in use on the test host.
 # shellcheck disable=SC2317  # invoked indirectly via __xcind-assigned-allocate-new
@@ -2892,6 +2944,34 @@ __xcind-assigned-port-available() {
 
 allocated=$(__xcind-assigned-allocate-new 3306)
 assert_eq "allocate skips taken, finds 3308" "3308" "$allocated"
+
+# Reserved-set: a port assigned to another app must be skipped even when
+# nothing is listening on it (cross-app steal regression).
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() { return 0; }
+printf '3306\t\tappa\tdb\t3306\t/xcind-test/appa\t2026-01-01T00:00:00Z\n' \
+  >>"$XCIND_ASSIGNED_PORTS_FILE"
+allocated=$(__xcind-assigned-allocate-new 3306 "/xcind-test/appb" "db")
+assert_eq "reserved: other app's idle port skipped" "3307" "$allocated"
+
+# Own row is excluded from the reserved set: the same app+service may
+# re-claim its assigned port.
+allocated=$(__xcind-assigned-allocate-new 3306 "/xcind-test/appa" "db")
+assert_eq "reserved: own row does not block re-allocation" "3306" "$allocated"
+
+# Without an identity, every TSV row is reserved.
+allocated=$(__xcind-assigned-allocate-new 3306)
+assert_eq "reserved: identity-less call skips reserved port" "3307" "$allocated"
+
+# Restore the taken-port stub for the ceiling test below.
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() {
+  local port="$1"
+  if [ "$port" = "3306" ] || [ "$port" = "3307" ]; then
+    return 1
+  fi
+  return 0
+}
 
 # All ports taken → error
 # shellcheck disable=SC2317  # invoked indirectly via __xcind-assigned-allocate-new
@@ -2922,6 +3002,10 @@ assert_eq "allocate rejects port 0" "1" "$bad_zero_rc"
 
 bad_big=$(__xcind-assigned-allocate-new "99999" 2>&1) && bad_big_rc=0 || bad_big_rc=$?
 assert_eq "allocate rejects port > 65535" "1" "$bad_big_rc"
+
+rm -rf "$ALLOC_STATE_DIR"
+XCIND_ASSIGNED_PORTS_FILE="$_orig_alloc_state_file"
+unset _orig_alloc_state_file ALLOC_STATE_DIR
 
 # port-available must also treat invalid inputs as "busy" (not pass them
 # through to grep/bash -c) so direct callers get the same defense even
@@ -3029,6 +3113,26 @@ xcind-assigned-hook "$AHOOK_APP" >/dev/null
 fresh_alloc_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
 assert_contains "allocate-new skips busy 3306, picks 3307" '"3307:3306"' "$fresh_alloc_yaml"
 assert_not_contains "allocate-new: no 3306:3306 mapping" '"3306:3306"' "$fresh_alloc_yaml"
+
+# Cross-app steal regression: another app holds 3306 in the TSV but its
+# container is down (nothing listening). Our fresh allocation must skip
+# the reserved port AND leave the other app's row untouched.
+# shellcheck disable=SC2317
+__xcind-assigned-port-available() { return 0; }
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '3306\t\totherapp\tdb\t3306\t/xcind-test/otherapp\t2026-01-01T00:00:00Z\n' \
+  >>"$XCIND_ASSIGNED_PORTS_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+xcind-assigned-hook "$AHOOK_APP" >/dev/null
+steal_yaml=$(<"$XCIND_GENERATED_DIR/compose.assigned.yaml")
+assert_contains "no steal: idle reserved 3306 skipped, picks 3307" '"3307:3306"' "$steal_yaml"
+assert_not_contains "no steal: no 3306:3306 mapping" '"3306:3306"' "$steal_yaml"
+other_port=$(awk -F'\t' '$6 == "/xcind-test/otherapp" { print $1 }' "$XCIND_ASSIGNED_PORTS_FILE")
+assert_eq "no steal: other app's row untouched" "3306" "$other_port"
+our_port=$(awk -F'\t' -v p="$AHOOK_APP" '$6 == p && $4 == "db" { print $1 }' "$XCIND_ASSIGNED_PORTS_FILE")
+assert_eq "no steal: our row persisted on 3307" "3307" "$our_port"
 
 # Grouping: two exports on same compose service
 # shellcheck disable=SC2317
@@ -3605,6 +3709,15 @@ cat >>"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv" <<EOF
 EOF
 status_out2=$("$XCIND_ROOT/bin/xcind-proxy" status 2>&1)
 assert_contains "status text shows app/service fallback prefix" "alive/debug" "$status_out2"
+
+# status is read-only: a row whose app_path no longer exists must survive
+# a status run untouched. Only explicit `prune` may remove it.
+cat >>"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv" <<EOF
+7777		ghost	db	7777	$CLI_HOME/ghost-missing	2026-04-10T00:00:00Z
+EOF
+"$XCIND_ROOT/bin/xcind-proxy" status >/dev/null 2>&1 || true
+state_after_status=$(<"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv")
+assert_contains "status does not prune dead-path rows" "ghost" "$state_after_status"
 
 # --json includes new column names. Status --json short-circuits when the
 # proxy isn't initialized, so lay down a minimal fake compose file to take
