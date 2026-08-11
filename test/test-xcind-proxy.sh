@@ -3134,6 +3134,30 @@ assert_eq "no steal: other app's row untouched" "3306" "$other_port"
 our_port=$(awk -F'\t' -v p="$AHOOK_APP" '$6 == p && $4 == "db" { print $1 }' "$XCIND_ASSIGNED_PORTS_FILE")
 assert_eq "no steal: our row persisted on 3307" "3307" "$our_port"
 
+# Collision failure propagation: a corrupt state file can contain the same
+# host port for our sticky identity and a foreign identity. Production calls
+# hooks from a conditional command substitution, where set -e does not stop
+# the hook automatically. The hook must explicitly return the upsert failure
+# and must not generate an overlay with the rejected port.
+: >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '%s\n' "$XCIND_ASSIGNED_PORTS_HEADER" >"$XCIND_ASSIGNED_PORTS_FILE"
+printf '3306\t\tmyapp\tdb\t3306\t%s\t2026-01-01T00:00:00Z\n' \
+  "$AHOOK_APP" >>"$XCIND_ASSIGNED_PORTS_FILE"
+printf '3306\t\totherapp\tdb\t3306\t/xcind-test/otherapp\t2026-01-01T00:00:00Z\n' \
+  >>"$XCIND_ASSIGNED_PORTS_FILE"
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
+if hook_collision_err=$(xcind-assigned-hook "$AHOOK_APP" 2>&1 >/dev/null); then
+  hook_collision_rc=0
+else
+  hook_collision_rc=$?
+fi
+assert_eq "hook collision: upsert failure propagates" "1" "$hook_collision_rc"
+assert_contains "hook collision: error names foreign owner" \
+  "already assigned to /xcind-test/otherapp/db" "$hook_collision_err"
+assert_eq "hook collision: rejected overlay not generated" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.assigned.yaml" ] && echo true || echo false)"
+
 # Grouping: two exports on same compose service
 # shellcheck disable=SC2317
 __xcind-assigned-port-available() { return 0; }

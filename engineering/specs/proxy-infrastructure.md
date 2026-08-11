@@ -113,7 +113,8 @@ In external mode a mode-specific report is rendered instead — see
 [External Proxy Mode](#external-proxy-mode). JSON output carries a `mode`
 field in both modes.
 
-Stale assigned-port entries (those whose app path no longer exists) are pruned as part of `status`.
+`status` reports assigned-port entries without changing them. Use
+`xcind-proxy prune` to remove stale entries whose app path no longer exists.
 
 With `--json`: outputs a JSON object containing an `assigned_ports` array for machine consumption.
 
@@ -123,7 +124,8 @@ Removes a single assigned-port entry from the state file, freeing the host port 
 
 ### `xcind-proxy prune`
 
-Removes all assigned-port entries whose app path no longer exists. Pruning also runs automatically as part of `init`, `up`, and `status`.
+Removes all assigned-port entries whose app path no longer exists. Run this
+command explicitly to prune entries.
 
 ### Auto-Start
 

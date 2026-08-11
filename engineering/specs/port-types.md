@@ -73,7 +73,8 @@ The declared port is tried first; if taken, `xcind-assigned-hook` scans upward f
 Assignments persist in the state file across restarts. To manage them:
 
 - `xcind-proxy release PORT` removes a single assignment, freeing the host port.
-- `xcind-proxy prune` removes entries whose app path no longer exists. Pruning also runs automatically on `xcind-proxy init`, `up`, and `status`.
+- `xcind-proxy prune` removes entries whose app path no longer exists. Run this
+  command explicitly to prune entries.
 
 ### Port Inference
 

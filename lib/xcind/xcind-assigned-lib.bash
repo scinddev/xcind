@@ -892,7 +892,8 @@ __xcind-assigned-hook-locked() {
       __xcind-debug "assigned-hook: allocate xport=$xport cport=$cport host_port=$host_port source=fresh"
     fi
 
-    __xcind-assigned-upsert "$host_port" "$workspace" "$app" "$xport" "$cport" "$app_root"
+    __xcind-assigned-upsert \
+      "$host_port" "$workspace" "$app" "$xport" "$cport" "$app_root" || return 1
     exp_host_ports+=("$host_port")
 
     __xcind-assigned-warn-compose-conflict \
