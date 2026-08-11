@@ -604,12 +604,14 @@ __xcind-assigned-keep-not-path() {
 }
 
 # Remove a single entry by host port. Returns 0 if an entry was removed,
-# 1 if the port was not found in the state file.
+# 1 if the port was not found in the state file, 2 if the state-file
+# rewrite failed (the file is unchanged — the found flag alone would
+# misreport a matched-but-not-removed row as released).
 __xcind-assigned-remove-port() {
   local port="$1"
   [[ -f $XCIND_ASSIGNED_PORTS_FILE ]] || return 1
   __xcind_assigned_remove_port_found=1
-  __xcind-assigned-rewrite __xcind-assigned-keep-not-port "$port"
+  __xcind-assigned-rewrite __xcind-assigned-keep-not-port "$port" || return 2
   return "$__xcind_assigned_remove_port_found"
 }
 

@@ -768,12 +768,21 @@ __xcind-proxy-release() {
     echo "Error: port must be a positive integer, got: $port" >&2
     exit 1
   fi
-  if __xcind-with-assigned-lock __xcind-assigned-remove-port "$port"; then
+  local release_rc=0
+  __xcind-with-assigned-lock __xcind-assigned-remove-port "$port" || release_rc=$?
+  case "$release_rc" in
+  0)
     echo "Released assigned port $port"
-  else
+    ;;
+  2)
+    echo "Error: release failed — assigned-ports state file left unchanged" >&2
+    exit 1
+    ;;
+  *)
     echo "No assignment found for port $port" >&2
     exit 1
-  fi
+    ;;
+  esac
 }
 
 __xcind-proxy-prune() {

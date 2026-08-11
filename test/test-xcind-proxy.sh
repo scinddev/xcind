@@ -2513,6 +2513,17 @@ if [[ $(id -u) -ne 0 ]]; then
   chmod 755 "$XCIND_ASSIGNED_DIR"
   assert_eq "prune rewrite failure → non-zero rc" "1" "$prune_fail_rc"
   assert_eq "prune rewrite failure → no count printed" "" "$prune_fail_out"
+
+  # remove-port must likewise distinguish a rewrite failure (rc 2) from
+  # "not found" (rc 1). The found flag is set by the predicate before the
+  # temp-file mv, so without the distinct code a matched-but-not-removed
+  # row would be reported as released.
+  chmod 555 "$XCIND_ASSIGNED_DIR"
+  __xcind-assigned-remove-port 3306 2>/dev/null && remove_fail_rc=0 || remove_fail_rc=$?
+  chmod 755 "$XCIND_ASSIGNED_DIR"
+  assert_eq "remove-port rewrite failure → rc 2" "2" "$remove_fail_rc"
+  survivor=$(__xcind-assigned-lookup "$PRUNE_HOME/alive" "db")
+  assert_eq "remove-port rewrite failure → row untouched" "3306" "$survivor"
 else
   echo "  (skipped prune-failure test: running as root)"
 fi
@@ -3709,6 +3720,22 @@ assert_contains "release usage message" "Usage: xcind-proxy release" "$release_n
 release_bad=$("$XCIND_ROOT/bin/xcind-proxy" release foo 2>&1) && release_bad_rc=0 || release_bad_rc=$?
 assert_eq "release non-numeric exits 1" "1" "$release_bad_rc"
 assert_contains "release non-numeric error" "must be a positive integer" "$release_bad"
+
+# release must report a state-file rewrite failure as an error, not as
+# "Released" (found flag set before the failed mv) and not as "No
+# assignment found". Root ignores directory perms, so skip there.
+if [[ $(id -u) -ne 0 ]]; then
+  chmod 555 "$CLI_HOME/.local/state/xcind/proxy"
+  release_fail=$("$XCIND_ROOT/bin/xcind-proxy" release 6379 2>&1) && release_fail_rc=0 || release_fail_rc=$?
+  chmod 755 "$CLI_HOME/.local/state/xcind/proxy"
+  assert_eq "release rewrite failure exits 1" "1" "$release_fail_rc"
+  assert_contains "release rewrite failure names the failure" \
+    "release failed" "$release_fail"
+  state_after_fail=$(<"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv")
+  assert_contains "release rewrite failure leaves row" $'\n6379\t' "$state_after_fail"
+else
+  echo "  (skipped release-failure test: running as root)"
+fi
 
 # prune removes the /gone entry
 prune_out=$("$XCIND_ROOT/bin/xcind-proxy" prune 2>&1) && prune_rc=0 || prune_rc=$?
