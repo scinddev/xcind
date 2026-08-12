@@ -176,14 +176,19 @@ __xcind-assigned-rewrite() {
 # Run the given command holding an exclusive lock on the ports lock file.
 # When flock(1) is unavailable (e.g., stock macOS) the command still runs,
 # unlocked — single-writer workflows continue to function but concurrent
-# writers may race.
+# writers may race. Returns 3 when state-file or lock setup fails, distinct
+# from callback statuses such as remove-port's 1 (not found) and 2 (rewrite
+# failure).
 __xcind-with-assigned-lock() {
-  __xcind-assigned-ensure-state-file
+  __xcind-assigned-ensure-state-file || return 3
   if command -v flock >/dev/null 2>&1; then
     (
-      flock -x 200
+      # Open the lock inside the child as a command, not as the subshell's
+      # redirection. This lets us map an open failure to the setup status.
+      exec 200>"$XCIND_ASSIGNED_PORTS_LOCK" || exit 3
+      flock -x 200 || exit 3
       "$@"
-    ) 200>"$XCIND_ASSIGNED_PORTS_LOCK"
+    )
   else
     "$@"
   fi

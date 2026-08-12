@@ -774,12 +774,12 @@ __xcind-proxy-release() {
   0)
     echo "Released assigned port $port"
     ;;
-  2)
-    echo "Error: release failed — assigned-ports state file left unchanged" >&2
+  1)
+    echo "No assignment found for port $port" >&2
     exit 1
     ;;
   *)
-    echo "No assignment found for port $port" >&2
+    echo "Error: release failed — assigned-ports state file left unchanged" >&2
     exit 1
     ;;
   esac

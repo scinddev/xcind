@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Scind canon**: `docs/specs/state-management.md` (fail-closed: explicit conflict error at startup + scan/release remediation)
-**Xcind reality**: sticky-trust — trust the recorded TSV port without a bind-probe, no fail-at-startup; `lib/xcind/xcind-assigned-lib.bash:789-797`, `test/test-xcind-proxy.sh:2753-2772`
+**Xcind reality**: sticky-trust on the app's own row without a bind-probe. TSV rows are reservations, and upsert collisions fail loudly since PR #92. See `lib/xcind/xcind-assigned-lib.bash`.
 **Category**: Design
 **Origin**: P4 XA-0035
 

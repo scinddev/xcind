@@ -2,20 +2,20 @@
 
 **Status**: Active
 **Scind canon**: `docs/reference/cli.md`, `docs/specs/state-management.md` (`port scan` + `port gc`)
-**Xcind reality**: explicit-only `prune` (dead-path GC) as of PR #92; no auto-prune, no `scan`, no unbound reclamation; `lib/xcind/xcind-assigned-lib.bash`
+**Xcind reality**: explicit-only `prune` (dead-path GC) as of PR #92. Xcind has no auto-prune, `scan`, or unbound reclamation. See `lib/xcind/xcind-assigned-lib.bash`.
 **Category**: Scope
 **Origin**: P5 SA-0011
 
 ## What differs
 Scind offers `port scan` (survey which ports are bound/conflicting) and `port gc`
-(reclaim released/unbound reservations). Xcind implements only an **auto-running
-`prune`** — the dead-path subset (drop entries whose app dir no longer exists) — and
-has neither `scan` nor unbound reclamation.
+(reclaim released/unbound reservations). Xcind implements only an explicit
+`prune` command. The command removes entries whose app directory no longer exists.
+Xcind has neither `scan` nor unbound reclamation.
 
 ## Why Xcind diverges
 The `scan` and unbound-reclamation halves need the **persisted inventory** Xcind
-omits (divergence 0025). Auto-prune is the piece that works without a status
-inventory, so it is all Xcind built.
+omits (divergence 0025). Dead-path pruning works without a status inventory, so
+Xcind implements that subset as a manual command.
 
 ## Why Scind should NOT simply adopt Xcind's approach
 `gc`/`scan` serve generic hygiene — reclaim released ports, refresh `last_checked`,
@@ -24,7 +24,7 @@ makes them moot, which is a valid scope choice, not proof the commands are wrong
 Scind should keep them.
 
 ## Canon-change test (required)
-**Strongest canon-change argument:** "Xcind's auto-prune is the useful subset;
+**Strongest canon-change argument:** "Xcind's dead-path prune is the useful subset.
 `scan`'s headline use case is literally the remediation step printed in **SA-0005's**
 error message ("`scind port scan` # check which ports are conflicting") — so it is
 downstream of a **confirmed CANON-OVERREACH**." **Why rejected (adversarial re-check

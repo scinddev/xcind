@@ -3733,6 +3733,23 @@ if [[ $(id -u) -ne 0 ]]; then
     "release failed" "$release_fail"
   state_after_fail=$(<"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv")
   assert_contains "release rewrite failure leaves row" $'\n6379\t' "$state_after_fail"
+
+  # A missing lock file in a read-only state directory fails before the
+  # remove callback runs. The lock wrapper must return its distinct setup
+  # status so release does not misreport the existing row as "not found".
+  rm -f "$CLI_HOME/.local/state/xcind/proxy/assigned-ports.lock"
+  chmod 555 "$CLI_HOME/.local/state/xcind/proxy"
+  release_lock_fail=$(
+    "$XCIND_ROOT/bin/xcind-proxy" release 6379 2>&1
+  ) && release_lock_fail_rc=0 || release_lock_fail_rc=$?
+  chmod 755 "$CLI_HOME/.local/state/xcind/proxy"
+  assert_eq "release lock setup failure exits 1" "1" "$release_lock_fail_rc"
+  assert_contains "release lock setup failure names the failure" \
+    "release failed" "$release_lock_fail"
+  assert_not_contains "release lock setup failure is not reported as missing" \
+    "No assignment found" "$release_lock_fail"
+  state_after_lock_fail=$(<"$CLI_HOME/.local/state/xcind/proxy/assigned-ports.tsv")
+  assert_contains "release lock setup failure leaves row" $'\n6379\t' "$state_after_lock_fail"
 else
   echo "  (skipped release-failure test: running as root)"
 fi
