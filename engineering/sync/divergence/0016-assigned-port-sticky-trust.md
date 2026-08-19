@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Scind canon**: `docs/specs/state-management.md` (fail-closed: explicit conflict error at startup + scan/release remediation)
-**Xcind reality**: sticky-trust — trust the recorded TSV port without a bind-probe, no fail-at-startup; `lib/xcind/xcind-assigned-lib.bash:789-797`, `test/test-xcind-proxy.sh:2753-2772`
+**Xcind reality**: sticky-trust on the app's own row without a bind-probe. TSV rows are reservations, and upsert collisions fail loudly since PR #92. See `lib/xcind/xcind-assigned-lib.bash`.
 **Category**: Design
 **Origin**: P4 XA-0035
 
@@ -41,6 +41,17 @@ no-probe compromise, which does not survive as canon but is a valid Xcind choice
 Verdict: **SURVIVES-AS-DIVERGENCE (narrowed)** — the reviewer noted it would have
 promoted outright had SA-0005 not already existed. **Do not let this entry absorb the
 SA-0005 learning.**
+
+**Addendum (2026-08-11, pre-round-6 — PR #92)**: sticky trust itself is
+unchanged (the no-probe block now sits at `lib/xcind/xcind-assigned-lib.bash`
+~879–893), but PR #92 changed everything around it. Fresh allocation now
+honors TSV rows as reservations — an assigned-but-idle port belonging to
+another app is skipped, not stolen — and upsert refuses to evict a foreign
+row: an unexpected host-port collision fails loudly and names the owner.
+So Xcind now *is* fail-closed on state-file collisions; the divergence is
+narrowed further, to exactly the no-bind-probe compromise on the app's own
+sticky row. This strengthens the entry's narrowed framing and does not
+absorb SA-0005, which stays routed to P6.
 
 ## Revisit conditions
 Reopen if P6's SA-0005 fix (exclude self-owned running containers before declaring a
