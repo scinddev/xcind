@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-08-19
+
+### Added
+
+- docs(sync): RL-038 applied — scind docs/ ≡ engineering/ path alias by @simensen
+- test(completion): behavioral tests for every shell completion function by @simensen
+- docs(decisions): record the flavors deferral and the targeting deviation by @simensen
+- docs(maintenance): give the sync procedure a commit watermark and per-round ledgers by @simensen
+- docs(sync): resolve drift from the post-9f975e4 audit (PRs #82–#88) by @simensen
+- docs(sync): cross-project sync round 2 (PRs #82–#88 vs canon ca156eb) by @simensen
+- feat(workspace): add up/down orchestration across workspace applications by @simensen
+- feat(workspace): add restart subcommand (RL-150) (#90) by @simensen in [#90](https://github.com/scinddev/xcind/pull/90)
+- feat(workspace): per-app -a targeting and down --volumes (RL-150) (#91) by @simensen in [#91](https://github.com/scinddev/xcind/pull/91)
+- docs(sync): cross-project sync round 5 — RL-150 closed by convergence (RL-152…RL-156) by @simensen
+- fix(proxy): treat assigned ports as reservations; stop silent row loss (#92) by @simensen in [#92](https://github.com/scinddev/xcind/pull/92)
+
+### Changed
+
+- docs(sync): RL-112 PR superseded by scinddev/scind#7 (stacked on rename) by @simensen
+- docs(sync): close out the Scind ↔ Xcind sync effort by @simensen
+
+### Fixed
+
+- docs(sync): resolve escalation decisions by @simensen
+- docs(sync): RL-112 applied — scind-compose binary PR opened by @simensen
+- fix(workspace): app config cannot rename the discovered workspace by @simensen
+- fix(host-gateway): make env-detection yq expression jq-portable (#89) by @simensen in [#89](https://github.com/scinddev/xcind/pull/89)
+- fix(cache): give each compose-config write its own temp file (BDS-133) (#93) by @simensen in [#93](https://github.com/scinddev/xcind/pull/93)
+
+### Maintenance
+
+- feat(host-gateway): expose XCIND_HOST_GATEWAY inside containers by @simensen
+- docs(specs): document the XCIND_CACHE_SCHEMA SHA input by @simensen
+
+### Other
+
+- docs(sync): escalation decision brief + follow-up steps by @simensen
+- docs(sync): escalation follow-up Step 6 applied by @simensen
+- docs(sync): round-2 close-out — scinddev/scind#8 merged as c63cbc6 by @simensen
+- docs(sync): cross-project sync round 3 (quiet round, RL-143…RL-146) by @simensen
+
+### Testing
+
+- docs(sync): cross-project sync round 4 — 0028 resolved by convergence (RL-147…RL-151) by @simensen
 ## [Unreleased]
 
 ### Fixed
