@@ -1490,22 +1490,26 @@ __xcind-compute-sha() {
 }
 
 # Run `docker compose config` with the current XCIND_DOCKER_COMPOSE_OPTS and
-# write the result to $1 via a temp file, so a failed compose invocation
-# never leaves a corrupt cache artifact. Extra arguments after the
-# destination are passed through to `config` (e.g. --format json).
+# write the result to $1 via a temp file in the same directory, so a failed
+# or concurrent compose invocation never leaves a corrupt cache artifact.
+# Each call gets its own temp file, so concurrent writers for the same app
+# and SHA complete independently and the last one to finish wins. Extra
+# arguments after the destination are passed through to `config`
+# (e.g. --format json).
 #
 # Usage:
 #   __xcind-write-compose-config /path/to/dest [--format json]
 __xcind-write-compose-config() {
   local dest="$1"
   shift
-  local _tmp="${dest}.tmp"
-  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config "$@" >"$_tmp"; then
-    mv -- "$_tmp" "$dest"
-  else
-    rm -f -- "$_tmp"
-    return 1
+  local _tmp
+  _tmp=$(mktemp "${dest}.XXXXXX") || return 1
+  if docker compose "${XCIND_DOCKER_COMPOSE_OPTS[@]}" config "$@" >"$_tmp" &&
+    mv -- "$_tmp" "$dest"; then
+    return 0
   fi
+  rm -f -- "$_tmp"
+  return 1
 }
 
 # Populate the cache directory with the pre-hook resolved-config.yaml.

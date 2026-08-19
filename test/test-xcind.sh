@@ -233,6 +233,89 @@ rm -rf "$CACHE_APP"
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-write-compose-config temp-file isolation ==="
+
+TMPW_APP=$(mktemp_d)
+export XCIND_CACHE_DIR="$TMPW_APP/.xcind/cache/test-sha"
+mkdir -p "$XCIND_CACHE_DIR"
+XCIND_DOCKER_COMPOSE_OPTS=("-f" "$TMPW_APP/compose.yaml")
+tmpw_dest="$XCIND_CACHE_DIR/resolved-config.yaml"
+
+# Count sibling temp files left next to the destination. A clean write
+# leaves none, whatever name mktemp picked.
+tmpw_strays() {
+  find "$XCIND_CACHE_DIR" -maxdepth 1 -name 'resolved-config.yaml.*' | wc -l | tr -d ' '
+}
+
+# --- A failed compose must not touch the existing artifact ---
+printf '%s\n' 'name: good' >"$tmpw_dest"
+
+# shellcheck disable=SC2329 # invoked indirectly by __xcind-write-compose-config
+docker() {
+  printf '%s\n' 'name: partial'
+  return 1
+}
+
+tmpw_rc=0
+__xcind-write-compose-config "$tmpw_dest" || tmpw_rc=$?
+
+assert_eq "write-compose-config: failed compose returns 1" "1" "$tmpw_rc"
+assert_eq "write-compose-config: failed compose keeps prior artifact" \
+  "name: good" "$(cat "$tmpw_dest")"
+assert_eq "write-compose-config: failed compose removes its temp file" \
+  "0" "$(tmpw_strays)"
+
+# --- A successful write replaces the artifact and cleans up ---
+# shellcheck disable=SC2329 # invoked indirectly by __xcind-write-compose-config
+docker() {
+  printf '%s\n' 'name: fresh'
+}
+
+__xcind-write-compose-config "$tmpw_dest"
+
+assert_eq "write-compose-config: success replaces artifact" \
+  "name: fresh" "$(cat "$tmpw_dest")"
+assert_eq "write-compose-config: success leaves no temp file" \
+  "0" "$(tmpw_strays)"
+
+# --- Overlapping writers must not share a temp path ---
+# The stub re-enters __xcind-write-compose-config for the same destination
+# while the outer call's temp file is still open. This overlaps two writes
+# deterministically, with no timing dependency. A shared "${dest}.tmp" makes
+# the inner call rename the outer call's temp file away, and the outer mv
+# then fails with "cannot stat".
+tmpw_depth=0
+tmpw_inner_rc=0
+# shellcheck disable=SC2329 # invoked indirectly by __xcind-write-compose-config
+docker() {
+  if ((tmpw_depth == 0)); then
+    tmpw_depth=1
+    __xcind-write-compose-config "$tmpw_dest" || tmpw_inner_rc=$?
+    tmpw_depth=0
+    printf '%s\n' 'name: outer'
+  else
+    printf '%s\n' 'name: inner'
+  fi
+}
+
+tmpw_outer_rc=0
+__xcind-write-compose-config "$tmpw_dest" || tmpw_outer_rc=$?
+
+assert_eq "write-compose-config: overlapping inner write succeeds" \
+  "0" "$tmpw_inner_rc"
+assert_eq "write-compose-config: overlapping outer write succeeds" \
+  "0" "$tmpw_outer_rc"
+assert_eq "write-compose-config: last completed writer wins" \
+  "name: outer" "$(cat "$tmpw_dest")"
+assert_eq "write-compose-config: overlapping writes leave no temp files" \
+  "0" "$(tmpw_strays)"
+
+unset -f docker tmpw_strays
+unset XCIND_CACHE_DIR
+rm -rf "$TMPW_APP"
+
+# ======================================================================
+echo ""
 echo "=== Test: __xcind-replay-hook-outputs ==="
 
 REPLAY_APP=$(mktemp_d)
