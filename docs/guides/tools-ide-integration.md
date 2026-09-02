@@ -30,20 +30,20 @@ xcind-config --json
 
 The output is a stable contract — see [`engineering/reference/cli.md`](../../engineering/reference/cli.md) for the JSON schema.
 
-## Declaring tools for IDEs
+## Declaring bins for IDEs
 
-`XCIND_TOOLS` in `.xcind.sh` declares per-service runtimes that IDE and plugin integrations can pick up:
+`XCIND_BINS` in `.xcind.sh` declares per-service runtimes. IDE and plugin integrations can pick them up, and `xcind-run` executes them:
 
 ```bash
-XCIND_TOOLS=(
+XCIND_BINS=(
     "node:app"
     "npm:app"
-    "composer:app;path=/usr/bin/composer"
-    "phpunit:app;use=run;path=vendor/bin/phpunit"
+    "composer:app;cmd=/usr/bin/composer"
+    "phpunit:app;use=run;cmd=vendor/bin/phpunit;desc=Run the test suite"
 )
 ```
 
-Format: `name:service[;key=value[;key=value…]]`. `use=exec` (default) attaches to a running container; `use=run` starts a fresh one. `path=` points at the binary inside the container.
+Format: `name:service[;key=value[;key=value…]]`. `use=exec` (default) attaches to a running container; `use=run` starts a fresh one. `cmd=` is the command inside the container (default: the bin's name). `desc=` labels the entry in `xcind-run --list`. See [`bins-and-scripts.md`](./bins-and-scripts.md) for running bins and composing them into scripts.
 
 ## Devcontainers
 

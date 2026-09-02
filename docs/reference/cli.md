@@ -110,6 +110,25 @@ Traefik.
 
 Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
 
+## `xcind-run`
+
+Run bins and scripts declared in `.xcind.sh` (`XCIND_BINS` / `XCIND_SCRIPTS`) inside the app's Compose services.
+
+```bash
+xcind-run <name> [args…]          # run a bin or script (args append / splice at $@)
+xcind-run -T <name> [args…]       # force -T (also automatic when not a terminal)
+xcind-run @exec <svc> [cmd…]      # docker compose exec (no cmd: bash)
+xcind-run @run <svc> <cmd…>       # docker compose run --rm
+xcind-run @compose <args…>        # docker compose, args verbatim
+xcind-run --list [--names]        # list runnable names (leading _ hides an entry)
+xcind-run --init-shell [--prefix PREFIX]  # print x-<name>() wrapper functions
+xcind-run --version
+```
+
+`xcind-run` runs the same resolution pipeline as `xcind-compose`, including EXECUTE hooks. Script steps run in order and stop at the first failure; a step's leading `-` ignores its failure.
+
+Walkthrough: [Bins and scripts](../guides/bins-and-scripts.md).
+
 ## `xcind-workspace`
 
 Manage workspace-level operations. `xcind-workspace up` runs `xcind-compose up -d` in every application directory of the workspace; `xcind-workspace down` runs `xcind-compose down` the same way (it confirms first — pass `--yes` to skip). `xcind-workspace restart` is `down` followed by `up` across every application (it confirms first too, since it starts with a down pass — pass `--yes` to skip); volumes are never removed. All three continue past a failing application within each pass and report the failures at the end. Pass `-a NAME` (repeatable) to `up`, `down`, or `restart` to limit the pass loop to specific applications instead of every application in the workspace; an unrecognized name errors out before anything runs. `xcind-workspace down --volumes` also forwards `-v` to each application's `xcind-compose down` call, removing its volumes (the confirmation prompt calls this out); `restart` and `up` reject `--volumes` since restart always preserves volumes. `xcind-workspace dispose DIR --rm --volumes --yes` tears down every application, removes the workspace network and registry entry, then removes the directory. See `xcind-workspace --help` for subcommands; the workspace concept itself is in [Workspaces vs single apps](../guides/workspaces-vs-apps.md).

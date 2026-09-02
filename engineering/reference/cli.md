@@ -77,7 +77,7 @@ Dumps the resolved configuration. Useful for debugging, scripting, and the JetBr
 | Flag | Output |
 |------|--------|
 | *(none)* | Show usage help |
-| `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `tools`) |
+| `--json` | JSON output (`metadata`, `appRoot`, `configFiles`, `composeFiles`, `composeEnvFiles`, `appEnvFiles`, `bakeFiles`, `bins`, `scripts`) |
 | `resolve <path> [--cached] [--hooks-ttl=N]` | One value from the resolved xcind or Compose configuration |
 | `resolve --help` | The resolvable top-level keys, the path syntax, and the exit codes |
 | `--preview [-- ARGS...]` | The `docker compose` command line that would run |
@@ -221,9 +221,15 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
   "composeEnvFiles": ["/path/to/app/.env"],
   "appEnvFiles": ["/path/to/app/.env.app"],
   "bakeFiles": [],
-  "tools": {
-    "php": { "service": "app", "use": "exec" },
-    "npm": { "service": "app", "use": "exec" }
+  "bins": {
+    "php": { "service": "app", "use": "exec", "cmd": "php" },
+    "npm": { "service": "app", "use": "exec", "cmd": "npm" }
+  },
+  "scripts": {
+    "fresh": {
+      "steps": ["-rm -rf node_modules", "@npm install"],
+      "desc": "Reinstall node modules from scratch"
+    }
   },
   "assignedExports": {
     "worker": {
@@ -252,7 +258,9 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
 }
 ```
 
-The `tools` object is keyed by tool name. Each entry includes `service`, `use` (default `"exec"`), and optionally `path`. See [`XCIND_TOOLS`](./configuration.md#xcind_tools) for the declaration format.
+The `bins` object is keyed by bin name. Each entry includes `service`, `use` (default `"exec"`), `cmd` (always present; default: the bin's name), and optionally `desc`. See [`XCIND_BINS`](./configuration.md#xcind_bins) for the declaration format.
+
+The `scripts` object is keyed by script name. Each entry includes `steps` (the raw steps, comments removed, a step's leading `-` kept) and optionally `desc`. See [`XCIND_SCRIPTS`](./configuration.md#xcind_scripts) for the declaration format.
 
 The `assignedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port`, `host_port`, and `declared_port`. It is `{}` when the app declares no `type=assigned` exports (or none have been assigned a host port yet).
 
@@ -383,6 +391,31 @@ To disable auto-start, set `XCIND_PROXY_AUTO_START=0`.
 |------|---------|------------------------|
 | `compose.yaml` | Traefik service definition | Yes (always regenerated) |
 | `traefik.yaml` | Traefik static configuration | Yes (always regenerated) |
+
+---
+
+## `xcind-run`
+
+Runs bins and scripts declared in `XCIND_BINS` / `XCIND_SCRIPTS` inside the app's Compose services.
+
+```
+xcind-run [-T|--no-tty] <name> [args…]
+xcind-run [-T] @exec <svc> [cmd…] | @run <svc> <cmd…> | @compose <args…>
+xcind-run --list [--names]
+xcind-run --init-shell [--prefix PREFIX]
+xcind-run --help | --version
+```
+
+Runner flags go before the name; everything after the name belongs to it.
+
+- **Bins** run as `docker compose … exec <svc> <cmd…> <args…>` (`use=run` → `run --rm`). Args always append. The bin's `cmd` is tokenized at run time without expansion.
+- **Scripts** run their steps in order and stop at the first failure with its exit status; a step's leading `-` ignores its failure. The first word picks the step kind (`@exec`/`@run`/`@compose`, `@<bin>`/`@<script>`, else a host step via `bash -c` — the only place shell expansion happens). Script-to-script cycles fail with the call path (`script cycle: a -> b -> a`).
+- **Arguments**: spliced at bare `$@`/`"$@"` tokens; a one-step script with no `$@` appends them; args to a multi-step script with no `$@` exit 64.
+- **TTY**: `-T` is passed to `exec`/`run` when stdin or stdout is not a terminal, or when forced with `-T`/`--no-tty`.
+- **Namespace**: bins and scripts share one namespace; a name in both is a load-time error. A leading `_` hides a name from `--list` and `--init-shell` but it stays runnable.
+- **Pipeline**: runs `__xcind-prepare-app` (with the GENERATE-hook TTL) and the EXECUTE hooks, like `xcind-compose`.
+
+`--init-shell` emits `<prefix><name>() { xcind-run <name> "$@"; }` per visible name (default prefix `x-`), for `eval` in a shell rc.
 
 ---
 

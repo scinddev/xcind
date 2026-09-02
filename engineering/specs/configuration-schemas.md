@@ -65,7 +65,11 @@ Typical contents:
 XCIND_COMPOSE_FILES=("compose.yaml")
 XCIND_COMPOSE_ENV_FILES=(".env")
 XCIND_PROXY_EXPORTS=("web:3000")
+XCIND_BINS=("npm:app")
+XCIND_SCRIPTS=("fresh:@npm install")
 ```
+
+`XCIND_BINS` (`name:service[;cmd=…][;use=exec|run][;desc=…]`) and `XCIND_SCRIPTS` (`name:` followed by steps, one per line) declare the app's runnable commands for `xcind-run`; both surface in the `xcind-config --json` contract as `bins` and `scripts`. See [`engineering/reference/configuration.md`](../reference/configuration.md#xcind_bins).
 
 ### Source Order
 

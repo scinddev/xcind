@@ -35,13 +35,16 @@ Run a bin or script declared in .xcind.sh (XCIND_BINS / XCIND_SCRIPTS)
 inside the app's Docker Compose services.
 
 Options (before the name):
-  -T, --no-tty   Pass -T to docker compose exec/run (also automatic when
-                 stdin or stdout is not a terminal)
-  --list         List runnable bins and scripts (names with a leading _
-                 are hidden but stay runnable)
-  --names        With --list: print bare names only, one per line
-  --help, -h     Show this help
-  --version, -V  Show version
+  -T, --no-tty      Pass -T to docker compose exec/run (also automatic
+                    when stdin or stdout is not a terminal)
+  --list            List runnable bins and scripts (names with a leading
+                    _ are hidden but stay runnable)
+  --names           With --list: print bare names only, one per line
+  --init-shell      Print wrapper functions for eval in a shell rc:
+                    x-<name>() { xcind-run <name> "$@"; }
+  --prefix PREFIX   With --init-shell: wrapper prefix (default x-)
+  --help, -h        Show this help
+  --version, -V     Show version
 
 The step keywords also work as the name:
   xcind-run @exec <svc> [cmd…]   docker compose exec (no cmd: bash)
@@ -61,6 +64,8 @@ HELPEOF
 __xcind_run_no_tty=0
 __xcind_run_list=0
 __xcind_run_names=0
+__xcind_run_init_shell=0
+__xcind_run_prefix="x-"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -74,6 +79,22 @@ while [[ $# -gt 0 ]]; do
     ;;
   --names)
     __xcind_run_names=1
+    shift
+    ;;
+  --init-shell)
+    __xcind_run_init_shell=1
+    shift
+    ;;
+  --prefix)
+    if [[ $# -lt 2 ]]; then
+      echo "xcind-run: --prefix requires a value" >&2
+      exit 64
+    fi
+    __xcind_run_prefix=$2
+    shift 2
+    ;;
+  --prefix=*)
+    __xcind_run_prefix=${1#--prefix=}
     shift
     ;;
   --help | -h)
@@ -103,6 +124,11 @@ if [[ $__xcind_run_names -eq 1 ]] && [[ $__xcind_run_list -eq 0 ]]; then
   exit 64
 fi
 
+if [[ $__xcind_run_list -eq 1 ]] && [[ $__xcind_run_init_shell -eq 1 ]]; then
+  echo "xcind-run: --list and --init-shell are mutually exclusive" >&2
+  exit 64
+fi
+
 # Gentle nudge if jq/yq aren't on PATH (silent in scripts and CI).
 __xcind-maybe-warn-deps
 
@@ -121,6 +147,11 @@ __xcind-runner-load || exit 1
 
 if [[ $__xcind_run_list -eq 1 ]]; then
   __xcind-runner-list "$__xcind_run_names"
+  exit 0
+fi
+
+if [[ $__xcind_run_init_shell -eq 1 ]]; then
+  __xcind-runner-init-shell "$__xcind_run_prefix"
   exit 0
 fi
 

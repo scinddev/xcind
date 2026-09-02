@@ -827,3 +827,18 @@ __xcind-runner-list() {
   done
   return 0
 }
+
+# Emit shell wrapper functions for every visible bin and script:
+#   <prefix><name>() { xcind-run <name> "$@"; }
+# Names with a leading '_' are skipped, like --list.
+#   $1 = wrapper prefix (default x-)
+__xcind-runner-init-shell() {
+  local prefix=${1:-x-}
+  local name
+  for name in ${__XCIND_RUNNER_BIN_NAMES[@]+"${__XCIND_RUNNER_BIN_NAMES[@]}"} \
+    ${__XCIND_RUNNER_SCRIPT_NAMES[@]+"${__XCIND_RUNNER_SCRIPT_NAMES[@]}"}; do
+    [[ $name == _* ]] && continue
+    printf '%s%s() { xcind-run %s "$@"; }\n' "$prefix" "$name" "$name"
+  done
+  return 0
+}

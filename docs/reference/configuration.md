@@ -70,13 +70,14 @@ apps through a Traefik that already runs on the host (e.g. Coolify's), see
 
 Walkthrough: [Author custom hooks](../guides/custom-hooks.md), [host-gateway](../guides/host-gateway.md).
 
-## IDE / tooling
+## Bins, scripts, IDE / tooling
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `XCIND_TOOLS` | `()` | Per-service runtimes for IDE integration |
+| `XCIND_BINS` | `()` | Per-service commands for `xcind-run` and IDE integration. Entry: `name:service[;cmd=…][;use=exec\|run][;desc=…]` |
+| `XCIND_SCRIPTS` | `()` | Named step lists for `xcind-run`. Entry: `name:` followed by steps, one per line |
 
-Walkthrough: [IDE and tool integration](../guides/tools-ide-integration.md).
+Walkthroughs: [Bins and scripts](../guides/bins-and-scripts.md), [IDE and tool integration](../guides/tools-ide-integration.md).
 
 ## Less commonly used
 

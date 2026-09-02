@@ -183,6 +183,8 @@ out=$(comp_run fresh _xcind_config_completions xcind-config resolve)
 assert_line "'resolve ' offers metadata" "metadata" "$out"
 assert_line "'resolve ' offers composeFiles" "composeFiles" "$out"
 assert_line "'resolve ' offers apex" "apex" "$out"
+assert_line "'resolve ' offers bins" "bins" "$out"
+assert_line "'resolve ' offers scripts" "scripts" "$out"
 assert_line "'resolve ' offers compose. prefix" "compose." "$out"
 
 out=$(comp_run fresh _xcind_config_completions xcind-config resolve metadata)
@@ -447,6 +449,60 @@ done <<<"$subs"
 assert_eq "every completed application subcommand appears in --help" "" "$missing"
 
 # ======================================================================
+echo "=== Test: xcind-run completion ==="
+
+out=$(comp_run partial _xcind_run_completions xcind-run --)
+assert_line "xcind-run '--' offers --list" "--list" "$out"
+assert_line "xcind-run '--' offers --names" "--names" "$out"
+assert_line "xcind-run '--' offers --init-shell" "--init-shell" "$out"
+assert_line "xcind-run '--' offers --prefix" "--prefix" "$out"
+assert_line "xcind-run '--' offers --no-tty" "--no-tty" "$out"
+
+out=$(comp_run partial _xcind_run_completions xcind-run -)
+assert_line "xcind-run '-' offers -T" "-T" "$out"
+
+out=$(comp_run fresh _xcind_run_completions xcind-run --prefix)
+assert_eq "xcind-run '--prefix ' offers nothing" "" "$out"
+
+out=$(comp_run fresh _xcind_run_completions xcind-run somename)
+assert_eq "xcind-run offers nothing after a name" "" "$out"
+
+out=$(comp_run fresh _xcind_run_completions xcind-run --list somename)
+assert_eq "xcind-run offers nothing after a name (with flags)" "" "$out"
+
+# Name completion shells out to `xcind-run --list --names`, which needs the
+# real pipeline: an app fixture and docker.
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  RUN_FIXTURE=$(mktemp_d)
+  cat >"$RUN_FIXTURE/.xcind.sh" <<'RUNEOF'
+XCIND_APP="comp-run-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_BINS=("xcnpm:app")
+XCIND_SCRIPTS=("xcfresh:echo ok")
+RUNEOF
+  cat >"$RUN_FIXTURE/compose.yaml" <<'RUNEOF'
+services:
+  app:
+    image: nginx
+RUNEOF
+
+  out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+    comp_run fresh _xcind_run_completions xcind-run)
+  assert_line "xcind-run completes a bin name" "xcnpm" "$out"
+  assert_line "xcind-run completes a script name" "xcfresh" "$out"
+
+  out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+    comp_run partial _xcind_run_completions xcind-run xcn)
+  assert_line "xcind-run partial name completes" "xcnpm" "$out"
+  assert_no_line "xcind-run partial name filters" "xcfresh" "$out"
+
+  rm -rf "$RUN_FIXTURE"
+else
+  echo "  … SKIP: docker compose not available for xcind-run name completion"
+  SKIP=$((SKIP + 1))
+fi
+
+# ======================================================================
 echo "=== Test: zsh completion functions ==="
 
 if ! command -v zsh >/dev/null 2>&1; then
@@ -506,6 +562,22 @@ ZSHEOF
   out=$(zcomp_run _xcind-config 3 xcind-config resolve)
   assert_line "zsh: 'resolve ' offers apex" \
     "apex:Apex hostname, URL and scheme" "$out"
+  assert_line "zsh: 'resolve ' offers bins" \
+    "bins:Resolved bin paths and versions" "$out"
+  assert_line "zsh: 'resolve ' offers scripts" \
+    "scripts:Resolved script step lists" "$out"
+
+  out=$(zcomp_run _xcind-run 2 xcind-run -)
+  assert_line "zsh: xcind-run '-' offers --list" \
+    "--list:List runnable bins and scripts" "$out"
+  assert_line "zsh: xcind-run '-' offers --init-shell" \
+    "--init-shell:Print shell wrapper functions for eval" "$out"
+
+  out=$(zcomp_run _xcind-run 3 xcind-run somename)
+  assert_eq "zsh: xcind-run offers nothing after a name" "" "$out"
+
+  out=$(zcomp_run _xcind-run 3 xcind-run --prefix)
+  assert_eq "zsh: xcind-run '--prefix ' offers nothing" "" "$out"
 
   out=$(zcomp_run _xcind-proxy 2 xcind-proxy)
   assert_line "zsh: top level offers init" \

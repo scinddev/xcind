@@ -396,6 +396,47 @@ _xcind_application_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-run: native completion
+# -----------------------------------------------------------------------------
+
+_xcind_run_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+  # Once a name is on the line, the words after it belong to that bin or
+  # script — offer nothing.
+  local i word
+  for ((i = 1; i < COMP_CWORD; i++)); do
+    word="${COMP_WORDS[$i]}"
+    case $word in
+    -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
+    --prefix) ((i++)) ;; # skip the prefix value
+    --prefix=*) ;;
+    *) return ;;
+    esac
+  done
+
+  # --prefix takes free text
+  if [[ $prev == "--prefix" ]]; then
+    return
+  fi
+
+  if [[ $cur == -* ]]; then
+    local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
+    COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+    return
+  fi
+
+  # First non-flag word: bin and script names from the app's declarations
+  local names
+  names=$(xcind-run --list --names 2>/dev/null)
+  if [[ -n $names ]]; then
+    COMPREPLY=($(compgen -W "$names" -- "$cur"))
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
@@ -405,3 +446,4 @@ complete -F _xcind_compose_completions xcind-compose
 complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy
 complete -F _xcind_workspace_completions xcind-workspace
+complete -F _xcind_run_completions xcind-run
