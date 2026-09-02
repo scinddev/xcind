@@ -851,25 +851,11 @@ __xcind-resolve-json() {
 
   # Resolve bins
   local bins_json
-  bins_json=$(__xcind-runner-bins-json)
+  bins_json=$(__xcind-runner-bins-json) || return 1
 
-  # Resolve scripts
-  local scripts_json
-  scripts_json=$(__xcind-runner-scripts-json) || return 1
-
-  # Cross-namespace duplicate check: no name may appear in both bins and scripts
-  if [[ $bins_json != "{}" ]] && [[ $scripts_json != "{}" ]]; then
-    local _bin_names
-    _bin_names=$(echo "$bins_json" | jq -r 'keys[]' 2>/dev/null) || true
-    local _script_name
-    while IFS= read -r _script_name; do
-      [[ -z $_script_name ]] && continue
-      if printf '%s\n' "$_bin_names" | grep -qx "$_script_name"; then
-        echo "duplicate name '$_script_name' found in both bins and scripts" >&2
-        return 1
-      fi
-    done < <(echo "$scripts_json" | jq -r 'keys[]' 2>/dev/null)
-  fi
+  # Scripts placeholder — the XCIND_SCRIPTS parser lands with xcind-run;
+  # the key is emitted now so the JSON contract shape is stable.
+  local scripts_json="{}"
 
   # Resolve assigned exports (empty object when none or jq unavailable)
   local assigned_json
