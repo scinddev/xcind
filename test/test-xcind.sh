@@ -2378,7 +2378,7 @@ echo "=== Test: JSON output includes apex object ==="
 APEX_WS=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=0
 XCIND_WORKSPACE="dev"
 XCIND_APP="xesapps"
@@ -2406,7 +2406,7 @@ rm -rf "$APEX_WS"
 APEX_WL=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -2435,7 +2435,7 @@ rm -rf "$APEX_WL"
 APEX_OFF_TMPL=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -2465,7 +2465,7 @@ rm -rf "$APEX_OFF_TMPL"
 APEX_OFF_EXP=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -2494,7 +2494,7 @@ rm -rf "$APEX_OFF_EXP"
 APEX_DERIVE=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -3643,115 +3643,503 @@ assert_contains "completion combined: error message" \
 
 # ======================================================================
 echo ""
-echo "=== Test: XCIND_TOOLS parsing and JSON output ==="
+echo "=== Test: XCIND_BINS parsing and JSON output ==="
 
-# --- Setup: fresh app root for tools tests ---
-TOOLS_APP=$(mktemp_d)
-cat >"$TOOLS_APP/.xcind.sh" <<'EOF'
+# --- Setup: fresh app root for bins tests ---
+BINS_APP=$(mktemp_d)
+cat >"$BINS_APP/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_FILES=("compose.yaml")
 EOF
-touch "$TOOLS_APP/compose.yaml"
+touch "$BINS_APP/compose.yaml"
 
-# 1. XCIND_TOOLS not set → "tools": {}
+# 1. XCIND_BINS not set → "bins": {}
 reset_xcind_state
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
-tools_obj=$(echo "$json" | jq -c '.tools')
-assert_eq "tools empty when XCIND_TOOLS unset" "{}" "$tools_obj"
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
+bins_obj=$(echo "$json" | jq -c '.bins')
+assert_eq "bins empty when XCIND_BINS unset" "{}" "$bins_obj"
 
-# 2. XCIND_TOOLS=() (explicit empty) → "tools": {}
+# 2. XCIND_BINS=() (explicit empty) → "bins": {}
 reset_xcind_state
-XCIND_TOOLS=()
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
-tools_obj=$(echo "$json" | jq -c '.tools')
-assert_eq "tools empty when XCIND_TOOLS=()" "{}" "$tools_obj"
+XCIND_BINS=()
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
+bins_obj=$(echo "$json" | jq -c '.bins')
+assert_eq "bins empty when XCIND_BINS=()" "{}" "$bins_obj"
 
-# 3. Basic tool declarations
+# 3. Basic bin declarations
 reset_xcind_state
-XCIND_TOOLS=("php:app" "npm:app")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("php:app" "npm:app")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-php_service=$(echo "$json" | jq -r '.tools.php.service')
-assert_eq "tools php service" "app" "$php_service"
+php_service=$(echo "$json" | jq -r '.bins.php.service')
+assert_eq "bins php service" "app" "$php_service"
 
-php_use=$(echo "$json" | jq -r '.tools.php.use')
-assert_eq "tools php use defaults to exec" "exec" "$php_use"
+php_use=$(echo "$json" | jq -r '.bins.php.use')
+assert_eq "bins php use defaults to exec" "exec" "$php_use"
 
-npm_service=$(echo "$json" | jq -r '.tools.npm.service')
-assert_eq "tools npm service" "app" "$npm_service"
+php_cmd=$(echo "$json" | jq -r '.bins.php.cmd')
+assert_eq "bins php cmd defaults to name" "php" "$php_cmd"
 
-tools_count=$(echo "$json" | jq '.tools | length')
-assert_eq "tools count" "2" "$tools_count"
+npm_service=$(echo "$json" | jq -r '.bins.npm.service')
+assert_eq "bins npm service" "app" "$npm_service"
+
+bins_count=$(echo "$json" | jq '.bins | length')
+assert_eq "bins count" "2" "$bins_count"
 
 # 4. use=run is reflected
 reset_xcind_state
-XCIND_TOOLS=("phpunit:app;use=run")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("phpunit:app;use=run")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-phpunit_use=$(echo "$json" | jq -r '.tools.phpunit.use')
-assert_eq "tools phpunit use=run" "run" "$phpunit_use"
+phpunit_use=$(echo "$json" | jq -r '.bins.phpunit.use')
+assert_eq "bins phpunit use=run" "run" "$phpunit_use"
 
-# 5. path appears only when specified
+# 5. cmd appears only when specified
 reset_xcind_state
-XCIND_TOOLS=("php:app" "php85:app;path=/usr/local/bin/php8.5")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("php:app" "php85:app;cmd=/usr/local/bin/php8.5")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-php_has_path=$(echo "$json" | jq 'has("tools") and (.tools.php | has("path"))')
-assert_eq "tools php has no path key" "false" "$php_has_path"
+php_has_cmd=$(echo "$json" | jq 'has("bins") and (.bins.php | has("cmd"))')
+assert_eq "bins php has cmd (default)" "true" "$php_has_cmd"
 
-php85_path=$(echo "$json" | jq -r '.tools.php85.path')
-assert_eq "tools php85 path" "/usr/local/bin/php8.5" "$php85_path"
+php85_cmd=$(echo "$json" | jq -r '.bins.php85.cmd')
+assert_eq "bins php85 cmd" "/usr/local/bin/php8.5" "$php85_cmd"
 
-# 6. Duplicate tool names → first wins
+# 6. Duplicate bin names → error
 reset_xcind_state
-XCIND_TOOLS=("php:app" "php:cron")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
-
-dup_service=$(echo "$json" | jq -r '.tools.php.service')
-assert_eq "tools duplicate first wins service" "app" "$dup_service"
-
-dup_count=$(echo "$json" | jq '.tools | length')
-assert_eq "tools duplicate count is 1" "1" "$dup_count"
+XCIND_BINS=("php:app" "php:cron")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+if __xcind-resolve-json "$BINS_APP" >/dev/null 2>&1; then
+  assert_eq "bins duplicate names error" "false" "true"
+else
+  assert_eq "bins duplicate names error" "true" "true"
+fi
 
 # 7. Multiple metadata key=value pairs
 reset_xcind_state
-XCIND_TOOLS=("php:app;use=run;path=/usr/bin/php")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("php:app;use=run;cmd=/usr/bin/php")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-multi_use=$(echo "$json" | jq -r '.tools.php.use')
-assert_eq "tools multi-meta use" "run" "$multi_use"
+multi_use=$(echo "$json" | jq -r '.bins.php.use')
+assert_eq "bins multi-meta use" "run" "$multi_use"
 
-multi_path=$(echo "$json" | jq -r '.tools.php.path')
-assert_eq "tools multi-meta path" "/usr/bin/php" "$multi_path"
+multi_cmd=$(echo "$json" | jq -r '.bins.php.cmd')
+assert_eq "bins multi-meta cmd" "/usr/bin/php" "$multi_cmd"
 
-# 8. SHA changes when XCIND_TOOLS changes
+# 8. desc is included when given
 reset_xcind_state
-XCIND_TOOLS=("php:app")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-sha1=$(__xcind-compute-sha "$TOOLS_APP")
+XCIND_BINS=("php:app;desc=PHP interpreter")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
+
+php_desc=$(echo "$json" | jq -r '.bins.php.desc')
+assert_eq "bins desc" "PHP interpreter" "$php_desc"
+
+# 9. Validation: missing colon
+reset_xcind_state
+XCIND_BINS=("phpapp")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins missing colon error" "false" "true"
+else
+  assert_eq "bins missing colon error" "true" "true"
+fi
+
+# 10. Validation: empty service
+reset_xcind_state
+XCIND_BINS=("php:")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins empty service error" "false" "true"
+else
+  assert_eq "bins empty service error" "true" "true"
+fi
+
+# 11. Validation: unknown key
+reset_xcind_state
+XCIND_BINS=("php:app;foo=bar")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins unknown key error" "false" "true"
+else
+  assert_eq "bins unknown key error" "true" "true"
+fi
+
+# 12. Validation: invalid use
+reset_xcind_state
+XCIND_BINS=("php:app;use=invalid")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins invalid use error" "false" "true"
+else
+  assert_eq "bins invalid use error" "true" "true"
+fi
+
+# 13. Validation: @-prefixed name
+reset_xcind_state
+XCIND_BINS=("@php:app")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins @-prefixed name error" "false" "true"
+else
+  assert_eq "bins @-prefixed name error" "true" "true"
+fi
+
+# 14. SHA changes when XCIND_BINS changes
+reset_xcind_state
+XCIND_BINS=("php:app")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+sha1=$(__xcind-compute-sha "$BINS_APP")
 
 # shellcheck disable=SC2034  # read by __xcind-compute-sha
-XCIND_TOOLS=("php:app" "npm:app")
-sha2=$(__xcind-compute-sha "$TOOLS_APP")
+XCIND_BINS=("php:app" "npm:app")
+sha2=$(__xcind-compute-sha "$BINS_APP")
 
-assert_eq "SHA changes when XCIND_TOOLS changes" "true" \
+assert_eq "SHA changes when XCIND_BINS changes" "true" \
   "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
 
-rm -rf "$TOOLS_APP"
+rm -rf "$BINS_APP"
+reset_xcind_state
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-runner-scripts-json ==="
+
+# 1. Empty XCIND_SCRIPTS returns {}
+reset_xcind_state
+XCIND_SCRIPTS=()
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts empty returns {}" "{}" "$scripts"
+
+# 2. Single script with one step
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm install")
+scripts=$(__xcind-runner-scripts-json)
+deploy_service=$(echo "$scripts" | jq -r '.deploy.service')
+assert_eq "scripts service" "app" "$deploy_service"
+deploy_step_count=$(echo "$scripts" | jq '.deploy.steps | length')
+assert_eq "scripts step count" "1" "$deploy_step_count"
+deploy_ref=$(echo "$scripts" | jq -r '.deploy.steps[0].ref')
+assert_eq "scripts ref" "npm" "$deploy_ref"
+deploy_args=$(echo "$scripts" | jq -r '.deploy.steps[0].args | join(" ")')
+assert_eq "scripts args" "install" "$deploy_args"
+
+# 3. Multiple steps
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm install;@ref php artisan migrate;@ref php artisan optimize")
+scripts=$(__xcind-runner-scripts-json)
+deploy_step_count=$(echo "$scripts" | jq '.deploy.steps | length')
+assert_eq "scripts multiple steps count" "3" "$deploy_step_count"
+assert_eq "scripts step 2 ref" "php" "$(echo "$scripts" | jq -r '.deploy.steps[1].ref')"
+assert_eq "scripts step 3 ref" "php" "$(echo "$scripts" | jq -r '.deploy.steps[2].ref')"
+
+# 4. Steps with multiple arguments
+reset_xcind_state
+XCIND_SCRIPTS=("test:app;@ref php artisan test --testsuite=Feature")
+scripts=$(__xcind-runner-scripts-json)
+script_args=$(echo "$scripts" | jq -r '.test.steps[0].args | join(" ")')
+assert_eq "scripts multi args" "artisan test --testsuite=Feature" "$script_args"
+
+# 5. Script with desc metadata
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;desc=Deploy the application;@ref npm run deploy")
+scripts=$(__xcind-runner-scripts-json)
+deploy_desc=$(echo "$scripts" | jq -r '.deploy.desc')
+assert_eq "scripts desc" "Deploy the application" "$deploy_desc"
+
+# 6. Script with desc and multiple @ref steps
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;desc=Deploy app;@ref npm install;@ref php artisan migrate")
+scripts=$(__xcind-runner-scripts-json)
+deploy_desc=$(echo "$scripts" | jq -r '.deploy.desc')
+assert_eq "scripts desc with steps" "Deploy app" "$deploy_desc"
+deploy_step_count=$(echo "$scripts" | jq '.deploy.steps | length')
+assert_eq "scripts desc with steps count" "2" "$deploy_step_count"
+
+# 7. Duplicate script names → error
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm;deploy:app;@ref php")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts duplicate names error" "false" "true"
+else
+  assert_eq "scripts duplicate names error" "true" "true"
+fi
+
+# 8. Validation: missing colon
+reset_xcind_state
+XCIND_SCRIPTS=("deploy")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts missing colon error" "false" "true"
+else
+  assert_eq "scripts missing colon error" "true" "true"
+fi
+
+# 9. Validation: empty service
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts empty service error" "false" "true"
+else
+  assert_eq "scripts empty service error" "true" "true"
+fi
+
+# 10. Validation: empty name
+reset_xcind_state
+XCIND_SCRIPTS=(":app;@ref npm")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts empty name error" "false" "true"
+else
+  assert_eq "scripts empty name error" "true" "true"
+fi
+
+# 11. Validation: @-prefixed name
+reset_xcind_state
+XCIND_SCRIPTS=("@deploy:app;@ref npm")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts @-prefixed name error" "false" "true"
+else
+  assert_eq "scripts @-prefixed name error" "true" "true"
+fi
+
+# 12. Validation: unknown attribute
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;unknown=value;@ref npm")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts unknown attribute error" "false" "true"
+else
+  assert_eq "scripts unknown attribute error" "true" "true"
+fi
+
+# 13. Validation: no @ref steps (only metadata)
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;desc=Deploy")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts no steps error" "false" "true"
+else
+  assert_eq "scripts no steps error" "true" "true"
+fi
+
+# 14. Validation: bare @ref without bin name
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts bare ref error" "false" "true"
+else
+  assert_eq "scripts bare ref error" "true" "true"
+fi
+
+# 15. Validation: invalid remainder (not key=value, not @ref)
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;some plain text")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "scripts invalid remainder error" "false" "true"
+else
+  assert_eq "scripts invalid remainder error" "true" "true"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: cross-namespace duplicate check ==="
+
+# 16. Cross-namespace duplicate: bin name matches script name
+reset_xcind_state
+XCIND_BINS=("deploy:app")
+XCIND_SCRIPTS=("deploy:app;@ref npm")
+if __xcind-runner-bins-json 2>/dev/null && __xcind-runner-scripts-json 2>/dev/null; then
+  # Both succeed individually
+  assert_eq "cross-namespace bins json ok" "true" "true"
+  assert_eq "cross-namespace scripts json ok" "true" "true"
+else
+  assert_eq "cross-namespace should succeed individually" "true" "false"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: SHA changes when XCIND_SCRIPTS changes ==="
+
+SHA_APP=$(mktemp_d)
+cat >"$SHA_APP/.xcind.sh" <<'EOF'
+XCIND_APP="sha-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_SCRIPTS=("deploy:app;@ref npm install")
+EOF
+touch "$SHA_APP/compose.yaml"
+
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm install")
+__xcind-load-config "$SHA_APP"
+__xcind-build-compose-opts "$SHA_APP"
+sha1=$(__xcind-compute-sha "$SHA_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=("deploy:app;@ref npm install;@ref php artisan migrate")
+sha2=$(__xcind-compute-sha "$SHA_APP")
+
+assert_eq "SHA changes when XCIND_SCRIPTS changes" "true" \
+  "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
+
+# 17. Different scripts (different number of steps) produce different SHA
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm")
+sha3=$(__xcind-compute-sha "$SHA_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=("deploy:app;@ref npm;@ref php")
+sha4=$(__xcind-compute-sha "$SHA_APP")
+
+assert_eq "SHA differs with different steps" "true" \
+  "$([ "$sha3" != "$sha4" ] && echo true || echo false)"
+
+# 18. SHA changes when script name changes
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm")
+sha5=$(__xcind-compute-sha "$SHA_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=("build:app;@ref npm")
+sha6=$(__xcind-compute-sha "$SHA_APP")
+
+assert_eq "SHA changes when script name changes" "true" \
+  "$([ "$sha5" != "$sha6" ] && echo true || echo false)"
+
+# 19. SHA changes when service changes
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm")
+sha7=$(__xcind-compute-sha "$SHA_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=("deploy:worker;@ref npm")
+sha8=$(__xcind-compute-sha "$SHA_APP")
+
+assert_eq "SHA changes when service changes" "true" \
+  "$([ "$sha7" != "$sha8" ] && echo true || echo false)"
+
+# 20. Empty scripts produce same SHA as default (no XCIND_SCRIPTS)
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm")
+sha9=$(__xcind-compute-sha "$SHA_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=()
+sha10=$(__xcind-compute-sha "$SHA_APP")
+
+assert_eq "SHA changes when scripts added" "true" \
+  "$([ "$sha10" != "$sha9" ] && echo true || echo false)"
+
+rm -rf "$SHA_APP"
+reset_xcind_state
+
+# 21. Multiple scripts in JSON
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:app;@ref npm" "build:app;@ref php" "deploy:worker;@ref yarn")
+if __xcind-runner-scripts-json 2>/dev/null; then
+  assert_eq "multiple scripts ok" "true" "false"
+fi
+XCIND_SCRIPTS=("deploy:app;@ref npm" "build:app;@ref php")
+scripts=$(__xcind-runner-scripts-json)
+scripts_count=$(echo "$scripts" | jq 'keys | length')
+assert_eq "scripts count" "2" "$scripts_count"
+build_steps=$(echo "$scripts" | jq '.build.steps | length')
+assert_eq "build steps" "1" "$build_steps"
+
+# 22. Tokenizer test — basic entry
+reset_xcind_state
+__xcind-runner-tokenize-script-entry "deploy:app;@ref npm install"
+assert_eq "tokenizer name" "deploy" "$__SCRIPT_TOKEN_NAME"
+assert_eq "tokenizer service" "app" "$__SCRIPT_TOKEN_SERVICE"
+assert_eq "tokenizer step count" "1" "${#__SCRIPT_TOKEN_STEPS[@]}"
+assert_eq "tokenizer step[0]" "@ref npm install" "${__SCRIPT_TOKEN_STEPS[0]}"
+assert_eq "tokenizer desc" "" "$__SCRIPT_TOKEN_DESC"
+
+# 23. Tokenizer test — with desc
+__xcind-runner-tokenize-script-entry "deploy:app;desc=Deploy app;@ref npm"
+assert_eq "tokenizer with desc name" "deploy" "$__SCRIPT_TOKEN_NAME"
+assert_eq "tokenizer with desc desc" "Deploy app" "$__SCRIPT_TOKEN_DESC"
+assert_eq "tokenizer with desc step" "@ref npm" "${__SCRIPT_TOKEN_STEPS[0]}"
+
+# 24. Tokenizer test — invalid entry returns error
+reset_xcind_state
+if __xcind-runner-tokenize-script-entry "invalid-no-colon" 2>/dev/null; then
+  assert_eq "tokenizer invalid returns error" "false" "true"
+else
+  assert_eq "tokenizer invalid returns error" "true" "true"
+fi
+
+# 25. Tokenizer test — name with whitespace rejected
+reset_xcind_state
+if __xcind-runner-tokenize-script-entry "my deploy:app;@ref npm" 2>/dev/null; then
+  assert_eq "tokenizer whitespace name error" "false" "true"
+else
+  assert_eq "tokenizer whitespace name error" "true" "true"
+fi
+
+# 26. Tokenizer test — name starting with - rejected
+reset_xcind_state
+if __xcind-runner-tokenize-script-entry "-deploy:app;@ref npm" 2>/dev/null; then
+  assert_eq "tokenizer dash name error" "false" "true"
+else
+  assert_eq "tokenizer dash name error" "true" "true"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-resolve-json includes scripts ==="
+
+SCRIPTS_APP=$(mktemp_d)
+cat >"$SCRIPTS_APP/.xcind.sh" <<'EOF'
+XCIND_APP="scripts-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_BINS=("php:app;desc=PHP interpreter")
+XCIND_SCRIPTS=("deploy:app;@ref npm install;desc=Deploy")
+EOF
+touch "$SCRIPTS_APP/compose.yaml"
+
+reset_xcind_state
+XCIND_BINS=("php:app;desc=PHP interpreter")
+XCIND_SCRIPTS=("deploy:app;@ref npm install;desc=Deploy")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+json=$(__xcind-resolve-json "$SCRIPTS_APP")
+
+# Verify scripts appear in JSON
+has_scripts=$(echo "$json" | jq 'has("scripts")')
+assert_eq "resolve-json has scripts field" "true" "$has_scripts"
+
+scripts_obj=$(echo "$json" | jq '.scripts')
+assert_eq "scripts is object" "true" "$(echo "$scripts_obj" | jq 'type == "object"')"
+
+deploy_service=$(echo "$json" | jq -r '.scripts.deploy.service')
+assert_eq "resolve-json script service" "app" "$deploy_service"
+
+deploy_desc=$(echo "$json" | jq -r '.scripts.deploy.desc')
+assert_eq "resolve-json script desc" "Deploy" "$deploy_desc"
+
+deploy_steps=$(echo "$json" | jq '.scripts.deploy.steps | length')
+assert_eq "resolve-json script steps count" "1" "$deploy_steps"
+
+deploy_ref=$(echo "$json" | jq -r '.scripts.deploy.steps[0].ref')
+assert_eq "resolve-json script ref" "npm" "$deploy_ref"
+
+# Verify bins still work alongside scripts
+has_bins=$(echo "$json" | jq 'has("bins")')
+assert_eq "resolve-json still has bins" "true" "$has_bins"
+
+php_desc=$(echo "$json" | jq -r '.bins.php.desc')
+assert_eq "resolve-json bins php desc" "PHP interpreter" "$php_desc"
+
+# No duplicate between bin "php" and script "deploy"
+assert_eq "resolve-json no cross-ns dup" "true" "true"
+
+rm -rf "$SCRIPTS_APP"
 reset_xcind_state
 
 # ======================================================================

@@ -163,7 +163,8 @@ _xcind-config() {
         'composeEnvFiles:Env files passed to docker compose'
         'appEnvFiles:Env files exported into the app environment'
         'bakeFiles:Bake files passed to docker buildx bake'
-        'tools:Resolved tool paths and versions'
+        'bins:Resolved bin paths and versions'
+        'scripts:Resolved script step lists'
         'assignedExports:Ports assigned to this app'
         'proxiedExports:Proxied exports with computed URLs'
         'apex:Apex hostname, URL and scheme'
@@ -502,6 +503,33 @@ _xcind-application() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-run: completion
+# -----------------------------------------------------------------------------
+
+_xcind-run() {
+  local -a args
+  args=(
+    '-T[Don'\''t attach stdin or allocate a TTY]'
+    '--no-tty[Don'\''t attach stdin or allocate a TTY]'
+    '(--list --init-shell)--init-shell[Print x-<name>() shell wrappers for each bin/script]'
+    '(--init-shell)--prefix=[Prefix for generated wrappers (default x-)]'
+    '--list[List bins and scripts]'
+    '(--list)--names[Print only names, one per line]'
+    '--help[Show help]'
+    '--version[Show version]'
+  )
+
+  _arguments -s "$args[@]"
+
+  # Complete bin/script names after flags
+  if ((CURRENT == 2)); then
+    local -a names
+    names=("$(_xcind-run --list --names 2>/dev/null)")
+    _describe 'bin or script name' names
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
@@ -511,3 +539,4 @@ compdef _xcind-compose xcind-compose
 compdef _xcind-config xcind-config
 compdef _xcind-proxy xcind-proxy
 compdef _xcind-workspace xcind-workspace
+compdef _xcind-run xcind-run

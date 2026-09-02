@@ -18,6 +18,7 @@ SHELL_FILES = \
 	lib/xcind/xcind-naming-lib.bash \
 	lib/xcind/xcind-proxy-lib.bash \
 	lib/xcind/xcind-registry-lib.bash \
+	lib/xcind/xcind-run-lib.bash \
 	lib/xcind/xcind-workspace-lib.bash \
 	test/test-xcind.sh \
 	test/test-xcind-proxy.sh \

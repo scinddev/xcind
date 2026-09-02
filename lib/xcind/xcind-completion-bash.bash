@@ -124,7 +124,7 @@ _xcind_config_completions() {
   # bin/xcind-config and with the zsh completion.
   if [[ $prev == "resolve" ]]; then
     local resolve_keys="metadata appRoot configFiles composeFiles
-      composeEnvFiles appEnvFiles bakeFiles tools assignedExports
+      composeEnvFiles appEnvFiles bakeFiles bins scripts assignedExports
       proxiedExports apex compose. --help"
     COMPREPLY=($(compgen -W "$resolve_keys" -- "$cur"))
     return
@@ -396,6 +396,51 @@ _xcind_application_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-run: native completion
+# -----------------------------------------------------------------------------
+
+_xcind_run_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+  # After "--list", offer --names
+  if [[ $prev == "--list" ]]; then
+    COMPREPLY=($(compgen -W "--names" -- "$cur"))
+    return
+  fi
+
+  # After --prefix, complete free text
+  if [[ $prev == "--prefix" ]]; then
+    return
+  fi
+
+  # After --list --names, nothing
+  if [[ $prev == "--names" ]]; then
+    return
+  fi
+
+  # After --init-shell, nothing
+  if [[ $prev == "--init-shell" ]]; then
+    return
+  fi
+
+  # First non-flag word: complete with bin/script names
+  if [[ $cur != -* ]]; then
+    local names
+    names=$(xcind-run --list --names 2>/dev/null)
+    if [[ -n $names ]]; then
+      COMPREPLY=($(compgen -W "$names" -- "$cur"))
+      return
+    fi
+  fi
+
+  # Offer flags
+  local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
+  COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
@@ -405,3 +450,4 @@ complete -F _xcind_compose_completions xcind-compose
 complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy
 complete -F _xcind_workspace_completions xcind-workspace
+complete -F _xcind_run_completions xcind-run

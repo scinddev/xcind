@@ -3849,7 +3849,7 @@ XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
 XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
 # __xcind-resolve-json reads several variables that are normally populated
 # by the prepare-app pipeline; default them to empty for this isolated test.
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_COMPOSE_ENV_FILES=()
 XCIND_APP_ENV_FILES=()
 XCIND_COMPOSE_FILES=()
