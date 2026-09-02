@@ -47,3 +47,15 @@ XCIND_BINS=(
   "node:app"
   "npm:app"
 )
+
+# --- Scripts ---
+# Declarative step lists run by xcind-run. Steps go one per line and stop
+# at the first failure; a leading '-' ignores that step's failure. The
+# first '#' comment is the script's description. '@name' runs a bin or
+# another script; other lines run on the host.
+XCIND_SCRIPTS=(
+  "fresh:
+    # Reinstall node modules from scratch
+    -rm -rf node_modules
+    @npm install"
+)

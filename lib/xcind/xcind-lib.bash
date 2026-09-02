@@ -853,9 +853,20 @@ __xcind-resolve-json() {
   local bins_json
   bins_json=$(__xcind-runner-bins-json) || return 1
 
-  # Scripts placeholder — the XCIND_SCRIPTS parser lands with xcind-run;
-  # the key is emitted now so the JSON contract shape is stable.
-  local scripts_json="{}"
+  # Resolve scripts
+  local scripts_json
+  scripts_json=$(__xcind-runner-scripts-json) || return 1
+
+  # Bins and scripts share one runnable namespace: a name in both is an error.
+  if [[ $bins_json != "{}" ]] && [[ $scripts_json != "{}" ]]; then
+    local _dup_name
+    _dup_name=$(jq -n -r --argjson bins "$bins_json" --argjson scripts "$scripts_json" \
+      '(($bins | keys) as $b | ($scripts | keys) | map(select(. as $n | $b | index($n))) | first) // empty')
+    if [[ -n $_dup_name ]]; then
+      echo "duplicate name '$_dup_name' declared in both XCIND_BINS and XCIND_SCRIPTS" >&2
+      return 1
+    fi
+  fi
 
   # Resolve assigned exports (empty object when none or jq unavailable)
   local assigned_json

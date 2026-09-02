@@ -3819,6 +3819,235 @@ reset_xcind_state
 
 # ======================================================================
 echo ""
+echo "=== Test: __xcind-runner-split ==="
+
+# 1. Plain words
+__xcind-runner-split "php artisan migrate"
+assert_eq "split plain word count" "3" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split plain word 0" "php" "${__XCIND_RUNNER_TOKENS[0]}"
+assert_eq "split plain word 2" "migrate" "${__XCIND_RUNNER_TOKENS[2]}"
+assert_eq "split plain splice 0" "0" "${__XCIND_RUNNER_SPLICE[0]}"
+
+# 2. Tabs also separate tokens
+__xcind-runner-split "a	b"
+assert_eq "split tab count" "2" "${#__XCIND_RUNNER_TOKENS[@]}"
+
+# 3. Single quotes are literal
+__xcind-runner-split "echo 'a b' c"
+assert_eq "split single-quote count" "3" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split single-quote token" "a b" "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 4. Double quotes with escaped quote
+__xcind-runner-split 'say "he said \"hi\""'
+assert_eq "split dquote count" "2" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split dquote token" 'he said "hi"' "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 5. In double quotes a backslash escapes only \" \\ and \$
+__xcind-runner-split '"a\nb" "c\$d"'
+assert_eq "split dquote backslash literal" 'a\nb' "${__XCIND_RUNNER_TOKENS[0]}"
+assert_eq "split dquote escaped dollar" 'c$d' "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 6. Unquoted backslash escapes the next character
+__xcind-runner-split 'a\ b'
+assert_eq "split backslash-space count" "1" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split backslash-space token" "a b" "${__XCIND_RUNNER_TOKENS[0]}"
+
+# 7. Empty token from ""
+__xcind-runner-split '"" x'
+assert_eq "split empty-token count" "2" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split empty token" "" "${__XCIND_RUNNER_TOKENS[0]}"
+
+# 8. Unterminated quote returns 64
+rc=0
+__xcind-runner-split '"oops' 2>/dev/null || rc=$?
+assert_eq "split unterminated quote rc" "64" "$rc"
+rc=0
+__xcind-runner-split "'oops" 2>/dev/null || rc=$?
+assert_eq "split unterminated single quote rc" "64" "$rc"
+
+# 9. $@ and "$@" are splice-flagged
+__xcind-runner-split 'run $@ now'
+assert_eq 'split $@ splice' "1" "${__XCIND_RUNNER_SPLICE[1]}"
+assert_eq 'split around $@ splice' "0" "${__XCIND_RUNNER_SPLICE[2]}"
+__xcind-runner-split 'run "$@"'
+assert_eq 'split quoted $@ splice' "1" "${__XCIND_RUNNER_SPLICE[1]}"
+
+# 10. '$@' and --file=$@ are literals, not splices
+__xcind-runner-split "run '\$@'"
+assert_eq 'split single-quoted $@ splice' "0" "${__XCIND_RUNNER_SPLICE[1]}"
+assert_eq 'split single-quoted $@ token' '$@' "${__XCIND_RUNNER_TOKENS[1]}"
+__xcind-runner-split 'run --file=$@'
+assert_eq 'split embedded $@ splice' "0" "${__XCIND_RUNNER_SPLICE[1]}"
+assert_eq 'split embedded $@ token' '--file=$@' "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 11. No variable, command, or glob expansion
+__xcind-runner-split '* $HOME $(id)'
+assert_eq "split no glob expansion" "*" "${__XCIND_RUNNER_TOKENS[0]}"
+assert_eq "split no var expansion" '$HOME' "${__XCIND_RUNNER_TOKENS[1]}"
+assert_eq "split no command expansion" '$(id)' "${__XCIND_RUNNER_TOKENS[2]}"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-runner-scripts-json ==="
+
+# 1. Empty or unset XCIND_SCRIPTS returns {}
+reset_xcind_state
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts empty when unset" "{}" "$scripts"
+XCIND_SCRIPTS=()
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts empty when XCIND_SCRIPTS=()" "{}" "$scripts"
+
+# 2. Single-line form: one step on the name's line
+reset_xcind_state
+XCIND_SCRIPTS=("fresh:php artisan migrate:fresh --seed")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts single-line step count" "1" "$(echo "$scripts" | jq '.fresh.steps | length')"
+assert_eq "scripts single-line step" "php artisan migrate:fresh --seed" \
+  "$(echo "$scripts" | jq -r '.fresh.steps[0]')"
+assert_eq "scripts single-line has no desc" "false" "$(echo "$scripts" | jq '.fresh | has("desc")')"
+
+# 3. Multi-line form trims steps and skips blanks
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:
+    npm install
+
+    php artisan migrate
+  ")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts multi-line step count" "2" "$(echo "$scripts" | jq '.deploy.steps | length')"
+assert_eq "scripts multi-line step 0" "npm install" "$(echo "$scripts" | jq -r '.deploy.steps[0]')"
+assert_eq "scripts multi-line step 1" "php artisan migrate" "$(echo "$scripts" | jq -r '.deploy.steps[1]')"
+
+# 4. First # comment is the description; all comments drop from steps
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:
+    # Deploy the application
+    npm install
+    # not the description
+    php artisan migrate")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts desc from first comment" "Deploy the application" \
+  "$(echo "$scripts" | jq -r '.deploy.desc')"
+assert_eq "scripts comments dropped from steps" "2" "$(echo "$scripts" | jq '.deploy.steps | length')"
+
+# 5. Leading - is kept in the stored step
+reset_xcind_state
+XCIND_SCRIPTS=("reset:
+    -php artisan down
+    php artisan up")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts keeps - prefix" "-php artisan down" "$(echo "$scripts" | jq -r '.reset.steps[0]')"
+
+# 6. Bare - step is an error
+reset_xcind_state
+XCIND_SCRIPTS=("bad:
+    -
+    echo ok")
+if __xcind-runner-scripts-json >/dev/null 2>&1; then
+  assert_eq "scripts bare - error" "false" "true"
+else
+  assert_eq "scripts bare - error" "true" "true"
+fi
+
+# 7. No steps (only comments and blanks) is an error
+reset_xcind_state
+XCIND_SCRIPTS=("empty:
+    # just a comment
+  ")
+scripts_err_file=$(mktemp)
+if __xcind-runner-scripts-json >/dev/null 2>"$scripts_err_file"; then
+  assert_eq "scripts no steps error" "false" "true"
+else
+  assert_eq "scripts no steps error" "true" "true"
+fi
+scripts_err=$(<"$scripts_err_file")
+rm -f "$scripts_err_file"
+assert_contains "scripts no steps message" "script 'empty' has no steps" "$scripts_err"
+
+# 8. Header validation: missing colon, empty name, reserved names
+reset_xcind_state
+for bad_entry in "nocolon" ":steps here" "@x:step" "-x:step" "a b:step"; do
+  XCIND_SCRIPTS=("$bad_entry")
+  if __xcind-runner-scripts-json >/dev/null 2>&1; then
+    assert_eq "scripts invalid header '$bad_entry' error" "false" "true"
+  else
+    assert_eq "scripts invalid header '$bad_entry' error" "true" "true"
+  fi
+done
+
+# 9. Duplicate script names error
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:npm install" "deploy:php artisan migrate")
+if __xcind-runner-scripts-json >/dev/null 2>&1; then
+  assert_eq "scripts duplicate names error" "false" "true"
+else
+  assert_eq "scripts duplicate names error" "true" "true"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: scripts in the JSON contract ==="
+
+SCRIPTS_APP=$(mktemp_d)
+cat >"$SCRIPTS_APP/.xcind.sh" <<'EOF'
+XCIND_APP="scripts-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+touch "$SCRIPTS_APP/compose.yaml"
+
+# 10. resolve-json carries scripts with steps and desc
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:
+    # Deploy the application
+    @npm install
+    php artisan migrate")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+json=$(__xcind-resolve-json "$SCRIPTS_APP")
+assert_eq "resolve-json script steps" "2" "$(echo "$json" | jq '.scripts.deploy.steps | length')"
+assert_eq "resolve-json script desc" "Deploy the application" \
+  "$(echo "$json" | jq -r '.scripts.deploy.desc')"
+assert_eq "resolve-json script step 0" "@npm install" \
+  "$(echo "$json" | jq -r '.scripts.deploy.steps[0]')"
+
+# 11. A name in both XCIND_BINS and XCIND_SCRIPTS fails resolve-json
+reset_xcind_state
+XCIND_BINS=("deploy:app")
+XCIND_SCRIPTS=("deploy:npm install")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+dup_ns_err_file=$(mktemp)
+if __xcind-resolve-json "$SCRIPTS_APP" >/dev/null 2>"$dup_ns_err_file"; then
+  assert_eq "cross-namespace duplicate error" "false" "true"
+else
+  assert_eq "cross-namespace duplicate error" "true" "true"
+fi
+dup_ns_err=$(<"$dup_ns_err_file")
+rm -f "$dup_ns_err_file"
+assert_contains "cross-namespace duplicate message" \
+  "duplicate name 'deploy' declared in both XCIND_BINS and XCIND_SCRIPTS" "$dup_ns_err"
+
+# 12. SHA changes when XCIND_SCRIPTS changes
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:npm install")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+sha1=$(__xcind-compute-sha "$SCRIPTS_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=("deploy:npm install
+php artisan migrate")
+sha2=$(__xcind-compute-sha "$SCRIPTS_APP")
+
+assert_eq "SHA changes when XCIND_SCRIPTS changes" "true" \
+  "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
+
+rm -rf "$SCRIPTS_APP"
+reset_xcind_state
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-app-hook ==="
 
 APP_HOOK_DIR=$(mktemp_d)
