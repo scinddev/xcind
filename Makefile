@@ -4,6 +4,7 @@ SHELL_FILES = \
 	bin/xcind-config \
 	bin/xcind-prompt \
 	bin/xcind-proxy \
+	bin/xcind-run \
 	bin/xcind-workspace \
 	lib/xcind/xcind-app-lib.bash \
 	lib/xcind/xcind-app-env-lib.bash \

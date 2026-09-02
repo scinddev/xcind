@@ -15,6 +15,7 @@ install -m 755 "$XCIND_ROOT/bin/xcind-compose" "$PREFIX/bin/xcind-compose"
 install -m 755 "$XCIND_ROOT/bin/xcind-config" "$PREFIX/bin/xcind-config"
 install -m 755 "$XCIND_ROOT/bin/xcind-prompt" "$PREFIX/bin/xcind-prompt"
 install -m 755 "$XCIND_ROOT/bin/xcind-proxy" "$PREFIX/bin/xcind-proxy"
+install -m 755 "$XCIND_ROOT/bin/xcind-run" "$PREFIX/bin/xcind-run"
 install -m 755 "$XCIND_ROOT/bin/xcind-workspace" "$PREFIX/bin/xcind-workspace"
 
 # xcind-app alias — short form mirroring Scind's `scind app …`. Recreate on

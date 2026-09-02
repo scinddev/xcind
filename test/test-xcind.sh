@@ -4048,6 +4048,292 @@ reset_xcind_state
 
 # ======================================================================
 echo ""
+echo "=== Test: xcind-run dispatch ==="
+
+# Fixture: a docker shim first on PATH that logs its argv one arg per line
+# and exits with ${DOCKER_SHIM_RC:-0}. Dispatch functions are exercised
+# directly against parsed bins/scripts with fixed compose opts.
+RUN_DIR=$(mktemp_d)
+mkdir -p "$RUN_DIR/shim"
+cat >"$RUN_DIR/shim/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >>"$DOCKER_SHIM_LOG"
+exit "${DOCKER_SHIM_RC:-0}"
+EOF
+chmod +x "$RUN_DIR/shim/docker"
+RUN_OLD_PATH="$PATH"
+export PATH="$RUN_DIR/shim:$PATH"
+export DOCKER_SHIM_LOG="$RUN_DIR/docker.log"
+export DOCKER_SHIM_RC=0
+
+# Deterministic TTY behavior: stdin comes from /dev/null in every dispatch
+# call below, so the runner always adds -T.
+runner_setup() {
+  reset_xcind_state
+  # shellcheck disable=SC2034  # read by the runner library
+  XCIND_DOCKER_COMPOSE_OPTS=(-f compose.yaml)
+  __XCIND_RUNNER_NO_TTY=0
+  __XCIND_RUNNER_STACK=""
+  : >"$DOCKER_SHIM_LOG"
+}
+
+# 1. Bin dispatch: exec argv, args appended
+runner_setup
+XCIND_BINS=("npm:app")
+__xcind-runner-load
+__xcind-runner-dispatch npm --version </dev/null
+assert_eq "dispatch bin exec argv" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+npm
+--version" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 2. use=run → run --rm
+runner_setup
+XCIND_BINS=("phpunit:app;use=run")
+__xcind-runner-load
+__xcind-runner-dispatch phpunit --group fast </dev/null
+assert_eq "dispatch bin use=run argv" \
+  "compose
+-f
+compose.yaml
+run
+--rm
+-T
+app
+phpunit
+--group
+fast" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 3. cmd with spaces splits into words
+runner_setup
+XCIND_BINS=("art:app;cmd=php artisan")
+__xcind-runner-load
+__xcind-runner-dispatch art migrate </dev/null
+assert_eq "dispatch cmd with spaces" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+php
+artisan
+migrate" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 4. Explicit -T (no-tty) flag is honored even with a tty
+runner_setup
+XCIND_BINS=("npm:app")
+__xcind-runner-load
+__XCIND_RUNNER_NO_TTY=1
+__xcind-runner-dispatch npm ci </dev/null
+assert_contains "dispatch explicit -T" "-T" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 5. @exec defaults to bash
+runner_setup
+__xcind-runner-load
+__xcind-runner-dispatch @exec app </dev/null
+assert_eq "dispatch @exec default bash" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+bash" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 6. @run without a command exits 64; without a service too
+runner_setup
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch @run app </dev/null 2>/dev/null || rc=$?
+assert_eq "dispatch @run no cmd rc" "64" "$rc"
+rc=0
+__xcind-runner-dispatch @exec </dev/null 2>/dev/null || rc=$?
+assert_eq "dispatch @exec no svc rc" "64" "$rc"
+
+# 7. @compose forwards verbatim (no -T, no service)
+runner_setup
+__xcind-runner-load
+__xcind-runner-dispatch @compose config --services </dev/null
+assert_eq "dispatch @compose verbatim" \
+  "compose
+-f
+compose.yaml
+config
+--services" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8. Unknown name exits 1
+runner_setup
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch nosuch </dev/null 2>/dev/null || rc=$?
+assert_eq "dispatch unknown name rc" "1" "$rc"
+
+# 9. Script steps run in order; host steps run on the host
+runner_setup
+XCIND_SCRIPTS=("build:
+    echo one >>'$RUN_DIR/order.log'
+    echo two >>'$RUN_DIR/order.log'")
+__xcind-runner-load
+__xcind-runner-dispatch build </dev/null
+assert_eq "dispatch script step order" "one
+two" "$(cat "$RUN_DIR/order.log")"
+assert_eq "dispatch host steps skip docker" "" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 10. Stop at first failure with its exit status
+runner_setup
+XCIND_SCRIPTS=("failing:
+    exit 3
+    echo never >>'$RUN_DIR/never.log'")
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch failing </dev/null || rc=$?
+assert_eq "dispatch stops at failure rc" "3" "$rc"
+assert_eq "dispatch stops before later steps" "false" \
+  "$([ -f "$RUN_DIR/never.log" ] && echo true || echo false)"
+
+# 11. A leading - ignores that step's failure
+runner_setup
+XCIND_SCRIPTS=("tolerant:
+    -exit 3
+    echo survived >>'$RUN_DIR/survived.log'")
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch tolerant </dev/null || rc=$?
+assert_eq "dispatch - prefix continues rc" "0" "$rc"
+assert_eq "dispatch - prefix continues" "survived" "$(cat "$RUN_DIR/survived.log")"
+
+# 12. One-step script with no \$@ appends args (host and @bin steps)
+runner_setup
+XCIND_SCRIPTS=("say:echo hello")
+__xcind-runner-load
+out=$(__xcind-runner-dispatch say big world </dev/null)
+assert_eq "dispatch one-step host append" "hello big world" "$out"
+
+runner_setup
+XCIND_BINS=("npm:app")
+XCIND_SCRIPTS=("install:@npm install")
+__xcind-runner-load
+__xcind-runner-dispatch install --frozen </dev/null
+assert_eq "dispatch one-step bin append" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+npm
+install
+--frozen" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 13. \$@ splices mid-step
+runner_setup
+XCIND_SCRIPTS=("wrap:
+    @exec app echo \$@ done
+    echo host-step >>'$RUN_DIR/wrap.log'")
+__xcind-runner-load
+__xcind-runner-dispatch wrap a b </dev/null
+assert_eq 'dispatch $@ splices mid-step' \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+echo
+a
+b
+done" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 14. Multi-step script without \$@ rejects args with 64
+runner_setup
+XCIND_SCRIPTS=("pair:
+    echo one
+    echo two")
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch pair extra </dev/null >/dev/null 2>&1 || rc=$?
+assert_eq "dispatch multi-step arg reject rc" "64" "$rc"
+
+# 15. Script calling a script; cycle exits 1 with the path
+runner_setup
+XCIND_SCRIPTS=("a:@b" "b:@a")
+__xcind-runner-load
+rc=0
+cycle_err_file=$(mktemp)
+__xcind-runner-dispatch a </dev/null 2>"$cycle_err_file" || rc=$?
+cycle_err=$(<"$cycle_err_file")
+rm -f "$cycle_err_file"
+assert_eq "dispatch cycle rc" "1" "$rc"
+assert_contains "dispatch cycle path" "script cycle: a -> b -> a" "$cycle_err"
+
+# 16. Unknown @ref inside a script names the script
+runner_setup
+XCIND_SCRIPTS=("broken:@nosuch")
+__xcind-runner-load
+rc=0
+ref_err_file=$(mktemp)
+__xcind-runner-dispatch broken </dev/null 2>"$ref_err_file" || rc=$?
+ref_err=$(<"$ref_err_file")
+rm -f "$ref_err_file"
+assert_eq "dispatch unknown ref rc" "1" "$rc"
+assert_contains "dispatch unknown ref message" "unknown bin or script 'nosuch'" "$ref_err"
+
+# 17. --list: bins before scripts, descs shown, _names hidden
+runner_setup
+XCIND_BINS=("npm:app;desc=Node package manager" "_secret:app")
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=("fresh:
+    # Rebuild everything
+    echo ok" "_hiddenscript:echo hi")
+__xcind-runner-load
+list_out=$(__xcind-runner-list 0)
+assert_contains "list shows bins header" "bins:" "$list_out"
+assert_contains "list shows scripts header" "scripts:" "$list_out"
+assert_contains "list shows bin desc" "Node package manager" "$list_out"
+assert_contains "list shows script desc" "Rebuild everything" "$list_out"
+assert_eq "list hides _ names" "false" \
+  "$(echo "$list_out" | grep -q '_secret\|_hiddenscript' && echo true || echo false)"
+assert_eq "list bins before scripts" "true" \
+  "$([ "$(echo "$list_out" | grep -n 'bins:' | cut -d: -f1)" -lt \
+    "$(echo "$list_out" | grep -n 'scripts:' | cut -d: -f1)" ] && echo true || echo false)"
+
+names_out=$(__xcind-runner-list 1)
+assert_eq "list --names bare" "npm
+fresh" "$names_out"
+
+# 18. Hidden names stay runnable
+runner_setup
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_BINS=("_secret:app")
+__xcind-runner-load
+__xcind-runner-dispatch _secret </dev/null
+assert_contains "hidden bin stays runnable" "_secret" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 19. bin/xcind-run flag surface (no app required)
+help_out=$("$XCIND_ROOT/bin/xcind-run" --help)
+assert_contains "xcind-run --help usage" "Usage: xcind-run" "$help_out"
+version_out=$("$XCIND_ROOT/bin/xcind-run" --version)
+assert_contains "xcind-run --version" "xcind-run" "$version_out"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --bogus 2>/dev/null || rc=$?
+assert_eq "xcind-run unknown flag rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --names 2>/dev/null || rc=$?
+assert_eq "xcind-run --names without --list rc" "64" "$rc"
+
+export PATH="$RUN_OLD_PATH"
+unset DOCKER_SHIM_LOG DOCKER_SHIM_RC
+rm -rf "$RUN_DIR"
+reset_xcind_state
+
+# ======================================================================
+echo ""
 echo "=== Test: xcind-app-hook ==="
 
 APP_HOOK_DIR=$(mktemp_d)

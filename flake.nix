@@ -130,6 +130,8 @@
               --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-proxy" \
               --prefix PATH : ${proxyPath}
+            wrapProgram "$out/bin/xcind-run" \
+              --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-workspace" \
               --prefix PATH : ${fullPath}
           '';
