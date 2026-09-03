@@ -563,9 +563,9 @@ ZSHEOF
   assert_line "zsh: 'resolve ' offers apex" \
     "apex:Apex hostname, URL and scheme" "$out"
   assert_line "zsh: 'resolve ' offers bins" \
-    "bins:Resolved bin paths and versions" "$out"
+    "bins:Declared bin commands and services" "$out"
   assert_line "zsh: 'resolve ' offers scripts" \
-    "scripts:Resolved script step lists" "$out"
+    "scripts:Declared script step lists" "$out"
 
   out=$(zcomp_run _xcind-run 2 xcind-run -)
   assert_line "zsh: xcind-run '-' offers --list" \

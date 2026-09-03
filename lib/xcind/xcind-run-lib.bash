@@ -36,6 +36,7 @@ __xcind-runner-parse-bins() {
 
   local seen_names=""
   local entry name service remainder use cmd desc key val
+  local _old_ifs pairs pair
 
   for entry in "${XCIND_BINS[@]}"; do
     # Must contain a colon
@@ -89,13 +90,11 @@ __xcind-runner-parse-bins() {
     cmd=""
     desc=""
     if [[ -n $remainder ]]; then
-      local _old_ifs="$IFS"
+      _old_ifs="$IFS"
       IFS=';'
-      local pairs
       # shellcheck disable=SC2206
       pairs=($remainder)
       IFS="$_old_ifs"
-      local pair
       for pair in "${pairs[@]}"; do
         # Skip empty pairs
         [[ -z $pair ]] && continue

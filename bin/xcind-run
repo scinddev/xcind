@@ -40,6 +40,8 @@ Options (before the name):
   --list            List runnable bins and scripts (names with a leading
                     _ are hidden but stay runnable)
   --names           With --list: print bare names only, one per line
+                    (--names requires --list; --list and --init-shell
+                    are mutually exclusive)
   --init-shell      Print wrapper functions for eval in a shell rc:
                     x-<name>() { xcind-run <name> "$@"; }
   --prefix PREFIX   With --init-shell: wrapper prefix (default x-)

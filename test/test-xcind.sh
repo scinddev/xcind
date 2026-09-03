@@ -4085,6 +4085,7 @@ export DOCKER_SHIM_RC=0
 # call below, so the runner always adds -T.
 runner_setup() {
   reset_xcind_state
+  unset XCIND_BINS XCIND_SCRIPTS
   # shellcheck disable=SC2034  # read by the runner library
   XCIND_DOCKER_COMPOSE_OPTS=(-f compose.yaml)
   __XCIND_RUNNER_NO_TTY=0
@@ -4344,6 +4345,8 @@ assert_contains "hidden bin stays runnable" "_secret" "$(cat "$DOCKER_SHIM_LOG")
 # 19. bin/xcind-run flag surface (no app required)
 help_out=$("$XCIND_ROOT/bin/xcind-run" --help)
 assert_contains "xcind-run --help usage" "Usage: xcind-run" "$help_out"
+assert_contains "xcind-run --help exclusivity" \
+  "--names requires --list; --list and --init-shell" "$help_out"
 version_out=$("$XCIND_ROOT/bin/xcind-run" --version)
 assert_contains "xcind-run --version" "xcind-run" "$version_out"
 rc=0
@@ -4352,6 +4355,9 @@ assert_eq "xcind-run unknown flag rc" "64" "$rc"
 rc=0
 "$XCIND_ROOT/bin/xcind-run" --names 2>/dev/null || rc=$?
 assert_eq "xcind-run --names without --list rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --names --init-shell 2>/dev/null || rc=$?
+assert_eq "xcind-run --names --init-shell rc" "64" "$rc"
 rc=0
 "$XCIND_ROOT/bin/xcind-run" --prefix "x-" --help >/dev/null 2>&1 || rc=$?
 assert_eq "xcind-run --prefix valid value rc" "0" "$rc"
