@@ -479,14 +479,19 @@ __xcind-runner-load() {
   __xcind-runner-parse-bins || return 1
   __xcind-runner-parse-scripts || return 1
 
-  local b s
-  for b in ${__XCIND_RUNNER_BIN_NAMES[@]+"${__XCIND_RUNNER_BIN_NAMES[@]}"}; do
-    for s in ${__XCIND_RUNNER_SCRIPT_NAMES[@]+"${__XCIND_RUNNER_SCRIPT_NAMES[@]}"}; do
-      if [[ $b == "$s" ]]; then
-        echo "duplicate name '$b' declared in both XCIND_BINS and XCIND_SCRIPTS" >&2
-        return 1
-      fi
-    done
+  # O(n+m) check: build a comma-delimited string of bin names, then scan
+  # each script name against it with a case-glob match.
+  local _bin_seen="" _n
+  for _n in ${__XCIND_RUNNER_BIN_NAMES[@]+"${__XCIND_RUNNER_BIN_NAMES[@]}"}; do
+    _bin_seen="${_bin_seen:+$_bin_seen,}$_n"
+  done
+  for _n in ${__XCIND_RUNNER_SCRIPT_NAMES[@]+"${__XCIND_RUNNER_SCRIPT_NAMES[@]}"}; do
+    case ",$_bin_seen," in
+    *",$_n,"*)
+      echo "duplicate name '$_n' declared in both XCIND_BINS and XCIND_SCRIPTS" >&2
+      return 1
+      ;;
+    esac
   done
   return 0
 }
