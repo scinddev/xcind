@@ -4341,6 +4341,15 @@ assert_eq "xcind-run unknown flag rc" "64" "$rc"
 rc=0
 "$XCIND_ROOT/bin/xcind-run" --names 2>/dev/null || rc=$?
 assert_eq "xcind-run --names without --list rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --prefix "x-" --help >/dev/null 2>&1 || rc=$?
+assert_eq "xcind-run --prefix valid value rc" "0" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --prefix "a;b" 2>/dev/null || rc=$?
+assert_eq "xcind-run --prefix invalid value rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --prefix="a b" 2>/dev/null || rc=$?
+assert_eq "xcind-run --prefix= invalid value rc" "64" "$rc"
 
 export PATH="$RUN_OLD_PATH"
 unset DOCKER_SHIM_LOG DOCKER_SHIM_RC

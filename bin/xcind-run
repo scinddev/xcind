@@ -91,10 +91,18 @@ while [[ $# -gt 0 ]]; do
       exit 64
     fi
     __xcind_run_prefix=$2
+    if [[ $__xcind_run_prefix =~ [^a-zA-Z0-9_-] ]]; then
+      echo "xcind-run: --prefix value must contain only alphanumeric, dash, or underscore characters" >&2
+      exit 64
+    fi
     shift 2
     ;;
   --prefix=*)
     __xcind_run_prefix=${1#--prefix=}
+    if [[ $__xcind_run_prefix =~ [^a-zA-Z0-9_-] ]]; then
+      echo "xcind-run: --prefix value must contain only alphanumeric, dash, or underscore characters" >&2
+      exit 64
+    fi
     shift
     ;;
   --help | -h)
