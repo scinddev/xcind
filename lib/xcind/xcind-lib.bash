@@ -26,8 +26,15 @@ if [ -f "$__XCIND_LIB_DIR/xcind-build-info.bash" ]; then
   source "$__XCIND_LIB_DIR/xcind-build-info.bash"
 fi
 
-# shellcheck source=xcind-run-lib.bash
-source "$__XCIND_LIB_DIR/xcind-run-lib.bash"
+# Lazy-load the run-lib only when needed (bins/scripts parsing, JSON
+# contract, SHA computation). Commands like xcind-compose and xcind-proxy
+# that never touch these paths skip the 840-line parse entirely.
+__xcind-ensure-run-lib() {
+  if [[ -n ${__XCIND_RUN_LIB_LOADED+x} ]]; then return 0; fi
+  # shellcheck source=xcind-run-lib.bash
+  source "$__XCIND_LIB_DIR/xcind-run-lib.bash"
+  __XCIND_RUN_LIB_LOADED=1
+}
 
 # Defaults — simplify downstream references under `set -u`.
 : "${XCIND_BUILD_SOURCE:=}"
@@ -850,6 +857,7 @@ __xcind-resolve-json() {
   fi
 
   # Validate bins and scripts, including their shared namespace.
+  __xcind-ensure-run-lib
   __xcind-runner-load || return 1
 
   local bins_json

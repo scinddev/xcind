@@ -18,6 +18,7 @@ unset _xcind_required
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XCIND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
+__xcind-ensure-run-lib
 
 PASS=0
 FAIL=0

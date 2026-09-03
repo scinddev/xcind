@@ -143,6 +143,7 @@ XCIND_PREPARE_USE_HOOKS_TTL=1
 __xcind-prepare-app || exit 1
 
 # Parse bins and scripts; a name in both namespaces is a load-time error.
+__xcind-ensure-run-lib
 __xcind-runner-load || exit 1
 
 if [[ $__xcind_run_list -eq 1 ]]; then
