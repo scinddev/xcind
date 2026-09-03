@@ -4029,6 +4029,20 @@ rm -f "$dup_ns_err_file"
 assert_contains "cross-namespace duplicate message" \
   "duplicate name 'deploy' declared in both XCIND_BINS and XCIND_SCRIPTS" "$dup_ns_err"
 
+# 11b. __xcind-runner-load guard skips re-parse
+reset_xcind_state
+XCIND_BINS=("npm:app")
+__xcind-runner-load
+# Mutate XCIND_BINS — the guard should skip re-parsing
+XCIND_BINS=("npm:app" "php:app")
+__xcind-runner-load
+assert_eq "runner-load guard skips re-parse" "1" "${#__XCIND_RUNNER_BIN_NAMES[@]}"
+# After reset the guard is cleared
+reset_xcind_state
+XCIND_BINS=("npm:app" "php:app")
+__xcind-runner-load
+assert_eq "runner-load re-parses after reset" "2" "${#__XCIND_RUNNER_BIN_NAMES[@]}"
+
 # 12. SHA changes when XCIND_SCRIPTS changes
 reset_xcind_state
 XCIND_SCRIPTS=("deploy:npm install")

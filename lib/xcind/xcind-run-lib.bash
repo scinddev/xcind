@@ -476,6 +476,7 @@ __xcind-runner-scripts-json() {
 # Parse both declaration arrays and enforce the shared namespace: a name
 # declared in both XCIND_BINS and XCIND_SCRIPTS is a load-time error.
 __xcind-runner-load() {
+  if [[ -n ${__XCIND_RUNNER_LOADED+x} ]]; then return 0; fi
   __xcind-runner-parse-bins || return 1
   __xcind-runner-parse-scripts || return 1
 
@@ -493,6 +494,7 @@ __xcind-runner-load() {
       ;;
     esac
   done
+  __XCIND_RUNNER_LOADED=1
   return 0
 }
 

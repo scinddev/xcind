@@ -46,6 +46,7 @@ reset_xcind_state() {
     XCIND_WORKSPACELESS \
     XCIND_IS_WORKSPACE
   __XCIND_SOURCED_CONFIG_FILES=()
+  unset __XCIND_RUNNER_LOADED 2>/dev/null || true
   # shellcheck disable=SC2034 # read by code-under-test via __xcind-build-compose-opts
   XCIND_DOCKER_COMPOSE_OPTS=()
 }
