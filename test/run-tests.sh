@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# test/run-tests.sh — Run every test file in parallel.
+# test/run-tests.sh — Run test files in parallel.
 #
-# Each file runs as its own background process with output buffered to a
-# per-file log, so parallel runs never interleave. Logs replay in the
-# fixed order below once each file finishes. Exits non-zero when any
-# file failed. Bash 3.2 compatible (no wait -n, no associative arrays).
+# Usage: run-tests.sh [test-file ...]
+#
+# With no arguments, runs every test file below. Arguments select a
+# subset (CI jobs use this for OS-gated runs); each may be a basename
+# or a test/-prefixed path. Each file runs as its own background
+# process with output buffered to a per-file log, so parallel runs
+# never interleave. Logs replay in the fixed order given once each
+# file finishes. Exits non-zero when any file failed. Bash 3.2
+# compatible (no wait -n, no associative arrays).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +20,21 @@ TEST_FILES=(
   test-xcind-prompt.sh
   test-xcind-completion.sh
 )
+if [ "$#" -gt 0 ]; then
+  TEST_FILES=("$@")
+fi
+
+# Normalize arguments to basenames and fail fast on a typo rather than
+# launching a background job that instantly dies.
+i=0
+for f in "${TEST_FILES[@]}"; do
+  TEST_FILES[i]="${f##*/}"
+  if [ ! -f "$SCRIPT_DIR/${TEST_FILES[i]}" ]; then
+    echo "run-tests.sh: no such test file: $f" >&2
+    exit 2
+  fi
+  i=$((i + 1))
+done
 
 LOG_DIR=$(mktemp -d)
 trap 'rm -rf "$LOG_DIR"' EXIT
