@@ -6,8 +6,6 @@
 # sourced by bin/xcind-run (and indirectly via xcind-lib.bash for the
 # JSON contract and SHA computation).
 
-__XCIND_RUN_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # --------------------------------------------------------------------------
 # Bins parsing
 # --------------------------------------------------------------------------
