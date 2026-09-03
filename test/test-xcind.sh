@@ -4182,6 +4182,17 @@ compose.yaml
 config
 --services" "$(cat "$DOCKER_SHIM_LOG")"
 
+# 7b. Unknown keyword on the exec-keyword helper exits 1
+runner_setup
+__xcind-runner-load
+rc=0
+kw_err_file=$(mktemp)
+__xcind-runner-exec-keyword @bogus app echo hi </dev/null 2>"$kw_err_file" || rc=$?
+kw_err=$(<"$kw_err_file")
+rm -f "$kw_err_file"
+assert_eq "dispatch unknown keyword rc" "1" "$rc"
+assert_contains "dispatch unknown keyword message" "unknown keyword '@bogus'" "$kw_err"
+
 # 8. Unknown name exits 1
 runner_setup
 __xcind-runner-load

@@ -607,6 +607,10 @@ __xcind-runner-exec-keyword() {
   @compose)
     __xcind-runner-compose "$@"
     ;;
+  *)
+    echo "xcind-run: unknown keyword '$kind'" >&2
+    return 1
+    ;;
   esac
 }
 
