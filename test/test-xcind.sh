@@ -4380,6 +4380,7 @@ XCIND_BINS=(
   "npm:app;desc=Node package manager"
   "artisan:app;cmd=php artisan;desc=Laravel console"
   "psql:db;use=run;desc=Postgres shell"
+  "frontend-dependency-check:app;desc=Frontend dependency check"
 )
 # shellcheck disable=SC2034  # read by __xcind-runner-load
 XCIND_SCRIPTS=()
@@ -4393,13 +4394,17 @@ assert_eq "list omits cmd equal to the name" "false" \
 assert_eq "list never prints -T" "false" \
   "$(echo "$tail_out" | grep -qF -- '-T' && echo true || echo false)"
 
-# Every description starts in the same column, despite the multibyte
-# ellipsis making byte counts and column counts disagree.
+# Every description starts in the same column, despite a name longer than
+# the 20-character minimum and the multibyte ellipsis in each tail.
 assert_eq "list aligns the desc column" "1" \
   "$(echo "$tail_out" | awk '
     { for (w = 1; w <= NF; w++)
-        if ($w == "Node" || $w == "Laravel" || $w == "Postgres")
+        if ($w == "Node" || $w == "Laravel" || $w == "Postgres" || $w == "Frontend")
           print index($0, $w) }' | sort -u | wc -l | tr -d ' ')"
+assert_eq "list --names stays bare with a long bin" "npm
+artisan
+psql
+frontend-dependency-check" "$(__xcind-runner-list 1)"
 
 # 17c. --list: script steps print under the script, '-' prefix kept
 runner_setup

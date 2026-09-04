@@ -102,7 +102,7 @@ without opening `.xcind.sh`:
 
 ```
 bins:
-  npm                  (… exec app)             Node package manager
+  npm                  (… exec app)                        Node package manager
   composer             (… exec app /usr/bin/composer)
   phpunit              (… run --rm app vendor/bin/phpunit) Run the test suite
 

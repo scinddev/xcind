@@ -817,14 +817,14 @@ __xcind-runner-list() {
   fi
 
   # Bins, pass 1: collect the visible entries and their tails, and measure
-  # the widest tail so the description column lines up. The padding is
+  # the widest name and tail so the description column lines up. Padding is
   # emitted as literal spaces, not through printf's field width: printf
   # counts that width in bytes while ${#tail} counts characters, and the
   # multibyte ellipsis makes the two disagree. Building the pad from
   # ${#tail} alone keeps every tail consistent in either locale, because
   # they all carry the same "(… " prefix.
   local visible_idx=() visible_tail=()
-  local tail_w=0
+  local name_w=20 tail_w=0
   i=0
   count=${#__XCIND_RUNNER_BIN_NAMES[@]}
   while [ "$i" -lt "$count" ]; do
@@ -833,6 +833,7 @@ __xcind-runner-list() {
       tail=$(__xcind-runner-bin-tail "$i")
       visible_idx+=("$i")
       visible_tail+=("$tail")
+      [ ${#name} -gt "$name_w" ] && name_w=${#name}
       [ ${#tail} -gt "$tail_w" ] && tail_w=${#tail}
     fi
     i=$((i + 1))
@@ -840,7 +841,7 @@ __xcind-runner-list() {
 
   # Bins, pass 2: print.
   local printed_bins=0
-  local idx pad n
+  local idx name_pad pad n
   i=0
   count=${#visible_idx[@]}
   while [ "$i" -lt "$count" ]; do
@@ -853,6 +854,12 @@ __xcind-runner-list() {
       echo "bins:"
       printed_bins=1
     fi
+    name_pad=""
+    n=$((name_w - ${#name}))
+    while [ "$n" -gt 0 ]; do
+      name_pad="$name_pad "
+      n=$((n - 1))
+    done
     if [[ -n $desc ]]; then
       pad=""
       n=$((tail_w - ${#tail}))
@@ -860,9 +867,9 @@ __xcind-runner-list() {
         pad="$pad "
         n=$((n - 1))
       done
-      printf '  %-20s %s%s %s\n' "$name" "$tail" "$pad" "$desc"
+      printf '  %s%s %s%s %s\n' "$name" "$name_pad" "$tail" "$pad" "$desc"
     else
-      printf '  %-20s %s\n' "$name" "$tail"
+      printf '  %s%s %s\n' "$name" "$name_pad" "$tail"
     fi
   done
 
