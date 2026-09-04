@@ -124,7 +124,8 @@ xcind-run -T <name> [args…]       # force -T (also automatic when not a termin
 xcind-run @exec <svc> [cmd…]      # docker compose exec (no cmd: bash)
 xcind-run @run <svc> <cmd…>       # docker compose run --rm
 xcind-run @compose <args…>        # docker compose, args verbatim
-xcind-run --list [--names]        # list runnable names (leading _ hides an entry)
+xcind-run --list                  # list bins with their compose tail, and scripts with their steps
+xcind-run --list --names          # bare names only (leading _ hides an entry)
 xcind-run --init-shell [--prefix PREFIX]  # print x-<name>() wrapper functions
 xcind-run --version
 ```
