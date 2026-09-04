@@ -3801,7 +3801,47 @@ else
   assert_eq "bins @-prefixed name error" "true" "true"
 fi
 
-# 14. SHA changes when XCIND_BINS changes
+# 14. A value that equals its key is a value, not a missing '='
+reset_xcind_state
+XCIND_BINS=("php:app;cmd=cmd" "art:app;desc=desc")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+# A regression here used to abort the whole suite under errexit, so capture
+# the failure and report it as a normal assertion instead.
+json=$(__xcind-resolve-json "$BINS_APP" 2>/dev/null || echo '{}')
+
+php_cmd=$(echo "$json" | jq -r '.bins.php.cmd // "PARSE-FAILED"')
+assert_eq "bins cmd=cmd is accepted" "cmd" "$php_cmd"
+
+art_desc=$(echo "$json" | jq -r '.bins.art.desc // "PARSE-FAILED"')
+assert_eq "bins desc=desc is accepted" "desc" "$art_desc"
+
+# 15. use=use is still rejected — but as a bad use value, not a missing '='
+reset_xcind_state
+XCIND_BINS=("php:app;use=use")
+use_err_file=$(mktemp)
+if __xcind-runner-bins-json >/dev/null 2>"$use_err_file"; then
+  assert_eq "bins use=use error" "false" "true"
+else
+  assert_eq "bins use=use error" "true" "true"
+fi
+assert_contains "bins use=use names the bad value" \
+  "invalid XCIND_BINS attribute 'use=use'" "$(cat "$use_err_file")"
+rm -f "$use_err_file"
+
+# 16. A pair with no '=' names the whole pair
+reset_xcind_state
+XCIND_BINS=("php:app;bogus")
+noeq_err_file=$(mktemp)
+if __xcind-runner-bins-json >/dev/null 2>"$noeq_err_file"; then
+  assert_eq "bins pair without '=' error" "false" "true"
+else
+  assert_eq "bins pair without '=' error" "true" "true"
+fi
+assert_contains "bins pair without '=' names the pair" \
+  "unknown XCIND_BINS attribute 'bogus'" "$(cat "$noeq_err_file")"
+rm -f "$noeq_err_file"
+# 17. SHA changes when XCIND_BINS changes
 reset_xcind_state
 XCIND_BINS=("php:app")
 __xcind-load-config "$BINS_APP"

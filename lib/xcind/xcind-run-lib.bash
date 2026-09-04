@@ -98,13 +98,14 @@ __xcind-runner-parse-bins() {
       for pair in "${pairs[@]}"; do
         # Skip empty pairs
         [[ -z $pair ]] && continue
-        key="${pair%%=*}"
-        val="${pair#*=}"
-        if [[ $key == "$val" ]]; then
-          # No '=' found — unknown key with no value
-          echo "unknown XCIND_BINS attribute '$key' in '$entry'" >&2
+        # Test the pair itself for '='. Comparing key to val would also fire
+        # when the value happens to equal the key (cmd=cmd, desc=desc).
+        if [[ $pair != *=* ]]; then
+          echo "unknown XCIND_BINS attribute '$pair' in '$entry'" >&2
           return 1
         fi
+        key="${pair%%=*}"
+        val="${pair#*=}"
         case "$key" in
         use)
           if [[ $val != "exec" ]] && [[ $val != "run" ]]; then
