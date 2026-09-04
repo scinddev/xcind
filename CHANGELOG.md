@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-09-04
+
+### Maintenance
+
+- feat: xcind-run — bins and scripts runner (#94) by @simensen in [#94](https://github.com/scinddev/xcind/pull/94)
 ## [0.7.1] - 2026-08-19
 
 ### Added
