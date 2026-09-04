@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - 2026-09-04
+
+### Added
+
+- feat(run): show the compose tail and script steps in --list (#95) by @simensen in [#95](https://github.com/scinddev/xcind/pull/95)
 ## [0.7.2] - 2026-09-04
 
 ### Maintenance
