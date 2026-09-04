@@ -503,6 +503,98 @@ else
 fi
 
 # ======================================================================
+echo "=== Test: xcind-shell-aliases — prefixed top-level wrappers ==="
+
+# The map that drives the wrappers must not drift from the `complete -F`
+# registrations, or a wrapper would attach a completion function the real
+# command does not use.
+map_pairs=$(printf '%s\n' "$__XCIND_SHELL_ALIAS_MAP" |
+  sed 's/\(.*\):\(.*\)/\2 xcind-\1/' | sort)
+reg_pairs=$(sed -n 's/^complete -F \([A-Za-z0-9_]*\) \(xcind-[a-z]*\)$/\1 \2/p' \
+  "$COMPLETION_TMP/xcind.bash" | sort)
+assert_eq "wrapper map matches the complete -F registrations" \
+  "$reg_pairs" "$map_pairs"
+
+# Default prefix: one function per command, each with the right completion.
+out=$(
+  set +e
+  xcind-shell-aliases
+  echo "rc=$?"
+  echo "x-config=$(type -t x-config)"
+  echo "x-compose=$(type -t x-compose)"
+  echo "x-run=$(type -t x-run)"
+  echo "x-app=$(type -t x-app)"
+  complete -p x-run x-config 2>/dev/null
+)
+assert_line "default prefix succeeds" "rc=0" "$out"
+assert_line "default prefix defines x-config" "x-config=function" "$out"
+assert_line "default prefix defines x-compose" "x-compose=function" "$out"
+assert_line "default prefix defines x-run" "x-run=function" "$out"
+assert_line "default prefix defines x-app" "x-app=function" "$out"
+assert_line "x-run carries xcind-run's completion" \
+  "complete -F _xcind_run_completions x-run" "$out"
+assert_line "x-config carries xcind-config's completion" \
+  "complete -F _xcind_config_completions x-config" "$out"
+
+out=$(
+  set +e
+  xcind-shell-aliases
+  declare -f x-config
+)
+assert_contains "x-config forwards to xcind-config" 'xcind-config "$@"' "$out"
+
+# Custom prefix.
+out=$(
+  set +e
+  xcind-shell-aliases xc-
+  echo "rc=$?"
+  echo "xc-config=$(type -t xc-config)"
+  echo "x-config=$(type -t x-config)"
+  complete -p xc-run 2>/dev/null
+)
+assert_line "custom prefix succeeds" "rc=0" "$out"
+assert_line "custom prefix defines xc-config" "xc-config=function" "$out"
+assert_line "custom prefix leaves x-config undefined" "x-config=" "$out"
+assert_line "xc-run carries xcind-run's completion" \
+  "complete -F _xcind_run_completions xc-run" "$out"
+
+# Bad prefix: same charset rule and wording as `xcind-run --prefix`.
+out=$(
+  set +e
+  xcind-shell-aliases 'a;b' 2>&1
+  echo "rc=$?"
+)
+assert_line "bad prefix exits 64" "rc=64" "$out"
+assert_contains "bad prefix explains the charset" \
+  "must contain only alphanumeric, dash, or underscore" "$out"
+
+out=$(
+  set +e
+  xcind-shell-aliases 'a b' >/dev/null 2>&1
+  echo "rc=$?"
+  echo "defined=$(declare -F | grep -c ' a ' || true)"
+)
+assert_line "prefix with a space exits 64" "rc=64" "$out"
+assert_line "rejected prefix defines nothing" "defined=0" "$out"
+
+# An empty prefix falls back to x-, matching `xcind-run --init-shell`.
+out=$(
+  set +e
+  xcind-shell-aliases ""
+  echo "x-proxy=$(type -t x-proxy)"
+)
+assert_line "empty prefix falls back to x-" "x-proxy=function" "$out"
+
+# The point of the whole feature: the completion functions ignore the invoked
+# command name, so a prefixed wrapper completes exactly like the real command.
+out=$(comp_run partial _xcind_run_completions x-run --)
+assert_line "x-run '--' offers --list" "--list" "$out"
+assert_line "x-run '--' offers --no-tty" "--no-tty" "$out"
+
+out=$(comp_run fresh _xcind_config_completions x-config)
+assert_line "x-config offers the resolve subcommand" "resolve" "$out"
+
+# ======================================================================
 echo "=== Test: zsh completion functions ==="
 
 if ! command -v zsh >/dev/null 2>&1; then
@@ -672,6 +764,59 @@ ZSHEOF
   assert_line "zsh: fallback offers 'up'" "up:Create and start containers" "$out"
   assert_no_line "zsh: fallback does not invent 'watch'" \
     "watch:Watch build context" "$out"
+
+  # -------------------------------------------------------------------
+  # xcind-shell-aliases (zsh)
+  #
+  # Needs a real compsys, not the zcomp_run driver: that driver stubs
+  # `compdef` to a no-op, which is exactly the call under test here.
+  # -------------------------------------------------------------------
+  ZSH_ALIAS_DRIVER="$COMPLETION_TMP/zsh-alias-driver.zsh"
+  cat >"$ZSH_ALIAS_DRIVER" <<'ZSHALIASEOF'
+# Usage: zsh driver.zsh <completion-file> [prefix]
+autoload -Uz compinit
+compinit -u -d "${TMPDIR:-/tmp}/xcind-comp-test-zcompdump-$$" 2>/dev/null
+source $1
+if (( $# > 1 )); then
+  xcind-shell-aliases "$2"
+else
+  xcind-shell-aliases
+fi
+print -r -- "rc=$?"
+local n
+for n in config compose run app; do
+  print -r -- "${2:-x-}${n}=${$(whence -w -- ${2:-x-}${n})#*: }"
+  print -r -- "comp:${2:-x-}${n}=${_comps[${2:-x-}${n}]}"
+done
+ZSHALIASEOF
+
+  out=$(zsh "$ZSH_ALIAS_DRIVER" "$ZSH_COMPLETION" 2>/dev/null || true)
+  assert_line "zsh: default prefix succeeds" "rc=0" "$out"
+  assert_line "zsh: default prefix defines x-config" "x-config=function" "$out"
+  assert_line "zsh: default prefix defines x-run" "x-run=function" "$out"
+  assert_line "zsh: x-run carries xcind-run's completion" \
+    "comp:x-run=_xcind-run" "$out"
+  assert_line "zsh: x-compose carries xcind-compose's completion" \
+    "comp:x-compose=_xcind-compose" "$out"
+
+  out=$(zsh "$ZSH_ALIAS_DRIVER" "$ZSH_COMPLETION" "xc-" 2>/dev/null || true)
+  assert_line "zsh: custom prefix defines xc-config" "xc-config=function" "$out"
+  assert_line "zsh: xc-run carries xcind-run's completion" \
+    "comp:xc-run=_xcind-run" "$out"
+
+  out=$(zsh "$ZSH_ALIAS_DRIVER" "$ZSH_COMPLETION" 'a;b' 2>&1 || true)
+  assert_line "zsh: bad prefix exits 64" "rc=64" "$out"
+  assert_contains "zsh: bad prefix explains the charset" \
+    "must contain only alphanumeric, dash, or underscore" "$out"
+
+  # Same drift guard as the bash side, against the compdef registrations.
+  map_pairs=$(zsh -c "source '$ZSH_COMPLETION' 2>/dev/null
+    print -r -- \$__XCIND_SHELL_ALIAS_MAP" |
+    sed 's/\(.*\):\(.*\)/\2 xcind-\1/' | sort)
+  reg_pairs=$(sed -n 's/^compdef \(_xcind-[a-z]*\) \(xcind-[a-z]*\)$/\1 \2/p' \
+    "$ZSH_COMPLETION" | sort)
+  assert_eq "zsh: wrapper map matches the compdef registrations" \
+    "$reg_pairs" "$map_pairs"
 fi
 
 # ======================================================================

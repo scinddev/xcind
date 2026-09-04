@@ -4,7 +4,7 @@ How to wire Xcind into your shell, editor, and dev container.
 
 ## Tab completion
 
-Xcind ships completions for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xcind-application`, and `xcind-workspace`.
+Xcind ships completions for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xcind-run`, `xcind-application`, and `xcind-workspace`.
 
 ```bash
 # Bash (~/.bashrc)
@@ -15,6 +15,27 @@ Xcind ships completions for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xci
 ```
 
 `xcind-compose` delegates to Docker's own completion, so you get the full `docker compose` UX.
+
+### Short names
+
+A hand-written `x-config() { xcind-config "$@"; }` loses completion: nothing is
+registered for `x-config`, so it falls back to filenames.
+`xcind-shell-aliases` defines the same wrappers and registers each one's
+completion:
+
+```bash
+. <(xcind-config completion bash)
+xcind-shell-aliases            # x-compose x-config x-proxy x-run x-workspace x-app x-application
+xcind-shell-aliases acme-      # acme-compose, acme-config, …
+```
+
+`x-compose <TAB>` then completes services and compose flags exactly as
+`xcind-compose <TAB>` does.
+
+The command set comes from the completion script, not from an app's
+`.xcind.sh`, so one call per shell covers every directory. Reach an app's
+bins and scripts through `xcind-run <TAB>`, which re-reads the current app on
+every request — see [Bins and scripts](./bins-and-scripts.md).
 
 ## Starship prompt
 

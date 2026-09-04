@@ -447,3 +447,41 @@ complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy
 complete -F _xcind_workspace_completions xcind-workspace
 complete -F _xcind_run_completions xcind-run
+
+# -----------------------------------------------------------------------------
+# Prefixed wrappers for the xcind commands
+# -----------------------------------------------------------------------------
+
+# Command suffix → completion function, for the wrappers below. Keep in sync
+# with the `complete -F` block above; test-xcind-completion.sh asserts the two
+# agree.
+__XCIND_SHELL_ALIAS_MAP="application:_xcind_application_completions
+app:_xcind_application_completions
+compose:_xcind_compose_completions
+config:_xcind_config_completions
+proxy:_xcind_proxy_completions
+workspace:_xcind_workspace_completions
+run:_xcind_run_completions"
+
+# Define <prefix><name> wrappers for the xcind commands and register each
+# one's completion, so `x-config …` completes like `xcind-config …` instead of
+# falling back to filenames.
+#
+# The command set comes from this file, not from an app's .xcind.sh, so one
+# call per shell covers every directory. Nothing here touches XCIND_BINS or
+# XCIND_SCRIPTS — reach those through `xcind-run`, whose completion re-reads
+# the current app on every request.
+#
+# Usage: xcind-shell-aliases [PREFIX]   (default prefix: x-)
+xcind-shell-aliases() {
+  local prefix=${1:-x-} short fn
+  if [[ $prefix =~ [^a-zA-Z0-9_-] ]]; then
+    echo "xcind-shell-aliases: prefix value must contain only alphanumeric, dash, or underscore characters" >&2
+    return 64
+  fi
+  while IFS=: read -r short fn; do
+    [ -z "$short" ] && continue
+    eval "${prefix}${short}() { xcind-${short} \"\$@\"; }"
+    complete -F "$fn" "${prefix}${short}"
+  done <<<"$__XCIND_SHELL_ALIAS_MAP"
+}

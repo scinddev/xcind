@@ -688,11 +688,47 @@ config:
 ```
 
 This registers completions for `xcind-compose`, `xcind-config`,
-`xcind-proxy`, `xcind-workspace`, and `xcind-application` (plus the
-`xcind-app` alias). For `xcind-compose`, completions invoke Docker's
+`xcind-proxy`, `xcind-run`, `xcind-workspace`, and `xcind-application` (plus
+the `xcind-app` alias). For `xcind-compose`, completions invoke Docker's
 `docker compose __complete` mechanism directly so you get the same experience
 as `docker compose` without requiring Docker's shell completion to be loaded.
 If that subprocess is unavailable or returns no suggestions, a hardcoded fallback list of common subcommands is used.
+
+### `xcind-shell-aliases [PREFIX]`
+
+Defined by both completion scripts. Defines one shell function per xcind
+command and registers that command's completion function against the new
+name, so a short name completes exactly like the command it wraps.
+
+**Default prefix:** `x-`
+
+**Wrapper name:** `<PREFIX><command minus its `xcind-` prefix>`, giving
+`x-application`, `x-app`, `x-compose`, `x-config`, `x-proxy`, `x-run`, and
+`x-workspace`. `xcind-prompt` is excluded: it draws prompt segments, has no
+completion, and is not typed interactively.
+
+**Validation:** `PREFIX` must match `[a-zA-Z0-9_-]*`; anything else returns
+64 with the same wording as [`xcind-run --prefix`](#xcind-run). An empty
+`PREFIX` falls back to `x-`.
+
+**Scope:** install-scoped. The command list lives in the completion script,
+not in an app's `.xcind.sh`, so one call per shell applies in every
+directory and no app resolution runs. It declares nothing for `XCIND_BINS` or
+`XCIND_SCRIPTS`; those stay reachable through `xcind-run`, whose own
+completion re-reads the current app on every request.
+
+Re-registration is sound because no completion function reads the invoked
+command name — `_xcind-compose` forwards `"${words[@]:1}"` to
+`docker __complete compose` and drops word 1. `test-xcind-completion.sh`
+asserts that the wrapper map and the `complete -F` / `compdef` registrations
+agree, so the two cannot drift.
+
+```bash
+. <(xcind-config completion bash)
+xcind-shell-aliases
+x-compose up -d
+x-config --json
+```
 
 ---
 

@@ -46,6 +46,10 @@ xcind-config --check                    # check system dependencies (yq, docker,
 xcind-config --version                  # version + build provenance
 xcind-config completion bash            # bash completions
 xcind-config completion zsh             # zsh completions
+
+# After sourcing either one, define completing short names (default prefix x-)
+xcind-shell-aliases                     # x-compose, x-config, x-run, …
+xcind-shell-aliases acme-               # acme-compose, acme-config, …
 ```
 
 `resolve` accepts dotted keys and array indexes such as `configFiles[0]`.
