@@ -29,7 +29,7 @@ Format: `name:service[;key=value…]`.
 |---|---|
 | `cmd` | Command inside the service. Default: the bin's name. May contain spaces; it is tokenized at run time. |
 | `use` | `exec` (default) attaches to the running container; `run` starts a fresh one with `run --rm`. |
-| `desc` | Shown by `xcind-run --list`. |
+| `desc` | Labels the entry in `xcind-run --list`. |
 
 Run a bin with `xcind-run <name> [args…]`. Args always append:
 
@@ -93,6 +93,35 @@ XCIND_SCRIPTS=(
 xcind-run test --group fast
 # lint gets no args; phpunit gets --group fast
 ```
+
+## Listing what is runnable
+
+`xcind-run --list` prints every visible bin and script. Each bin carries
+the tail of the Compose command it runs, so you can see where it lands
+without opening `.xcind.sh`:
+
+```
+bins:
+  npm                  (… exec app)             Node package manager
+  composer             (… exec app /usr/bin/composer)
+  phpunit              (… run --rm app vendor/bin/phpunit) Run the test suite
+
+scripts:
+  fresh                Reinstall node modules from scratch
+      -rm -rf node_modules
+      @npm install
+```
+
+- `exec` attaches to the running container. `run --rm` starts a fresh one.
+- The command appears only when it differs from the bin's name, so a bin
+  whose `cmd` is its own name stays short.
+- `-T` never appears. The runner decides that at run time from the TTY
+  state (see [TTY behavior](#tty-behavior)).
+- Scripts list their steps verbatim, including any leading `-`.
+
+`--list --names` prints bare names, one per line, with no service, no
+description, and no steps. That is the form to parse in scripts and
+completions.
 
 ## One namespace
 

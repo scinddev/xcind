@@ -774,12 +774,35 @@ __xcind-runner-dispatch() {
   fi
 }
 
+# Build the "(… exec app php artisan)" descriptor for one bin: the tail of
+# the docker compose command the bin actually runs. `cmd` is appended only
+# when it differs from the bin name, so the common case stays short. `-T`
+# is deliberately absent — the runner decides that at run time from the
+# TTY state.
+#   $1 = bin index
+__xcind-runner-bin-tail() {
+  local idx=$1
+  local name="${__XCIND_RUNNER_BIN_NAMES[$idx]}"
+  local service="${__XCIND_RUNNER_BIN_SERVICES[$idx]}"
+  local use="${__XCIND_RUNNER_BIN_USES[$idx]}"
+  local cmd="${__XCIND_RUNNER_BIN_CMDS[$idx]}"
+
+  local verb="exec"
+  [[ $use == "run" ]] && verb="run --rm"
+
+  if [[ $cmd == "$name" ]]; then
+    printf '(… %s %s)' "$verb" "$service"
+  else
+    printf '(… %s %s %s)' "$verb" "$service" "$cmd"
+  fi
+}
+
 # Print the declared bins and scripts. Names with a leading '_' are
 # hidden (but stay runnable).
 #   $1 = 1 to print bare names only
 __xcind-runner-list() {
   local names_only=${1:-0}
-  local i count name desc service
+  local i count name desc step steps tail
 
   if [[ $names_only == "1" ]]; then
     for name in ${__XCIND_RUNNER_BIN_NAMES[@]+"${__XCIND_RUNNER_BIN_NAMES[@]}"}; do
@@ -793,23 +816,53 @@ __xcind-runner-list() {
     return 0
   fi
 
-  local printed_bins=0
+  # Bins, pass 1: collect the visible entries and their tails, and measure
+  # the widest tail so the description column lines up. The padding is
+  # emitted as literal spaces, not through printf's field width: printf
+  # counts that width in bytes while ${#tail} counts characters, and the
+  # multibyte ellipsis makes the two disagree. Building the pad from
+  # ${#tail} alone keeps every tail consistent in either locale, because
+  # they all carry the same "(… " prefix.
+  local visible_idx=() visible_tail=()
+  local tail_w=0
   i=0
   count=${#__XCIND_RUNNER_BIN_NAMES[@]}
   while [ "$i" -lt "$count" ]; do
     name="${__XCIND_RUNNER_BIN_NAMES[$i]}"
-    service="${__XCIND_RUNNER_BIN_SERVICES[$i]}"
-    desc="${__XCIND_RUNNER_BIN_DESCS[$i]}"
+    if [[ $name != _* ]]; then
+      tail=$(__xcind-runner-bin-tail "$i")
+      visible_idx+=("$i")
+      visible_tail+=("$tail")
+      [ ${#tail} -gt "$tail_w" ] && tail_w=${#tail}
+    fi
     i=$((i + 1))
-    [[ $name == _* ]] && continue
+  done
+
+  # Bins, pass 2: print.
+  local printed_bins=0
+  local idx pad n
+  i=0
+  count=${#visible_idx[@]}
+  while [ "$i" -lt "$count" ]; do
+    idx="${visible_idx[$i]}"
+    name="${__XCIND_RUNNER_BIN_NAMES[$idx]}"
+    desc="${__XCIND_RUNNER_BIN_DESCS[$idx]}"
+    tail="${visible_tail[$i]}"
+    i=$((i + 1))
     if [[ $printed_bins -eq 0 ]]; then
       echo "bins:"
       printed_bins=1
     fi
     if [[ -n $desc ]]; then
-      printf '  %-20s %-12s %s\n' "$name" "($service)" "$desc"
+      pad=""
+      n=$((tail_w - ${#tail}))
+      while [ "$n" -gt 0 ]; do
+        pad="$pad "
+        n=$((n - 1))
+      done
+      printf '  %-20s %s%s %s\n' "$name" "$tail" "$pad" "$desc"
     else
-      printf '  %-20s %s\n' "$name" "($service)"
+      printf '  %-20s %s\n' "$name" "$tail"
     fi
   done
 
@@ -819,6 +872,7 @@ __xcind-runner-list() {
   while [ "$i" -lt "$count" ]; do
     name="${__XCIND_RUNNER_SCRIPT_NAMES[$i]}"
     desc="${__XCIND_RUNNER_SCRIPT_DESCS[$i]}"
+    steps="${__XCIND_RUNNER_SCRIPT_STEPS[$i]}"
     i=$((i + 1))
     [[ $name == _* ]] && continue
     if [[ $printed_scripts -eq 0 ]]; then
@@ -833,6 +887,12 @@ __xcind-runner-list() {
     else
       printf '  %s\n' "$name"
     fi
+    # A script's steps are the only record of where it runs; print them
+    # verbatim, keeping any leading '-' (ignore-failure).
+    while IFS= read -r step; do
+      [[ -z $step ]] && continue
+      printf '      %s\n' "$step"
+    done <<<"$steps"
   done
   return 0
 }

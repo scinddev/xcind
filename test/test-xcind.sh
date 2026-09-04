@@ -4374,6 +4374,48 @@ names_out=$(__xcind-runner-list 1)
 assert_eq "list --names bare" "npm
 fresh" "$names_out"
 
+# 17b. --list: bins show the compose tail; cmd only when it differs
+runner_setup
+XCIND_BINS=(
+  "npm:app;desc=Node package manager"
+  "artisan:app;cmd=php artisan;desc=Laravel console"
+  "psql:db;use=run;desc=Postgres shell"
+)
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=()
+__xcind-runner-load
+tail_out=$(__xcind-runner-list 0)
+assert_contains "list shows exec tail" "(… exec app)" "$tail_out"
+assert_contains "list shows cmd when it differs" "(… exec app php artisan)" "$tail_out"
+assert_contains "list shows run --rm tail" "(… run --rm db)" "$tail_out"
+assert_eq "list omits cmd equal to the name" "false" \
+  "$(echo "$tail_out" | grep -qF '(… exec app npm)' && echo true || echo false)"
+assert_eq "list never prints -T" "false" \
+  "$(echo "$tail_out" | grep -qF -- '-T' && echo true || echo false)"
+
+# Every description starts in the same column, despite the multibyte
+# ellipsis making byte counts and column counts disagree.
+assert_eq "list aligns the desc column" "1" \
+  "$(echo "$tail_out" | awk '
+    { for (w = 1; w <= NF; w++)
+        if ($w == "Node" || $w == "Laravel" || $w == "Postgres")
+          print index($0, $w) }' | sort -u | wc -l | tr -d ' ')"
+
+# 17c. --list: script steps print under the script, '-' prefix kept
+runner_setup
+XCIND_BINS=()
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=("fresh:
+    # Rebuild everything
+    @exec app composer install
+    -@exec app php artisan migrate")
+__xcind-runner-load
+steps_out=$(__xcind-runner-list 0)
+assert_contains "list shows script step" "@exec app composer install" "$steps_out"
+assert_contains "list keeps the - prefix" "-@exec app php artisan migrate" "$steps_out"
+assert_eq "list indents script steps" "true" \
+  "$(echo "$steps_out" | grep -q '^      @exec app composer install$' && echo true || echo false)"
+
 # 18. Hidden names stay runnable
 runner_setup
 # shellcheck disable=SC2034  # read by __xcind-runner-load
