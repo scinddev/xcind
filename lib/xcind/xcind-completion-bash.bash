@@ -124,7 +124,7 @@ _xcind_config_completions() {
   # bin/xcind-config and with the zsh completion.
   if [[ $prev == "resolve" ]]; then
     local resolve_keys="metadata appRoot configFiles composeFiles
-      composeEnvFiles appEnvFiles bakeFiles tools assignedExports
+      composeEnvFiles appEnvFiles bakeFiles bins scripts assignedExports
       proxiedExports apex compose. --help"
     COMPREPLY=($(compgen -W "$resolve_keys" -- "$cur"))
     return
@@ -396,6 +396,47 @@ _xcind_application_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-run: native completion
+# -----------------------------------------------------------------------------
+
+_xcind_run_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+  # Once a name is on the line, the words after it belong to that bin or
+  # script — offer nothing.
+  local i word
+  for ((i = 1; i < COMP_CWORD; i++)); do
+    word="${COMP_WORDS[$i]}"
+    case $word in
+    -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
+    --prefix) ((i++)) ;; # skip the prefix value
+    --prefix=*) ;;
+    *) return ;;
+    esac
+  done
+
+  # --prefix takes free text
+  if [[ $prev == "--prefix" ]]; then
+    return
+  fi
+
+  if [[ $cur == -* ]]; then
+    local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
+    COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+    return
+  fi
+
+  # First non-flag word: bin and script names from the app's declarations
+  local names
+  names=$(xcind-run --list --names 2>/dev/null)
+  if [[ -n $names ]]; then
+    COMPREPLY=($(compgen -W "$names" -- "$cur"))
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
@@ -405,3 +446,42 @@ complete -F _xcind_compose_completions xcind-compose
 complete -F _xcind_config_completions xcind-config
 complete -F _xcind_proxy_completions xcind-proxy
 complete -F _xcind_workspace_completions xcind-workspace
+complete -F _xcind_run_completions xcind-run
+
+# -----------------------------------------------------------------------------
+# Prefixed wrappers for the xcind commands
+# -----------------------------------------------------------------------------
+
+# Command suffix → completion function, for the wrappers below. Keep in sync
+# with the `complete -F` block above; test-xcind-completion.sh asserts the two
+# agree.
+__XCIND_SHELL_ALIAS_MAP="application:_xcind_application_completions
+app:_xcind_application_completions
+compose:_xcind_compose_completions
+config:_xcind_config_completions
+proxy:_xcind_proxy_completions
+workspace:_xcind_workspace_completions
+run:_xcind_run_completions"
+
+# Define <prefix><name> wrappers for the xcind commands and register each
+# one's completion, so `x-config …` completes like `xcind-config …` instead of
+# falling back to filenames.
+#
+# The command set comes from this file, not from an app's .xcind.sh, so one
+# call per shell covers every directory. Nothing here touches XCIND_BINS or
+# XCIND_SCRIPTS — reach those through `xcind-run`, whose completion re-reads
+# the current app on every request.
+#
+# Usage: xcind-shell-aliases [PREFIX]   (default prefix: x-)
+xcind-shell-aliases() {
+  local prefix=${1:-x-} short fn
+  if [[ $prefix =~ [^a-zA-Z0-9_-] ]]; then
+    echo "xcind-shell-aliases: prefix value must contain only alphanumeric, dash, or underscore characters" >&2
+    return 64
+  fi
+  while IFS=: read -r short fn; do
+    [ -z "$short" ] && continue
+    eval "${prefix}${short}() { xcind-${short} \"\$@\"; }"
+    complete -F "$fn" "${prefix}${short}"
+  done <<<"$__XCIND_SHELL_ALIAS_MAP"
+}

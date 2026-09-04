@@ -4,6 +4,7 @@ SHELL_FILES = \
 	bin/xcind-config \
 	bin/xcind-prompt \
 	bin/xcind-proxy \
+	bin/xcind-run \
 	bin/xcind-workspace \
 	lib/xcind/xcind-app-lib.bash \
 	lib/xcind/xcind-app-env-lib.bash \
@@ -18,7 +19,9 @@ SHELL_FILES = \
 	lib/xcind/xcind-naming-lib.bash \
 	lib/xcind/xcind-proxy-lib.bash \
 	lib/xcind/xcind-registry-lib.bash \
+	lib/xcind/xcind-run-lib.bash \
 	lib/xcind/xcind-workspace-lib.bash \
+	test/run-tests.sh \
 	test/test-xcind.sh \
 	test/test-xcind-proxy.sh \
 	test/test-xcind-prompt.sh \
@@ -31,10 +34,7 @@ SHELL_FILES = \
 .PHONY: test format shfmt shellcheck lint check changelog-preview
 
 test:
-	bash test/test-xcind.sh
-	bash test/test-xcind-proxy.sh
-	bash test/test-xcind-prompt.sh
-	bash test/test-xcind-completion.sh
+	bash test/run-tests.sh
 
 format:
 	shfmt --write .

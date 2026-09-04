@@ -40,7 +40,8 @@ Hook output is cached under `{app_root}/.xcind/generated/{sha}/`, keyed by a SHA
 - **Workspace `.xcind.sh`** — content hash when in workspace mode (`XCIND_WORKSPACELESS=0` and `XCIND_WORKSPACE_ROOT` set).
 - **Additional config files and their overrides** — every path tracked in `__XCIND_SOURCED_CONFIG_FILES` (workspace and app `XCIND_ADDITIONAL_CONFIG_FILES` plus their `.override.sh` siblings, and the workspace/app `.xcind.override.sh` files), excluding the app and workspace `.xcind.sh` already hashed above.
 - **Global proxy config** — content hash of `${XDG_CONFIG_HOME:-$HOME/.config}/xcind/proxy/config.sh` when present.
-- **`XCIND_TOOLS`** — the full declarations array, joined newline-separated, when non-empty.
+- **`XCIND_BINS`** — the full declarations array, joined newline-separated, when non-empty.
+- **`XCIND_SCRIPTS`** — the full declarations array, joined newline-separated, when non-empty.
 - **Naming inputs** — the literal values of `XCIND_APP`, `XCIND_WORKSPACE`, and `XCIND_WORKSPACELESS`, so naming overrides invalidate the cache even if no file changed.
 - **Instance token** — the per-worktree isolation token `XCIND_INSTANCE`, included **only when non-empty**. An empty instance (the main checkout) contributes nothing, so its SHA is byte-identical to pre-instance builds; each linked worktree with a distinct token gets its own cache and generated directories.
 - **Host-gateway configuration** — the literal values of `XCIND_HOST_GATEWAY_ENABLED` and `XCIND_HOST_GATEWAY`.

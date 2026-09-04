@@ -390,8 +390,9 @@ docker() {
   return 0
 }
 : >"$DOCKER_CALLS_FILE"
-# Touch config.sh to be newer than compose.yaml
-sleep 1
+# Make config.sh newer than compose.yaml by backdating the generated
+# file instead of sleeping past mtime resolution.
+touch -t 200001010000 "$XCIND_PROXY_COMPOSE"
 touch "$XCIND_PROXY_CONFIG_DIR/config.sh"
 staleness_stderr=$(__xcind-proxy-ensure-running 2>&1 1>/dev/null)
 assert_contains "staleness: warns when config.sh is newer" "config.sh changed; run 'xcind-proxy up' to apply" "$staleness_stderr"
@@ -1770,9 +1771,11 @@ MKCERT_STUB
   assert_file_exists "ensure-certs: domain marker created" "$XCIND_PROXY_STATE_DIR/certs/domain"
   marker_content=$(<"$XCIND_PROXY_STATE_DIR/certs/domain")
   assert_eq "ensure-certs: marker matches domain" "test.localhost" "$marker_content"
-  # Second call should reuse the existing cert (fast path)
+  # Second call should reuse the existing cert (fast path). Backdate the
+  # cert instead of sleeping past mtime resolution: a regeneration would
+  # stamp "now", which can never equal the backdated value.
+  touch -t 200001010000 "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt"
   first_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
-  sleep 1
   __xcind-proxy-ensure-certs 2>/dev/null
   second_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
   assert_eq "ensure-certs: reuses existing cert" "$first_mtime" "$second_mtime"
@@ -1829,8 +1832,15 @@ MKCERT_STUB
   # Second call is idempotent — user files haven't changed, so state mtime
   # should not be bumped. This validates the "refresh only when newer"
   # fast-path and prevents a stat/copy storm on every `xcind-proxy up`.
+  # Backdate instead of sleeping past mtime resolution: user files land in
+  # 2000 and the state copies in 2001, so the user files stay strictly
+  # older and the no-rewrite branch is taken. A wrongful rewrite would
+  # stamp the state cert with "now", which can never equal 2001.
+  touch -t 200001010000 "$XCIND_PROXY_CONFIG_DIR/certs/wildcard.crt" \
+    "$XCIND_PROXY_CONFIG_DIR/certs/wildcard.key"
+  touch -t 200101010000 "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" \
+    "$XCIND_PROXY_STATE_DIR/certs/wildcard.key"
   first_user_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
-  sleep 1
   __xcind-proxy-ensure-certs 2>/dev/null
   second_user_mtime=$(stat -c %Y "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt" 2>/dev/null || stat -f %m "$XCIND_PROXY_STATE_DIR/certs/wildcard.crt")
   assert_eq "ensure-certs auto: user-provided cert not rewritten on re-run" \
@@ -2596,8 +2606,18 @@ chmod +x "$PROBE_BIN/netstat"
 
 # Probe a port almost certainly free; failure here would indicate the
 # function trusted the empty netstat output instead of falling through.
+# Shim timeout so the /dev/tcp fall-through resolves instantly: on WSL2 a
+# connect to an unbound loopback port can hang until the timeout(1) cap
+# fires instead of being refused, costing a full second per probe. Exit
+# 124 mimics that timed-out (port free) result without a real connect.
+cat >"$PROBE_BIN/timeout" <<'MOCK_TIMEOUT'
+#!/bin/sh
+exit 124
+MOCK_TIMEOUT
+chmod +x "$PROBE_BIN/timeout"
 __xcind-assigned-port-available 65430 && ns_err_rc=0 || ns_err_rc=$?
 assert_eq "netstat err: falls through to /dev/tcp (free)" "0" "$ns_err_rc"
+rm -f "$PROBE_BIN/timeout"
 
 unset -f command
 rm -f "$PROBE_BIN/netstat"
@@ -2813,8 +2833,19 @@ assert_eq "prime with no tool: source=none" "none" "$__xcind_assigned_listener_c
 # With source=none, port-available must fall through to live probing
 # (here: the /dev/tcp branch). A stray port almost certainly free should
 # still report free — proving we did not trust the empty cache as
-# "nothing is listening".
+# "nothing is listening". Shim timeout (see the netstat-err probe above)
+# so the WSL2 loopback stall cannot cost a full second here.
+NONE_PROBE_BIN=$(mktemp_d)
+cat >"$NONE_PROBE_BIN/timeout" <<'MOCK_TIMEOUT'
+#!/bin/sh
+exit 124
+MOCK_TIMEOUT
+chmod +x "$NONE_PROBE_BIN/timeout"
+_none_orig_PATH="$PATH"
+export PATH="$NONE_PROBE_BIN:$PATH"
 __xcind-assigned-port-available 65431 && none_free_rc=0 || none_free_rc=$?
+export PATH="$_none_orig_PATH"
+unset _none_orig_PATH
 assert_eq "source=none: falls through, probes live" "0" "$none_free_rc"
 
 __xcind-assigned-clear-listener-cache
@@ -3849,7 +3880,7 @@ XCIND_HOOKS_ALWAYS=("xcind-assigned-hook")
 XCIND_PROXY_EXPORTS=("db=mysql:3306;type=assigned")
 # __xcind-resolve-json reads several variables that are normally populated
 # by the prepare-app pipeline; default them to empty for this isolated test.
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_COMPOSE_ENV_FILES=()
 XCIND_APP_ENV_FILES=()
 XCIND_COMPOSE_FILES=()

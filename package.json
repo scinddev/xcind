@@ -9,6 +9,7 @@
     "xcind-config": "bin/xcind-config",
     "xcind-prompt": "bin/xcind-prompt",
     "xcind-proxy": "bin/xcind-proxy",
+    "xcind-run": "bin/xcind-run",
     "xcind-workspace": "bin/xcind-workspace"
   },
   "files": [

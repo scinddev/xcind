@@ -18,6 +18,7 @@ unset _xcind_required
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XCIND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$XCIND_ROOT/lib/xcind/xcind-lib.bash"
+__xcind-ensure-run-lib
 
 PASS=0
 FAIL=0
@@ -2378,7 +2379,7 @@ echo "=== Test: JSON output includes apex object ==="
 APEX_WS=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=0
 XCIND_WORKSPACE="dev"
 XCIND_APP="xesapps"
@@ -2406,7 +2407,7 @@ rm -rf "$APEX_WS"
 APEX_WL=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -2435,7 +2436,7 @@ rm -rf "$APEX_WL"
 APEX_OFF_TMPL=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -2465,7 +2466,7 @@ rm -rf "$APEX_OFF_TMPL"
 APEX_OFF_EXP=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -2494,7 +2495,7 @@ rm -rf "$APEX_OFF_EXP"
 APEX_DERIVE=$(mktemp_d)
 reset_xcind_state
 __XCIND_SOURCED_CONFIG_FILES=()
-XCIND_TOOLS=()
+XCIND_BINS=()
 XCIND_WORKSPACELESS=1
 XCIND_WORKSPACE=""
 XCIND_APP="acmeapps"
@@ -3643,115 +3644,773 @@ assert_contains "completion combined: error message" \
 
 # ======================================================================
 echo ""
-echo "=== Test: XCIND_TOOLS parsing and JSON output ==="
+echo "=== Test: XCIND_BINS parsing and JSON output ==="
 
-# --- Setup: fresh app root for tools tests ---
-TOOLS_APP=$(mktemp_d)
-cat >"$TOOLS_APP/.xcind.sh" <<'EOF'
+# --- Setup: fresh app root for bins tests ---
+BINS_APP=$(mktemp_d)
+cat >"$BINS_APP/.xcind.sh" <<'EOF'
 XCIND_COMPOSE_FILES=("compose.yaml")
 EOF
-touch "$TOOLS_APP/compose.yaml"
+touch "$BINS_APP/compose.yaml"
 
-# 1. XCIND_TOOLS not set → "tools": {}
+# 1. XCIND_BINS not set → "bins": {}
 reset_xcind_state
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
-tools_obj=$(echo "$json" | jq -c '.tools')
-assert_eq "tools empty when XCIND_TOOLS unset" "{}" "$tools_obj"
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
+bins_obj=$(echo "$json" | jq -c '.bins')
+assert_eq "bins empty when XCIND_BINS unset" "{}" "$bins_obj"
+scripts_obj=$(echo "$json" | jq -c '.scripts')
+assert_eq "scripts placeholder present in JSON contract" "{}" "$scripts_obj"
 
-# 2. XCIND_TOOLS=() (explicit empty) → "tools": {}
+# 2. XCIND_BINS=() (explicit empty) → "bins": {}
 reset_xcind_state
-XCIND_TOOLS=()
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
-tools_obj=$(echo "$json" | jq -c '.tools')
-assert_eq "tools empty when XCIND_TOOLS=()" "{}" "$tools_obj"
+XCIND_BINS=()
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
+bins_obj=$(echo "$json" | jq -c '.bins')
+assert_eq "bins empty when XCIND_BINS=()" "{}" "$bins_obj"
 
-# 3. Basic tool declarations
+# 3. Basic bin declarations
 reset_xcind_state
-XCIND_TOOLS=("php:app" "npm:app")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("php:app" "npm:app")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-php_service=$(echo "$json" | jq -r '.tools.php.service')
-assert_eq "tools php service" "app" "$php_service"
+php_service=$(echo "$json" | jq -r '.bins.php.service')
+assert_eq "bins php service" "app" "$php_service"
 
-php_use=$(echo "$json" | jq -r '.tools.php.use')
-assert_eq "tools php use defaults to exec" "exec" "$php_use"
+php_use=$(echo "$json" | jq -r '.bins.php.use')
+assert_eq "bins php use defaults to exec" "exec" "$php_use"
 
-npm_service=$(echo "$json" | jq -r '.tools.npm.service')
-assert_eq "tools npm service" "app" "$npm_service"
+php_cmd=$(echo "$json" | jq -r '.bins.php.cmd')
+assert_eq "bins php cmd defaults to name" "php" "$php_cmd"
 
-tools_count=$(echo "$json" | jq '.tools | length')
-assert_eq "tools count" "2" "$tools_count"
+npm_service=$(echo "$json" | jq -r '.bins.npm.service')
+assert_eq "bins npm service" "app" "$npm_service"
+
+bins_count=$(echo "$json" | jq '.bins | length')
+assert_eq "bins count" "2" "$bins_count"
 
 # 4. use=run is reflected
 reset_xcind_state
-XCIND_TOOLS=("phpunit:app;use=run")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("phpunit:app;use=run")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-phpunit_use=$(echo "$json" | jq -r '.tools.phpunit.use')
-assert_eq "tools phpunit use=run" "run" "$phpunit_use"
+phpunit_use=$(echo "$json" | jq -r '.bins.phpunit.use')
+assert_eq "bins phpunit use=run" "run" "$phpunit_use"
 
-# 5. path appears only when specified
+# 5. cmd appears only when specified
 reset_xcind_state
-XCIND_TOOLS=("php:app" "php85:app;path=/usr/local/bin/php8.5")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("php:app" "php85:app;cmd=/usr/local/bin/php8.5")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-php_has_path=$(echo "$json" | jq 'has("tools") and (.tools.php | has("path"))')
-assert_eq "tools php has no path key" "false" "$php_has_path"
+php_has_cmd=$(echo "$json" | jq 'has("bins") and (.bins.php | has("cmd"))')
+assert_eq "bins php has cmd (default)" "true" "$php_has_cmd"
 
-php85_path=$(echo "$json" | jq -r '.tools.php85.path')
-assert_eq "tools php85 path" "/usr/local/bin/php8.5" "$php85_path"
+php85_cmd=$(echo "$json" | jq -r '.bins.php85.cmd')
+assert_eq "bins php85 cmd" "/usr/local/bin/php8.5" "$php85_cmd"
 
-# 6. Duplicate tool names → first wins
+# 6. Duplicate bin names → error
 reset_xcind_state
-XCIND_TOOLS=("php:app" "php:cron")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
-
-dup_service=$(echo "$json" | jq -r '.tools.php.service')
-assert_eq "tools duplicate first wins service" "app" "$dup_service"
-
-dup_count=$(echo "$json" | jq '.tools | length')
-assert_eq "tools duplicate count is 1" "1" "$dup_count"
+XCIND_BINS=("php:app" "php:cron")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+dup_err_file=$(mktemp)
+if __xcind-resolve-json "$BINS_APP" >/dev/null 2>"$dup_err_file"; then
+  assert_eq "bins duplicate names error" "false" "true"
+else
+  assert_eq "bins duplicate names error" "true" "true"
+fi
+dup_err=$(<"$dup_err_file")
+rm -f "$dup_err_file"
+assert_contains "bins duplicate names message" \
+  "duplicate XCIND_BINS entry 'php'" "$dup_err"
 
 # 7. Multiple metadata key=value pairs
 reset_xcind_state
-XCIND_TOOLS=("php:app;use=run;path=/usr/bin/php")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-json=$(__xcind-resolve-json "$TOOLS_APP")
+XCIND_BINS=("php:app;use=run;cmd=/usr/bin/php")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
 
-multi_use=$(echo "$json" | jq -r '.tools.php.use')
-assert_eq "tools multi-meta use" "run" "$multi_use"
+multi_use=$(echo "$json" | jq -r '.bins.php.use')
+assert_eq "bins multi-meta use" "run" "$multi_use"
 
-multi_path=$(echo "$json" | jq -r '.tools.php.path')
-assert_eq "tools multi-meta path" "/usr/bin/php" "$multi_path"
+multi_cmd=$(echo "$json" | jq -r '.bins.php.cmd')
+assert_eq "bins multi-meta cmd" "/usr/bin/php" "$multi_cmd"
 
-# 8. SHA changes when XCIND_TOOLS changes
+# 8. desc is included when given
 reset_xcind_state
-XCIND_TOOLS=("php:app")
-__xcind-load-config "$TOOLS_APP"
-__xcind-build-compose-opts "$TOOLS_APP"
-sha1=$(__xcind-compute-sha "$TOOLS_APP")
+XCIND_BINS=("php:app;desc=PHP interpreter")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+json=$(__xcind-resolve-json "$BINS_APP")
+
+php_desc=$(echo "$json" | jq -r '.bins.php.desc')
+assert_eq "bins desc" "PHP interpreter" "$php_desc"
+
+# 9. Validation: missing colon
+reset_xcind_state
+XCIND_BINS=("phpapp")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins missing colon error" "false" "true"
+else
+  assert_eq "bins missing colon error" "true" "true"
+fi
+
+# 10. Validation: empty service
+reset_xcind_state
+XCIND_BINS=("php:")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins empty service error" "false" "true"
+else
+  assert_eq "bins empty service error" "true" "true"
+fi
+
+# 11. Validation: unknown key
+reset_xcind_state
+XCIND_BINS=("php:app;foo=bar")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins unknown key error" "false" "true"
+else
+  assert_eq "bins unknown key error" "true" "true"
+fi
+
+# 12. Validation: invalid use
+reset_xcind_state
+XCIND_BINS=("php:app;use=invalid")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins invalid use error" "false" "true"
+else
+  assert_eq "bins invalid use error" "true" "true"
+fi
+
+# 13. Validation: @-prefixed name
+reset_xcind_state
+XCIND_BINS=("@php:app")
+if __xcind-runner-bins-json 2>/dev/null; then
+  assert_eq "bins @-prefixed name error" "false" "true"
+else
+  assert_eq "bins @-prefixed name error" "true" "true"
+fi
+
+# 14. A value that equals its key is a value, not a missing '='
+reset_xcind_state
+XCIND_BINS=("php:app;cmd=cmd" "art:app;desc=desc")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+# A regression here used to abort the whole suite under errexit, so capture
+# the failure and report it as a normal assertion instead.
+json=$(__xcind-resolve-json "$BINS_APP" 2>/dev/null || echo '{}')
+
+php_cmd=$(echo "$json" | jq -r '.bins.php.cmd // "PARSE-FAILED"')
+assert_eq "bins cmd=cmd is accepted" "cmd" "$php_cmd"
+
+art_desc=$(echo "$json" | jq -r '.bins.art.desc // "PARSE-FAILED"')
+assert_eq "bins desc=desc is accepted" "desc" "$art_desc"
+
+# 15. use=use is still rejected — but as a bad use value, not a missing '='
+reset_xcind_state
+XCIND_BINS=("php:app;use=use")
+use_err_file=$(mktemp)
+if __xcind-runner-bins-json >/dev/null 2>"$use_err_file"; then
+  assert_eq "bins use=use error" "false" "true"
+else
+  assert_eq "bins use=use error" "true" "true"
+fi
+assert_contains "bins use=use names the bad value" \
+  "invalid XCIND_BINS attribute 'use=use'" "$(cat "$use_err_file")"
+rm -f "$use_err_file"
+
+# 16. A pair with no '=' names the whole pair
+reset_xcind_state
+XCIND_BINS=("php:app;bogus")
+noeq_err_file=$(mktemp)
+if __xcind-runner-bins-json >/dev/null 2>"$noeq_err_file"; then
+  assert_eq "bins pair without '=' error" "false" "true"
+else
+  assert_eq "bins pair without '=' error" "true" "true"
+fi
+assert_contains "bins pair without '=' names the pair" \
+  "unknown XCIND_BINS attribute 'bogus'" "$(cat "$noeq_err_file")"
+rm -f "$noeq_err_file"
+# 17. SHA changes when XCIND_BINS changes
+reset_xcind_state
+XCIND_BINS=("php:app")
+__xcind-load-config "$BINS_APP"
+__xcind-build-compose-opts "$BINS_APP"
+sha1=$(__xcind-compute-sha "$BINS_APP")
 
 # shellcheck disable=SC2034  # read by __xcind-compute-sha
-XCIND_TOOLS=("php:app" "npm:app")
-sha2=$(__xcind-compute-sha "$TOOLS_APP")
+XCIND_BINS=("php:app" "npm:app")
+sha2=$(__xcind-compute-sha "$BINS_APP")
 
-assert_eq "SHA changes when XCIND_TOOLS changes" "true" \
+assert_eq "SHA changes when XCIND_BINS changes" "true" \
   "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
 
-rm -rf "$TOOLS_APP"
+rm -rf "$BINS_APP"
+reset_xcind_state
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-runner-split ==="
+
+# 1. Plain words
+__xcind-runner-split "php artisan migrate"
+assert_eq "split plain word count" "3" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split plain word 0" "php" "${__XCIND_RUNNER_TOKENS[0]}"
+assert_eq "split plain word 2" "migrate" "${__XCIND_RUNNER_TOKENS[2]}"
+assert_eq "split plain splice 0" "0" "${__XCIND_RUNNER_SPLICE[0]}"
+
+# 2. Tabs also separate tokens
+__xcind-runner-split "a	b"
+assert_eq "split tab count" "2" "${#__XCIND_RUNNER_TOKENS[@]}"
+
+# 3. Single quotes are literal
+__xcind-runner-split "echo 'a b' c"
+assert_eq "split single-quote count" "3" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split single-quote token" "a b" "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 4. Double quotes with escaped quote
+__xcind-runner-split 'say "he said \"hi\""'
+assert_eq "split dquote count" "2" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split dquote token" 'he said "hi"' "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 5. In double quotes a backslash escapes only \" \\ and \$
+__xcind-runner-split '"a\nb" "c\$d"'
+assert_eq "split dquote backslash literal" 'a\nb' "${__XCIND_RUNNER_TOKENS[0]}"
+assert_eq "split dquote escaped dollar" 'c$d' "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 6. Unquoted backslash escapes the next character
+__xcind-runner-split 'a\ b'
+assert_eq "split backslash-space count" "1" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split backslash-space token" "a b" "${__XCIND_RUNNER_TOKENS[0]}"
+
+# 7. Empty token from ""
+__xcind-runner-split '"" x'
+assert_eq "split empty-token count" "2" "${#__XCIND_RUNNER_TOKENS[@]}"
+assert_eq "split empty token" "" "${__XCIND_RUNNER_TOKENS[0]}"
+
+# 8. Unterminated quote returns 64
+rc=0
+__xcind-runner-split '"oops' 2>/dev/null || rc=$?
+assert_eq "split unterminated quote rc" "64" "$rc"
+rc=0
+__xcind-runner-split "'oops" 2>/dev/null || rc=$?
+assert_eq "split unterminated single quote rc" "64" "$rc"
+
+# 9. $@ and "$@" are splice-flagged
+__xcind-runner-split 'run $@ now'
+assert_eq 'split $@ splice' "1" "${__XCIND_RUNNER_SPLICE[1]}"
+assert_eq 'split around $@ splice' "0" "${__XCIND_RUNNER_SPLICE[2]}"
+__xcind-runner-split 'run "$@"'
+assert_eq 'split quoted $@ splice' "1" "${__XCIND_RUNNER_SPLICE[1]}"
+
+# 10. '$@' and --file=$@ are literals, not splices
+__xcind-runner-split "run '\$@'"
+assert_eq 'split single-quoted $@ splice' "0" "${__XCIND_RUNNER_SPLICE[1]}"
+assert_eq 'split single-quoted $@ token' '$@' "${__XCIND_RUNNER_TOKENS[1]}"
+__xcind-runner-split 'run --file=$@'
+assert_eq 'split embedded $@ splice' "0" "${__XCIND_RUNNER_SPLICE[1]}"
+assert_eq 'split embedded $@ token' '--file=$@' "${__XCIND_RUNNER_TOKENS[1]}"
+
+# 11. No variable, command, or glob expansion
+__xcind-runner-split '* $HOME $(id)'
+assert_eq "split no glob expansion" "*" "${__XCIND_RUNNER_TOKENS[0]}"
+assert_eq "split no var expansion" '$HOME' "${__XCIND_RUNNER_TOKENS[1]}"
+assert_eq "split no command expansion" '$(id)' "${__XCIND_RUNNER_TOKENS[2]}"
+
+# ======================================================================
+echo ""
+echo "=== Test: __xcind-runner-scripts-json ==="
+
+# 1. Empty or unset XCIND_SCRIPTS returns {}
+reset_xcind_state
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts empty when unset" "{}" "$scripts"
+XCIND_SCRIPTS=()
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts empty when XCIND_SCRIPTS=()" "{}" "$scripts"
+
+# 2. Single-line form: one step on the name's line
+reset_xcind_state
+XCIND_SCRIPTS=("fresh:php artisan migrate:fresh --seed")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts single-line step count" "1" "$(echo "$scripts" | jq '.fresh.steps | length')"
+assert_eq "scripts single-line step" "php artisan migrate:fresh --seed" \
+  "$(echo "$scripts" | jq -r '.fresh.steps[0]')"
+assert_eq "scripts single-line has no desc" "false" "$(echo "$scripts" | jq '.fresh | has("desc")')"
+
+# 3. Multi-line form trims steps and skips blanks
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:
+    npm install
+
+    php artisan migrate
+  ")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts multi-line step count" "2" "$(echo "$scripts" | jq '.deploy.steps | length')"
+assert_eq "scripts multi-line step 0" "npm install" "$(echo "$scripts" | jq -r '.deploy.steps[0]')"
+assert_eq "scripts multi-line step 1" "php artisan migrate" "$(echo "$scripts" | jq -r '.deploy.steps[1]')"
+
+# 4. First # comment is the description; all comments drop from steps
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:
+    # Deploy the application
+    npm install
+    # not the description
+    php artisan migrate")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts desc from first comment" "Deploy the application" \
+  "$(echo "$scripts" | jq -r '.deploy.desc')"
+assert_eq "scripts comments dropped from steps" "2" "$(echo "$scripts" | jq '.deploy.steps | length')"
+
+# 5. Leading - is kept in the stored step
+reset_xcind_state
+XCIND_SCRIPTS=("reset:
+    -php artisan down
+    php artisan up")
+scripts=$(__xcind-runner-scripts-json)
+assert_eq "scripts keeps - prefix" "-php artisan down" "$(echo "$scripts" | jq -r '.reset.steps[0]')"
+
+# 6. Bare - step is an error
+reset_xcind_state
+XCIND_SCRIPTS=("bad:
+    -
+    echo ok")
+if __xcind-runner-scripts-json >/dev/null 2>&1; then
+  assert_eq "scripts bare - error" "false" "true"
+else
+  assert_eq "scripts bare - error" "true" "true"
+fi
+
+# 7. No steps (only comments and blanks) is an error
+reset_xcind_state
+XCIND_SCRIPTS=("empty:
+    # just a comment
+  ")
+scripts_err_file=$(mktemp)
+if __xcind-runner-scripts-json >/dev/null 2>"$scripts_err_file"; then
+  assert_eq "scripts no steps error" "false" "true"
+else
+  assert_eq "scripts no steps error" "true" "true"
+fi
+scripts_err=$(<"$scripts_err_file")
+rm -f "$scripts_err_file"
+assert_contains "scripts no steps message" "script 'empty' has no steps" "$scripts_err"
+
+# 8. Header validation: missing colon, empty name, reserved names
+reset_xcind_state
+for bad_entry in "nocolon" ":steps here" "@x:step" "-x:step" "a b:step"; do
+  XCIND_SCRIPTS=("$bad_entry")
+  if __xcind-runner-scripts-json >/dev/null 2>&1; then
+    assert_eq "scripts invalid header '$bad_entry' error" "false" "true"
+  else
+    assert_eq "scripts invalid header '$bad_entry' error" "true" "true"
+  fi
+done
+
+# 9. Duplicate script names error
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:npm install" "deploy:php artisan migrate")
+if __xcind-runner-scripts-json >/dev/null 2>&1; then
+  assert_eq "scripts duplicate names error" "false" "true"
+else
+  assert_eq "scripts duplicate names error" "true" "true"
+fi
+
+# ======================================================================
+echo ""
+echo "=== Test: scripts in the JSON contract ==="
+
+SCRIPTS_APP=$(mktemp_d)
+cat >"$SCRIPTS_APP/.xcind.sh" <<'EOF'
+XCIND_APP="scripts-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+EOF
+touch "$SCRIPTS_APP/compose.yaml"
+
+# 10. resolve-json carries scripts with steps and desc
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:
+    # Deploy the application
+    @npm install
+    php artisan migrate")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+json=$(__xcind-resolve-json "$SCRIPTS_APP")
+assert_eq "resolve-json script steps" "2" "$(echo "$json" | jq '.scripts.deploy.steps | length')"
+assert_eq "resolve-json script desc" "Deploy the application" \
+  "$(echo "$json" | jq -r '.scripts.deploy.desc')"
+assert_eq "resolve-json script step 0" "@npm install" \
+  "$(echo "$json" | jq -r '.scripts.deploy.steps[0]')"
+
+# 11. A name in both XCIND_BINS and XCIND_SCRIPTS fails resolve-json
+reset_xcind_state
+XCIND_BINS=("deploy:app")
+XCIND_SCRIPTS=("deploy:npm install")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+dup_ns_err_file=$(mktemp)
+if __xcind-resolve-json "$SCRIPTS_APP" >/dev/null 2>"$dup_ns_err_file"; then
+  assert_eq "cross-namespace duplicate error" "false" "true"
+else
+  assert_eq "cross-namespace duplicate error" "true" "true"
+fi
+dup_ns_err=$(<"$dup_ns_err_file")
+rm -f "$dup_ns_err_file"
+assert_contains "cross-namespace duplicate message" \
+  "duplicate name 'deploy' declared in both XCIND_BINS and XCIND_SCRIPTS" "$dup_ns_err"
+
+# 11b. __xcind-runner-load guard skips re-parse
+reset_xcind_state
+XCIND_BINS=("npm:app")
+__xcind-runner-load
+# Mutate XCIND_BINS — the guard should skip re-parsing
+XCIND_BINS=("npm:app" "php:app")
+__xcind-runner-load
+assert_eq "runner-load guard skips re-parse" "1" "${#__XCIND_RUNNER_BIN_NAMES[@]}"
+# After reset the guard is cleared
+reset_xcind_state
+XCIND_BINS=("npm:app" "php:app")
+__xcind-runner-load
+assert_eq "runner-load re-parses after reset" "2" "${#__XCIND_RUNNER_BIN_NAMES[@]}"
+
+# 12. SHA changes when XCIND_SCRIPTS changes
+reset_xcind_state
+XCIND_SCRIPTS=("deploy:npm install")
+__xcind-load-config "$SCRIPTS_APP"
+__xcind-build-compose-opts "$SCRIPTS_APP"
+sha1=$(__xcind-compute-sha "$SCRIPTS_APP")
+
+# shellcheck disable=SC2034  # read by __xcind-compute-sha
+XCIND_SCRIPTS=("deploy:npm install
+php artisan migrate")
+sha2=$(__xcind-compute-sha "$SCRIPTS_APP")
+
+assert_eq "SHA changes when XCIND_SCRIPTS changes" "true" \
+  "$([ "$sha1" != "$sha2" ] && echo true || echo false)"
+
+rm -rf "$SCRIPTS_APP"
+reset_xcind_state
+
+# ======================================================================
+echo ""
+echo "=== Test: xcind-run dispatch ==="
+
+# Fixture: a docker shim first on PATH that logs its argv one arg per line
+# and exits with ${DOCKER_SHIM_RC:-0}. Dispatch functions are exercised
+# directly against parsed bins/scripts with fixed compose opts.
+RUN_DIR=$(mktemp_d)
+mkdir -p "$RUN_DIR/shim"
+cat >"$RUN_DIR/shim/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >>"$DOCKER_SHIM_LOG"
+exit "${DOCKER_SHIM_RC:-0}"
+EOF
+chmod +x "$RUN_DIR/shim/docker"
+RUN_OLD_PATH="$PATH"
+export PATH="$RUN_DIR/shim:$PATH"
+export DOCKER_SHIM_LOG="$RUN_DIR/docker.log"
+export DOCKER_SHIM_RC=0
+
+# Deterministic TTY behavior: stdin comes from /dev/null in every dispatch
+# call below, so the runner always adds -T.
+runner_setup() {
+  reset_xcind_state
+  unset XCIND_BINS XCIND_SCRIPTS
+  # shellcheck disable=SC2034  # read by the runner library
+  XCIND_DOCKER_COMPOSE_OPTS=(-f compose.yaml)
+  __XCIND_RUNNER_NO_TTY=0
+  __XCIND_RUNNER_STACK=""
+  : >"$DOCKER_SHIM_LOG"
+}
+
+# 1. Bin dispatch: exec argv, args appended
+runner_setup
+XCIND_BINS=("npm:app")
+__xcind-runner-load
+__xcind-runner-dispatch npm --version </dev/null
+assert_eq "dispatch bin exec argv" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+npm
+--version" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 2. use=run → run --rm
+runner_setup
+XCIND_BINS=("phpunit:app;use=run")
+__xcind-runner-load
+__xcind-runner-dispatch phpunit --group fast </dev/null
+assert_eq "dispatch bin use=run argv" \
+  "compose
+-f
+compose.yaml
+run
+--rm
+-T
+app
+phpunit
+--group
+fast" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 3. cmd with spaces splits into words
+runner_setup
+XCIND_BINS=("art:app;cmd=php artisan")
+__xcind-runner-load
+__xcind-runner-dispatch art migrate </dev/null
+assert_eq "dispatch cmd with spaces" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+php
+artisan
+migrate" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 4. Explicit -T (no-tty) flag is honored even with a tty
+runner_setup
+XCIND_BINS=("npm:app")
+__xcind-runner-load
+__XCIND_RUNNER_NO_TTY=1
+__xcind-runner-dispatch npm ci </dev/null
+assert_contains "dispatch explicit -T" "-T" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 5. @exec defaults to bash
+runner_setup
+__xcind-runner-load
+__xcind-runner-dispatch @exec app </dev/null
+assert_eq "dispatch @exec default bash" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+bash" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 6. @run without a command exits 64; without a service too
+runner_setup
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch @run app </dev/null 2>/dev/null || rc=$?
+assert_eq "dispatch @run no cmd rc" "64" "$rc"
+rc=0
+__xcind-runner-dispatch @exec </dev/null 2>/dev/null || rc=$?
+assert_eq "dispatch @exec no svc rc" "64" "$rc"
+
+# 7. @compose forwards verbatim (no -T, no service)
+runner_setup
+__xcind-runner-load
+__xcind-runner-dispatch @compose config --services </dev/null
+assert_eq "dispatch @compose verbatim" \
+  "compose
+-f
+compose.yaml
+config
+--services" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 7b. Unknown keyword on the exec-keyword helper exits 1
+runner_setup
+__xcind-runner-load
+rc=0
+kw_err_file=$(mktemp)
+__xcind-runner-exec-keyword @bogus app echo hi </dev/null 2>"$kw_err_file" || rc=$?
+kw_err=$(<"$kw_err_file")
+rm -f "$kw_err_file"
+assert_eq "dispatch unknown keyword rc" "1" "$rc"
+assert_contains "dispatch unknown keyword message" "unknown keyword '@bogus'" "$kw_err"
+
+# 8. Unknown name exits 1
+runner_setup
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch nosuch </dev/null 2>/dev/null || rc=$?
+assert_eq "dispatch unknown name rc" "1" "$rc"
+
+# 9. Script steps run in order; host steps run on the host
+runner_setup
+XCIND_SCRIPTS=("build:
+    echo one >>'$RUN_DIR/order.log'
+    echo two >>'$RUN_DIR/order.log'")
+__xcind-runner-load
+__xcind-runner-dispatch build </dev/null
+assert_eq "dispatch script step order" "one
+two" "$(cat "$RUN_DIR/order.log")"
+assert_eq "dispatch host steps skip docker" "" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 10. Stop at first failure with its exit status
+runner_setup
+XCIND_SCRIPTS=("failing:
+    exit 3
+    echo never >>'$RUN_DIR/never.log'")
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch failing </dev/null || rc=$?
+assert_eq "dispatch stops at failure rc" "3" "$rc"
+assert_eq "dispatch stops before later steps" "false" \
+  "$([ -f "$RUN_DIR/never.log" ] && echo true || echo false)"
+
+# 11. A leading - ignores that step's failure
+runner_setup
+XCIND_SCRIPTS=("tolerant:
+    -exit 3
+    echo survived >>'$RUN_DIR/survived.log'")
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch tolerant </dev/null || rc=$?
+assert_eq "dispatch - prefix continues rc" "0" "$rc"
+assert_eq "dispatch - prefix continues" "survived" "$(cat "$RUN_DIR/survived.log")"
+
+# 12. One-step script with no \$@ appends args (host and @bin steps)
+runner_setup
+XCIND_SCRIPTS=("say:echo hello")
+__xcind-runner-load
+out=$(__xcind-runner-dispatch say big world </dev/null)
+assert_eq "dispatch one-step host append" "hello big world" "$out"
+
+runner_setup
+XCIND_BINS=("npm:app")
+XCIND_SCRIPTS=("install:@npm install")
+__xcind-runner-load
+__xcind-runner-dispatch install --frozen </dev/null
+assert_eq "dispatch one-step bin append" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+npm
+install
+--frozen" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 13. \$@ splices mid-step
+runner_setup
+XCIND_SCRIPTS=("wrap:
+    @exec app echo \$@ done
+    echo host-step >>'$RUN_DIR/wrap.log'")
+__xcind-runner-load
+__xcind-runner-dispatch wrap a b </dev/null
+assert_eq 'dispatch $@ splices mid-step' \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+echo
+a
+b
+done" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 14. Multi-step script without \$@ rejects args with 64
+runner_setup
+XCIND_SCRIPTS=("pair:
+    echo one
+    echo two")
+__xcind-runner-load
+rc=0
+__xcind-runner-dispatch pair extra </dev/null >/dev/null 2>&1 || rc=$?
+assert_eq "dispatch multi-step arg reject rc" "64" "$rc"
+
+# 15. Script calling a script; cycle exits 1 with the path
+runner_setup
+XCIND_SCRIPTS=("a:@b" "b:@a")
+__xcind-runner-load
+rc=0
+cycle_err_file=$(mktemp)
+__xcind-runner-dispatch a </dev/null 2>"$cycle_err_file" || rc=$?
+cycle_err=$(<"$cycle_err_file")
+rm -f "$cycle_err_file"
+assert_eq "dispatch cycle rc" "1" "$rc"
+assert_contains "dispatch cycle path" "script cycle: a -> b -> a" "$cycle_err"
+
+# 16. Unknown @ref inside a script names the script
+runner_setup
+XCIND_SCRIPTS=("broken:@nosuch")
+__xcind-runner-load
+rc=0
+ref_err_file=$(mktemp)
+__xcind-runner-dispatch broken </dev/null 2>"$ref_err_file" || rc=$?
+ref_err=$(<"$ref_err_file")
+rm -f "$ref_err_file"
+assert_eq "dispatch unknown ref rc" "1" "$rc"
+assert_contains "dispatch unknown ref message" "unknown bin or script 'nosuch'" "$ref_err"
+
+# 17. --list: bins before scripts, descs shown, _names hidden
+runner_setup
+XCIND_BINS=("npm:app;desc=Node package manager" "_secret:app")
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=("fresh:
+    # Rebuild everything
+    echo ok" "_hiddenscript:echo hi")
+__xcind-runner-load
+list_out=$(__xcind-runner-list 0)
+assert_contains "list shows bins header" "bins:" "$list_out"
+assert_contains "list shows scripts header" "scripts:" "$list_out"
+assert_contains "list shows bin desc" "Node package manager" "$list_out"
+assert_contains "list shows script desc" "Rebuild everything" "$list_out"
+assert_eq "list hides _ names" "false" \
+  "$(echo "$list_out" | grep -q '_secret\|_hiddenscript' && echo true || echo false)"
+assert_eq "list bins before scripts" "true" \
+  "$([ "$(echo "$list_out" | grep -n 'bins:' | cut -d: -f1)" -lt \
+    "$(echo "$list_out" | grep -n 'scripts:' | cut -d: -f1)" ] && echo true || echo false)"
+
+names_out=$(__xcind-runner-list 1)
+assert_eq "list --names bare" "npm
+fresh" "$names_out"
+
+# 18. Hidden names stay runnable
+runner_setup
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_BINS=("_secret:app")
+__xcind-runner-load
+__xcind-runner-dispatch _secret </dev/null
+assert_contains "hidden bin stays runnable" "_secret" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 19. bin/xcind-run flag surface (no app required)
+help_out=$("$XCIND_ROOT/bin/xcind-run" --help)
+assert_contains "xcind-run --help usage" "Usage: xcind-run" "$help_out"
+assert_contains "xcind-run --help exclusivity" \
+  "--names requires --list; --list and --init-shell" "$help_out"
+version_out=$("$XCIND_ROOT/bin/xcind-run" --version)
+assert_contains "xcind-run --version" "xcind-run" "$version_out"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --bogus 2>/dev/null || rc=$?
+assert_eq "xcind-run unknown flag rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --names 2>/dev/null || rc=$?
+assert_eq "xcind-run --names without --list rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --names --init-shell 2>/dev/null || rc=$?
+assert_eq "xcind-run --names --init-shell rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --prefix "x-" --help >/dev/null 2>&1 || rc=$?
+assert_eq "xcind-run --prefix valid value rc" "0" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --prefix "a;b" 2>/dev/null || rc=$?
+assert_eq "xcind-run --prefix invalid value rc" "64" "$rc"
+rc=0
+"$XCIND_ROOT/bin/xcind-run" --prefix="a b" 2>/dev/null || rc=$?
+assert_eq "xcind-run --prefix= invalid value rc" "64" "$rc"
+
+export PATH="$RUN_OLD_PATH"
+unset DOCKER_SHIM_LOG DOCKER_SHIM_RC
+rm -rf "$RUN_DIR"
 reset_xcind_state
 
 # ======================================================================

@@ -26,6 +26,16 @@ if [ -f "$__XCIND_LIB_DIR/xcind-build-info.bash" ]; then
   source "$__XCIND_LIB_DIR/xcind-build-info.bash"
 fi
 
+# Lazy-load the run-lib only when needed (bins/scripts parsing, JSON
+# contract, SHA computation). Commands like xcind-compose and xcind-proxy
+# that never touch these paths skip the 840-line parse entirely.
+__xcind-ensure-run-lib() {
+  if [[ -n ${__XCIND_RUN_LIB_LOADED+x} ]]; then return 0; fi
+  # shellcheck source=xcind-run-lib.bash
+  source "$__XCIND_LIB_DIR/xcind-run-lib.bash"
+  __XCIND_RUN_LIB_LOADED=1
+}
+
 # Defaults — simplify downstream references under `set -u`.
 : "${XCIND_BUILD_SOURCE:=}"
 : "${XCIND_BUILD_SHORT_REV:=}"
@@ -261,7 +271,8 @@ __xcind-app-root() {
 #   XCIND_COMPOSE_ENV_FILES=()   — Env file patterns for compose YAML interpolation (--env-file)
 #   XCIND_APP_ENV_FILES=()       — Env file patterns injected into containers (env_file:)
 #   XCIND_BAKE_FILES=()          — Bake file patterns (reserved for future use)
-#   XCIND_TOOLS=()               — Tool declarations (name:service[;key=value…])
+#   XCIND_BINS=()                — Bin declarations (name:service[;key=value…])
+#   XCIND_SCRIPTS=()             — Script declarations (name:steps)
 #   XCIND_COMPOSE_DIR=""         — Subdirectory for compose files (optional convenience)
 #
 # Usage:
@@ -278,8 +289,11 @@ __xcind-load-config() {
   if [[ -z ${XCIND_BAKE_FILES+set} ]]; then
     XCIND_BAKE_FILES=()
   fi
-  if [[ -z ${XCIND_TOOLS+set} ]]; then
-    XCIND_TOOLS=()
+  if [[ -z ${XCIND_BINS+set} ]]; then
+    XCIND_BINS=()
+  fi
+  if [[ -z ${XCIND_SCRIPTS+set} ]]; then
+    XCIND_SCRIPTS=()
   fi
   if [[ -z ${XCIND_COMPOSE_DIR+set} ]]; then
     XCIND_COMPOSE_DIR=""
@@ -743,85 +757,6 @@ __xcind-prepare-app() {
 # JSON Contract (for xcind-config / JetBrains plugin)
 # --------------------------------------------------------------------------
 
-# Parse XCIND_TOOLS into a JSON object keyed by tool name.
-# First entry for a given tool name wins; subsequent duplicates are skipped.
-#
-# Usage:
-#   __xcind-resolve-tools
-#   # prints: {"php":{"service":"app","use":"exec"},"npm":{"service":"app","use":"exec"}}
-__xcind-resolve-tools() {
-  if [[ ${#XCIND_TOOLS[@]} -eq 0 ]]; then
-    echo "{}"
-    return 0
-  fi
-
-  local seen_names=""
-  local first=true
-  local entry name remainder service meta use path key val
-
-  printf '{'
-  for entry in "${XCIND_TOOLS[@]}"; do
-    # Split on ':' for name and service (with optional metadata after ';')
-    name="${entry%%:*}"
-    remainder="${entry#*:}"
-    service="${remainder%%;*}"
-    meta=""
-    if [[ $remainder == *";"* ]]; then
-      meta="${remainder#*;}"
-    fi
-
-    # Skip duplicates (first wins) — linear scan of seen names
-    case ",$seen_names," in
-    *",$name,"*) continue ;;
-    esac
-    seen_names="${seen_names:+$seen_names,}$name"
-
-    # Parse metadata key=value pairs
-    use="exec"
-    path=""
-    if [[ -n $meta ]]; then
-      # Save and restore IFS around the split. `unset IFS` would expose the
-      # inherited value (which may not be the default $' \t\n'), not restore
-      # it — so capture the caller's IFS explicitly and put it back.
-      local _old_ifs="$IFS"
-      IFS=';'
-      local pairs
-      # shellcheck disable=SC2206
-      pairs=($meta)
-      IFS="$_old_ifs"
-      local pair
-      for pair in "${pairs[@]}"; do
-        key="${pair%%=*}"
-        val="${pair#*=}"
-        case "$key" in
-        use) use="$val" ;;
-        path) path="$val" ;;
-        esac
-      done
-    fi
-
-    # Emit JSON
-    if [[ $first == true ]]; then
-      first=false
-    else
-      printf ','
-    fi
-
-    if [[ -n $path ]]; then
-      printf '%s:%s' \
-        "$(printf '%s' "$name" | jq -R .)" \
-        "$(jq -n --arg s "$service" --arg u "$use" --arg p "$path" \
-          '{service: $s, use: $u, path: $p}')"
-    else
-      printf '%s:%s' \
-        "$(printf '%s' "$name" | jq -R .)" \
-        "$(jq -n --arg s "$service" --arg u "$use" \
-          '{service: $s, use: $u}')"
-    fi
-  done
-  printf '}'
-}
-
 # Print, one per line, the value following each `-f` flag in
 # XCIND_DOCKER_COMPOSE_OPTS. Safe to call when the array is empty.
 # Preserves paths containing spaces.
@@ -921,9 +856,15 @@ __xcind-resolve-json() {
     XCIND_APP_APEX_URL_TEMPLATE="$_app_apex_url_template"
   fi
 
-  # Resolve tools
-  local tools_json
-  tools_json=$(__xcind-resolve-tools)
+  # Validate bins and scripts, including their shared namespace.
+  __xcind-ensure-run-lib
+  __xcind-runner-load || return 1
+
+  local bins_json
+  bins_json=$(__xcind-runner-bins-json) || return 1
+
+  local scripts_json
+  scripts_json=$(__xcind-runner-scripts-json) || return 1
 
   # Resolve assigned exports (empty object when none or jq unavailable)
   local assigned_json
@@ -955,7 +896,8 @@ __xcind-resolve-json() {
     --argjson compose_env_files "$(__xcind-to-json-array ${compose_env_files[@]+"${compose_env_files[@]}"})" \
     --argjson app_env_files "$(__xcind-to-json-array ${app_env_files[@]+"${app_env_files[@]}"})" \
     --argjson bake_files "$(__xcind-to-json-array ${bake_files[@]+"${bake_files[@]}"})" \
-    --argjson tools "$tools_json" \
+    --argjson bins "$bins_json" \
+    --argjson scripts "$scripts_json" \
     --argjson assigned_exports "$assigned_json" \
     --argjson proxied_exports "$proxied_json" \
     --argjson apex "$apex_json" \
@@ -974,7 +916,8 @@ __xcind-resolve-json() {
             composeEnvFiles: $compose_env_files,
             appEnvFiles: $app_env_files,
             bakeFiles: $bake_files,
-            tools: $tools,
+            bins: $bins,
+            scripts: $scripts,
             assignedExports: $assigned_exports,
             proxiedExports: $proxied_exports,
             apex: $apex
@@ -1439,9 +1382,14 @@ __xcind-compute-sha() {
     sha_input+=$(__xcind-sha256 "$global_config" | cut -d' ' -f1)
   fi
 
-  # Add tools declarations
-  if [[ ${#XCIND_TOOLS[@]} -gt 0 ]]; then
-    sha_input+=$(printf '%s\n' "${XCIND_TOOLS[@]}")
+  # Add bins declarations
+  if [[ -n ${XCIND_BINS+x} ]] && [[ ${#XCIND_BINS[@]} -gt 0 ]]; then
+    sha_input+=$(printf '%s\n' "${XCIND_BINS[@]}")
+  fi
+
+  # Add scripts declarations
+  if [[ -n ${XCIND_SCRIPTS+x} ]] && [[ ${#XCIND_SCRIPTS[@]} -gt 0 ]]; then
+    sha_input+=$(printf '%s\n' "${XCIND_SCRIPTS[@]}")
   fi
 
   # Add naming-relevant variables so overrides invalidate the cache

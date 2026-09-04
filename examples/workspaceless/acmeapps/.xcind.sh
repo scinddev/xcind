@@ -39,11 +39,23 @@ XCIND_COMPOSE_FILES=(
 #     "docker-bake.hcl"
 # )
 
-# --- Tools ---
-# Declare which tools are available in which Compose service.
+# --- Bins ---
+# Declare which bins are available in which Compose service.
 # Format: name:service[;key=value…]
-# The first entry for a given tool name is the default.
-XCIND_TOOLS=(
+# Keys: cmd (default = name), use = exec|run, desc
+XCIND_BINS=(
   "node:app"
   "npm:app"
+)
+
+# --- Scripts ---
+# Declarative step lists run by xcind-run. Steps go one per line and stop
+# at the first failure; a leading '-' ignores that step's failure. The
+# first '#' comment is the script's description. '@name' runs a bin or
+# another script; other lines run on the host.
+XCIND_SCRIPTS=(
+  "fresh:
+    # Reinstall node modules from scratch
+    -rm -rf node_modules
+    @npm install"
 )

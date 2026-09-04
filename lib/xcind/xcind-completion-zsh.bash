@@ -163,7 +163,8 @@ _xcind-config() {
         'composeEnvFiles:Env files passed to docker compose'
         'appEnvFiles:Env files exported into the app environment'
         'bakeFiles:Bake files passed to docker buildx bake'
-        'tools:Resolved tool paths and versions'
+        'bins:Declared bin commands and services'
+        'scripts:Declared script step lists'
         'assignedExports:Ports assigned to this app'
         'proxiedExports:Proxied exports with computed URLs'
         'apex:Apex hostname, URL and scheme'
@@ -502,6 +503,55 @@ _xcind-application() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind-run: completion
+# -----------------------------------------------------------------------------
+
+_xcind-run() {
+  # Once a name is on the line, the words after it belong to that bin or
+  # script — offer nothing.
+  local i
+  for ((i = 2; i < CURRENT; i++)); do
+    case "${words[$i]}" in
+    -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
+    --prefix) ((i++)) ;; # skip the prefix value
+    --prefix=*) ;;
+    *) return ;;
+    esac
+  done
+
+  # --prefix takes free text
+  if [[ ${words[CURRENT - 1]} == "--prefix" ]]; then
+    return
+  fi
+
+  if [[ ${words[CURRENT]} == -* ]]; then
+    local -a opts=(
+      '-T:Pass -T to docker compose exec/run'
+      '--no-tty:Pass -T to docker compose exec/run'
+      '--list:List runnable bins and scripts'
+      '--names:With --list, print bare names only'
+      '--init-shell:Print shell wrapper functions for eval'
+      '--prefix:Wrapper prefix for --init-shell (default x-)'
+      '--help:Show help'
+      '--version:Show version'
+    )
+    _describe 'xcind-run option' opts
+    return
+  fi
+
+  # First non-flag word: bin and script names from the app's declarations.
+  # (A read loop instead of ${(f)...} so shfmt can parse this file.)
+  local -a names
+  local _xcind_run_name
+  while IFS= read -r _xcind_run_name; do
+    [[ -n $_xcind_run_name ]] && names+=("$_xcind_run_name")
+  done < <(xcind-run --list --names 2>/dev/null)
+  if ((${#names[@]} > 0)); then
+    _describe 'bin or script' names
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
@@ -511,3 +561,45 @@ compdef _xcind-compose xcind-compose
 compdef _xcind-config xcind-config
 compdef _xcind-proxy xcind-proxy
 compdef _xcind-workspace xcind-workspace
+compdef _xcind-run xcind-run
+
+# -----------------------------------------------------------------------------
+# Prefixed wrappers for the xcind commands
+# -----------------------------------------------------------------------------
+
+# Command suffix → completion function, for the wrappers below. Keep in sync
+# with the `compdef` block above; test-xcind-completion.sh asserts the two
+# agree.
+__XCIND_SHELL_ALIAS_MAP="application:_xcind-application
+app:_xcind-application
+compose:_xcind-compose
+config:_xcind-config
+proxy:_xcind-proxy
+workspace:_xcind-workspace
+run:_xcind-run"
+
+# Define <prefix><name> wrappers for the xcind commands and register each
+# one's completion, so `x-config …` completes like `xcind-config …` instead of
+# falling back to filenames.
+#
+# The command set comes from this file, not from an app's .xcind.sh, so one
+# call per shell covers every directory. Nothing here touches XCIND_BINS or
+# XCIND_SCRIPTS — reach those through `xcind-run`, whose completion re-reads
+# the current app on every request.
+#
+# Usage: xcind-shell-aliases [PREFIX]   (default prefix: x-)
+xcind-shell-aliases() {
+  local prefix=${1:-x-} line short fn
+  if [[ $prefix =~ [^a-zA-Z0-9_-] ]]; then
+    echo "xcind-shell-aliases: prefix value must contain only alphanumeric, dash, or underscore characters" >&2
+    return 64
+  fi
+  # (A read loop instead of ${(f)...} so shfmt can parse this file.)
+  while IFS= read -r line; do
+    short=${line%%:*}
+    fn=${line#*:}
+    [[ -z $short ]] && continue
+    eval "${prefix}${short}() { xcind-${short} \"\$@\"; }"
+    compdef "$fn" "${prefix}${short}"
+  done <<<"$__XCIND_SHELL_ALIAS_MAP"
+}

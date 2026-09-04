@@ -19,5 +19,7 @@ User-facing glossary. For maintainer-level terminology, see [`engineering/produc
 | **Compose env file** | Env file passed via `--env-file` for `${VAR}` substitution in compose YAML. Listed in `XCIND_COMPOSE_ENV_FILES`. |
 | **App env file** | Env file injected into running containers via `env_file:`. Listed in `XCIND_APP_ENV_FILES`. |
 | **Host-view env file** | An opt-in dotenv file (`XCIND_HOST_ENV_FILE`) holding the service-discovery variables with host-flavored values for assigned exports (`127.0.0.1` + the assigned host port), so host-run processes resolve the same endpoints containers do. Proxied/apex hosts stay their routable hostname. |
-| **Tool** | A binary inside a service container exposed to IDE integrations via `XCIND_TOOLS`. |
+| **Bin** | A command inside a service container, declared in `XCIND_BINS`, run by `xcind-run` and exposed to IDE integrations. |
+| **Script** | A named step list declared in `XCIND_SCRIPTS` and run by `xcind-run`. |
+| **Step** | One line of a script: a `@bin`/`@script` reference, an `@exec`/`@run`/`@compose` keyword, or a host command. |
 | **Apex template** | A URL template that omits `{export}` (e.g. `myapp.localhost.scind.io`). Used when an app has a single, headlining export. When set, `xcind-application urls`/`exports`/`status` report the apex URL for that export. |

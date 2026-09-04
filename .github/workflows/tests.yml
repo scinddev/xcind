@@ -43,6 +43,7 @@ jobs:
             bin/xcind-config \
             bin/xcind-prompt \
             bin/xcind-proxy \
+            bin/xcind-run \
             bin/xcind-workspace \
             lib/xcind/xcind-app-lib.bash \
             lib/xcind/xcind-app-env-lib.bash \
@@ -57,7 +58,9 @@ jobs:
             lib/xcind/xcind-naming-lib.bash \
             lib/xcind/xcind-proxy-lib.bash \
             lib/xcind/xcind-registry-lib.bash \
+            lib/xcind/xcind-run-lib.bash \
             lib/xcind/xcind-workspace-lib.bash \
+            test/run-tests.sh \
             test/test-xcind.sh \
             test/test-xcind-proxy.sh \
             test/test-xcind-prompt.sh \
@@ -79,26 +82,22 @@ jobs:
           - macos-15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Run core tests
-        run: bash test/test-xcind.sh
+      # test/run-tests.sh runs the files in parallel with per-file buffered
+      # logs, matching `make test`. The prompt and completion suites are
+      # pure bash + coreutils, so they run on all four matrix OSes;
+      # completion blocks that need optional tooling (docker CLI, zsh)
+      # report themselves as skipped rather than failing.
+      - name: Run tests
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: bash test/run-tests.sh
       # test/test-xcind-proxy.sh has preexisting portability gaps on macOS /
       # Alpine (e.g. BSD stat, LibreSSL option differences, bash 3.2 quirks)
       # that surface when the suite actually runs there. Gate it to ubuntu
       # until those are fixed — the reviewer's ask (TLS tests run in CI) is
       # still satisfied on ubuntu-22.04 / ubuntu-24.04.
-      - name: Run proxy tests
-        if: startsWith(matrix.os, 'ubuntu-')
-        run: bash test/test-xcind-proxy.sh
-      # The prompt suite is pure bash + coreutils (no proxy TLS / BSD-stat
-      # portability gaps), so it runs on all four matrix OSes — no OS gate.
-      - name: Run prompt tests
-        run: bash test/test-xcind-prompt.sh
-      # The completion suite is pure bash + coreutils too. Blocks that need
-      # optional tooling report themselves as skipped rather than failing:
-      # the delegated docker-compose assertions need a docker CLI, and the
-      # zsh assertions need zsh.
-      - name: Run completion tests
-        run: bash test/test-xcind-completion.sh
+      - name: Run tests (without proxy suite)
+        if: startsWith(matrix.os, 'macos-')
+        run: bash test/run-tests.sh test-xcind.sh test-xcind-prompt.sh test-xcind-completion.sh
 
   kislyuk-yq-compat:
     # Xcind's yq usage is read-only jq-syntax filters, compatible with both
@@ -123,12 +122,10 @@ jobs:
           python3 -m venv /opt/kislyuk-yq-venv
           /opt/kislyuk-yq-venv/bin/pip -q install yq
           sudo ln -sf /opt/kislyuk-yq-venv/bin/yq /usr/local/bin/yq
-      - name: Run core tests
-        run: bash test/test-xcind.sh
-      - name: Run proxy tests
-        run: bash test/test-xcind-proxy.sh
-      - name: Run prompt tests
-        run: bash test/test-xcind-prompt.sh
+      # Same three suites as before the parallel runner; the completion
+      # suite has no yq usage to lock in, so it stays out of this job.
+      - name: Run core, proxy, and prompt tests
+        run: bash test/run-tests.sh test-xcind.sh test-xcind-proxy.sh test-xcind-prompt.sh
 
   npm-install-test:
     runs-on: ${{ matrix.os }}
@@ -176,22 +173,13 @@ jobs:
         # all, since COMPREPLY/compgen idioms differ across versions). The
         # proxy suite has preexisting portability gaps against Alpine / bash 3.2
         # and stays out of this matrix. Track as follow-up.
+        # One container runs all three suites through the parallel runner
+        # (which is itself Bash 3.2 compatible); the read-only mount is
+        # fine because the runner buffers logs under mktemp in /tmp.
         run: |
           docker run --rm \
             -v "$PWD:/opt/xcind:ro" \
             -w /opt/xcind \
             --entrypoint bash \
             "xcind-test:${{ matrix.bashver }}" \
-            test/test-xcind.sh
-          docker run --rm \
-            -v "$PWD:/opt/xcind:ro" \
-            -w /opt/xcind \
-            --entrypoint bash \
-            "xcind-test:${{ matrix.bashver }}" \
-            test/test-xcind-prompt.sh
-          docker run --rm \
-            -v "$PWD:/opt/xcind:ro" \
-            -w /opt/xcind \
-            --entrypoint bash \
-            "xcind-test:${{ matrix.bashver }}" \
-            test/test-xcind-completion.sh
+            test/run-tests.sh test-xcind.sh test-xcind-prompt.sh test-xcind-completion.sh

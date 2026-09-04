@@ -22,6 +22,7 @@ Recipes for specific tasks.
 - [Author custom hooks](./guides/custom-hooks.md)
 - [`host.docker.internal` and host-gateway](./guides/host-gateway.md)
 - [IDE and tool integration](./guides/tools-ide-integration.md)
+- [Bins and scripts (`xcind-run`)](./guides/bins-and-scripts.md)
 - [Starship prompt integration](./guides/starship.md)
 - [Environment files: compose-level vs app-level](./guides/env-files.md)
 - [Override files](./guides/override-files.md)

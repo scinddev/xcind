@@ -46,6 +46,10 @@ xcind-config --check                    # check system dependencies (yq, docker,
 xcind-config --version                  # version + build provenance
 xcind-config completion bash            # bash completions
 xcind-config completion zsh             # zsh completions
+
+# After sourcing either one, define completing short names (default prefix x-)
+xcind-shell-aliases                     # x-compose, x-config, x-run, …
+xcind-shell-aliases acme-               # acme-compose, acme-config, …
 ```
 
 `resolve` accepts dotted keys and array indexes such as `configFiles[0]`.
@@ -109,6 +113,25 @@ mode adds `init` flags for the entrypoints and certresolver of the host
 Traefik.
 
 Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md).
+
+## `xcind-run`
+
+Run bins and scripts declared in `.xcind.sh` (`XCIND_BINS` / `XCIND_SCRIPTS`) inside the app's Compose services.
+
+```bash
+xcind-run <name> [args…]          # run a bin or script (args append / splice at $@)
+xcind-run -T <name> [args…]       # force -T (also automatic when not a terminal)
+xcind-run @exec <svc> [cmd…]      # docker compose exec (no cmd: bash)
+xcind-run @run <svc> <cmd…>       # docker compose run --rm
+xcind-run @compose <args…>        # docker compose, args verbatim
+xcind-run --list [--names]        # list runnable names (leading _ hides an entry)
+xcind-run --init-shell [--prefix PREFIX]  # print x-<name>() wrapper functions
+xcind-run --version
+```
+
+`xcind-run` runs the same resolution pipeline as `xcind-compose`, including EXECUTE hooks. Script steps run in order and stop at the first failure; a step's leading `-` ignores its failure.
+
+Walkthrough: [Bins and scripts](../guides/bins-and-scripts.md).
 
 ## `xcind-workspace`
 

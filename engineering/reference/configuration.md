@@ -86,9 +86,9 @@ Array of Docker Bake file patterns, relative to the app root. Reserved for futur
 XCIND_BAKE_FILES=("docker-bake.hcl")
 ```
 
-### `XCIND_TOOLS`
+### `XCIND_BINS`
 
-Array of tool declarations for IDE and plugin integration. Each entry maps a tool name to a compose service, with optional metadata. Declared tools appear in the `tools` object of the [`xcind-config --json`](./cli.md#json-output-contract) output.
+Array of bin declarations: per-service commands run by `xcind-run` and picked up by IDE and plugin integrations. Declared bins appear in the `bins` object of the [`xcind-config --json`](./cli.md#json-output-contract) output.
 
 **Default:** `()` (empty)
 
@@ -96,20 +96,45 @@ Array of tool declarations for IDE and plugin integration. Each entry maps a too
 
 | Metadata Key | Default | Description |
 |--------------|---------|-------------|
-| `use` | `"exec"` | How the tool is invoked: `exec` (default) attaches to an existing service container; `run` starts a new one-shot container. |
-| `path` | *(omitted)* | Path to the tool binary inside the container |
+| `cmd` | the bin's name | Command inside the container. May contain spaces; tokenized at run time. |
+| `use` | `"exec"` | How the bin is invoked: `exec` (default) attaches to an existing service container; `run` starts a new one-shot container (`run --rm`). |
+| `desc` | *(omitted)* | Description shown by `xcind-run --list`. Cannot contain `;`. |
 
-First entry for a given tool name wins; subsequent duplicates are skipped.
+Validation is strict: a missing colon, an empty name or service, a name starting with `@` or `-` or containing whitespace, an unknown key, a bad `use`, or a duplicate name is an error.
 
 ```bash
-XCIND_TOOLS=(
+XCIND_BINS=(
     "php:app"
     "npm:app"
-    "composer:app;path=/usr/bin/composer"
+    "composer:app;cmd=/usr/bin/composer"
 )
 ```
 
-Changes to `XCIND_TOOLS` affect the configuration SHA, triggering cache invalidation.
+Changes to `XCIND_BINS` affect the configuration SHA, triggering cache invalidation.
+
+### `XCIND_SCRIPTS`
+
+Array of script declarations: named step lists run by `xcind-run`. Declared scripts appear in the `scripts` object of the [`xcind-config --json`](./cli.md#json-output-contract) output.
+
+**Default:** `()` (empty)
+
+**Format:** `name:` followed by steps, one per line (a single-line `name:step` form is allowed).
+
+- Step lines are trimmed; blank lines are skipped.
+- A line starting with `#` is a comment; the first one is the script's description.
+- A leading `-` marks a step whose failure is ignored (the prefix is kept in the stored step). A bare `-` is an error.
+- Name constraints match bins; a name in both `XCIND_BINS` and `XCIND_SCRIPTS` is a load-time error.
+
+```bash
+XCIND_SCRIPTS=(
+    "fresh:
+        # Reinstall node modules from scratch
+        -rm -rf node_modules
+        @npm install"
+)
+```
+
+Changes to `XCIND_SCRIPTS` affect the configuration SHA, triggering cache invalidation. Step semantics (kinds, `$@` splicing, cycle detection) live in [`docs/guides/bins-and-scripts.md`](../../docs/guides/bins-and-scripts.md).
 
 ### `XCIND_IS_WORKSPACE`
 
