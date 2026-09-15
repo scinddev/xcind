@@ -94,7 +94,7 @@
           description = "Docker Compose environment manager (unwrapped — bring your own jq/yq/docker)";
           license = licenses.mit;
           platforms = platforms.unix;
-          mainProgram = "xcind-compose";
+          mainProgram = "xcind";
         };
       });
 
@@ -120,6 +120,8 @@
             # the assigned-ports state as a JSON array.
             proxyPath = pkgs.lib.makeBinPath (core ++ json ++ docker);
           in writeBuildInfo + ''
+            wrapProgram "$out/bin/xcind" \
+              --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-application" \
               --prefix PATH : ${fullPath}
             wrapProgram "$out/bin/xcind-compose" \
@@ -139,7 +141,7 @@
           description = "Docker Compose environment manager";
           license = licenses.mit;
           platforms = platforms.unix;
-          mainProgram = "xcind-compose";
+          mainProgram = "xcind";
         };
       });
     in

@@ -552,9 +552,62 @@ _xcind-run() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind: dispatcher — complete the command, then delegate
+# -----------------------------------------------------------------------------
+
+# The per-command functions above key off word positions and never read the
+# command name at words[1] (that is what lets the x-* wrappers reuse them).
+# So after the command word is chosen, re-seat words/CURRENT as if the user
+# had typed `xcind-<command> …` and delegate to the matching function.
+# _xcind-compose's ${words[@]:1} slice then forwards exactly the user's
+# compose arguments to `docker __complete`.
+_xcind() {
+  if ((CURRENT == 2)); then
+    local -a commands=(
+      'app:Manage applications (alias for application)'
+      'application:Manage applications (init, status, ports, urls…)'
+      'compose:Run docker compose with the resolved app config'
+      'config:Inspect resolved configuration; shell completions'
+      'prompt:Emit prompt data for Starship and shell prompts'
+      'proxy:Manage the shared Traefik proxy'
+      'run:Run bins and scripts declared in .xcind.sh'
+      'workspace:Manage workspaces'
+      '--help:Show help'
+      '-h:Show help'
+      '--version:Show version'
+      '-V:Show version'
+    )
+    _describe 'xcind command' commands
+    return
+  fi
+
+  local cmd="${words[2]}" fn=""
+  case "$cmd" in
+  app | application) fn=_xcind-application ;;
+  compose) fn=_xcind-compose ;;
+  config) fn=_xcind-config ;;
+  proxy) fn=_xcind-proxy ;;
+  run) fn=_xcind-run ;;
+  workspace) fn=_xcind-workspace ;;
+  # prompt has no completion of its own; unknown words offer nothing
+  *) return 1 ;;
+  esac
+
+  words=("xcind-$cmd" "${words[@]:2}")
+  ((CURRENT--))
+  local service="xcind-$cmd"
+  "$fn"
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
+# The dispatcher registration is intentionally absent from
+# __XCIND_SHELL_ALIAS_MAP below: the map drives x-* wrappers over the
+# xcind-* binaries, and the drift guard in test-xcind-completion.sh only
+# matches `xcind-` names.
+compdef _xcind xcind
 compdef _xcind-application xcind-application
 compdef _xcind-application xcind-app
 compdef _xcind-compose xcind-compose

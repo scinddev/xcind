@@ -503,6 +503,94 @@ else
 fi
 
 # ======================================================================
+echo "=== Test: xcind — dispatcher completion ==="
+
+# Top level: the command words plus the dispatcher's own flags.
+out=$(comp_run fresh _xcind_completions xcind)
+for sub in app application compose config prompt proxy run workspace; do
+  assert_line "dispatcher top level offers '$sub'" "$sub" "$out"
+done
+assert_line "dispatcher top level offers --help" "--help" "$out"
+assert_line "dispatcher top level offers --version" "--version" "$out"
+
+out=$(comp_run partial _xcind_completions xcind ru)
+assert_eq "dispatcher partial 'ru' offers only run" "run" "$out"
+
+# Past the command word the dispatcher re-seats COMP_WORDS/COMP_CWORD and
+# delegates, so these must match the direct xcind-<command> invocations.
+out=$(comp_run fresh _xcind_completions xcind config completion)
+assert_line "dispatcher 'config completion ' offers bash" "bash" "$out"
+assert_line "dispatcher 'config completion ' offers zsh" "zsh" "$out"
+
+out=$(comp_run fresh _xcind_completions xcind workspace)
+assert_line "dispatcher 'workspace ' offers register" "register" "$out"
+
+out=$(comp_run fresh _xcind_completions xcind app)
+assert_line "dispatcher 'app ' offers dispose (application alias)" "dispose" "$out"
+
+out=$(comp_run partial _xcind_completions xcind run --)
+assert_line "dispatcher 'run --' offers --list" "--list" "$out"
+
+out=$(comp_run fresh _xcind_completions xcind prompt)
+assert_eq "dispatcher 'prompt ' offers nothing" "" "$out"
+
+out=$(comp_run fresh _xcind_completions xcind bogus)
+assert_eq "dispatcher offers nothing after an unknown command" "" "$out"
+
+# Compose delegation through the dispatcher: after the shift, the compose
+# function's ${COMP_WORDS[@]:1} slice must forward exactly the user's
+# compose arguments to `docker __complete compose`.
+if command -v docker >/dev/null 2>&1 &&
+  docker __complete compose "" >/dev/null 2>&1; then
+  out=$(comp_run partial _xcind_completions xcind compose lo)
+  assert_line "dispatcher 'compose lo' completes to logs" "logs" "$out"
+
+  DISPATCH_COMPOSE_PROJECT=$(mktemp_d)
+  cat >"$DISPATCH_COMPOSE_PROJECT/compose.yaml" <<'PROJEOF'
+services:
+  xcinddispweb:
+    image: nginx
+PROJEOF
+  out=$(cd "$DISPATCH_COMPOSE_PROJECT" && comp_run fresh _xcind_completions xcind compose logs)
+  assert_line "dispatcher 'compose logs ' completes a service name" \
+    "xcinddispweb" "$out"
+else
+  echo "  … SKIP: docker with __complete support not available (dispatcher)"
+  SKIP=$((SKIP + 1))
+fi
+
+# Dynamic run-name delegation: `xcind run fr<TAB>` → the declared name.
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  DISPATCH_RUN_FIXTURE=$(mktemp_d)
+  cat >"$DISPATCH_RUN_FIXTURE/.xcind.sh" <<'RUNEOF'
+XCIND_APP="comp-dispatch-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_BINS=("xcnpm:app")
+XCIND_SCRIPTS=("xcfresh:echo ok")
+RUNEOF
+  cat >"$DISPATCH_RUN_FIXTURE/compose.yaml" <<'RUNEOF'
+services:
+  app:
+    image: nginx
+RUNEOF
+
+  out=$(cd "$DISPATCH_RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+    comp_run fresh _xcind_completions xcind run)
+  assert_line "dispatcher 'run ' completes a bin name" "xcnpm" "$out"
+  assert_line "dispatcher 'run ' completes a script name" "xcfresh" "$out"
+
+  out=$(cd "$DISPATCH_RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+    comp_run partial _xcind_completions xcind run xcf)
+  assert_line "dispatcher partial run name completes" "xcfresh" "$out"
+  assert_no_line "dispatcher partial run name filters" "xcnpm" "$out"
+
+  rm -rf "$DISPATCH_RUN_FIXTURE"
+else
+  echo "  … SKIP: docker compose not available for dispatcher run-name completion"
+  SKIP=$((SKIP + 1))
+fi
+
+# ======================================================================
 echo "=== Test: xcind-shell-aliases — prefixed top-level wrappers ==="
 
 # The map that drives the wrappers must not drift from the `complete -F`
@@ -737,6 +825,34 @@ ZSHEOF
   out=$(zcomp_run _xcind-application 3 xcind-application exports)
   assert_line "zsh: application 'exports ' offers --json" \
     "--json:Output structured JSON" "$out"
+
+  # Dispatcher: top-level command list, then delegation with re-seated
+  # words/CURRENT (one word further right than the direct invocations).
+  out=$(zcomp_run _xcind 2 xcind)
+  assert_line "zsh: dispatcher top level offers run" \
+    "run:Run bins and scripts declared in .xcind.sh" "$out"
+  assert_line "zsh: dispatcher top level offers compose" \
+    "compose:Run docker compose with the resolved app config" "$out"
+  assert_line "zsh: dispatcher top level offers app" \
+    "app:Manage applications (alias for application)" "$out"
+
+  out=$(zcomp_run _xcind 4 xcind config completion)
+  assert_line "zsh: dispatcher 'config completion ' offers bash" \
+    "bash:Bash shell completions" "$out"
+
+  out=$(zcomp_run _xcind 3 xcind workspace)
+  assert_line "zsh: dispatcher 'workspace ' offers register" \
+    "register:Add an existing workspace to the registry" "$out"
+
+  out=$(zcomp_run _xcind 3 xcind app)
+  assert_line "zsh: dispatcher 'app ' offers ports (application alias)" \
+    "ports:Show assigned host ports" "$out"
+
+  out=$(zcomp_run _xcind 4 xcind run somename)
+  assert_eq "zsh: dispatcher offers nothing after a run name" "" "$out"
+
+  out=$(zcomp_run _xcind 3 xcind prompt)
+  assert_eq "zsh: dispatcher 'prompt ' offers nothing" "" "$out"
 
   if command -v docker >/dev/null 2>&1 &&
     docker __complete compose "" >/dev/null 2>&1; then

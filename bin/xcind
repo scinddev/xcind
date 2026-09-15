@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# xcind — Dispatch to the xcind-* commands
+#
+# Usage:
+#   xcind <command> [args…]
+#
+# A thin dispatcher: maps the first argument to the matching xcind-<command>
+# sibling binary and execs it with the remaining arguments untouched. Keeps
+# no state and sources no libraries on the dispatch path so it adds no
+# startup cost to the target command.
+
+set -euo pipefail
+
+# Resolve XCIND_ROOT by following symlinks to the real install directory
+# (npm, nix profile, and manual symlinks all route through here). macOS
+# lacks `readlink -f`, so the resolver is a manual loop.
+# Keep in sync with the equivalent stub in the other bin/ scripts.
+__xcind_src="${BASH_SOURCE[0]}"
+while [ -L "$__xcind_src" ]; do
+  __xcind_src_dir=$(cd "$(dirname "$__xcind_src")" && pwd)
+  __xcind_src=$(readlink "$__xcind_src")
+  [[ $__xcind_src != /* ]] && __xcind_src="$__xcind_src_dir/$__xcind_src"
+done
+XCIND_ROOT="$(cd "$(dirname "$__xcind_src")/.." && pwd)"
+unset __xcind_src __xcind_src_dir
+
+__xcind_help() {
+  cat <<'HELPEOF'
+Usage: xcind <command> [args…]
+
+Dispatch to the xcind-* commands. All arguments after the command are
+passed through unchanged, so `xcind compose up -d` is exactly
+`xcind-compose up -d`.
+
+Commands:
+  app, application   Manage applications (init, status, ports, urls…)
+  compose            Run docker compose with the resolved app config
+  config             Inspect resolved configuration; shell completions
+  prompt             Emit prompt data for Starship and shell prompts
+  proxy              Manage the shared Traefik proxy
+  run                Run bins and scripts declared in .xcind.sh
+  workspace          Manage workspaces
+
+Options:
+  --version, -V      Show the xcind version
+  --help, -h         Show this help
+
+Run 'xcind <command> --help' for command usage.
+HELPEOF
+}
+
+case "${1:-}" in
+app | application)
+  shift
+  exec "$XCIND_ROOT/bin/xcind-application" "$@"
+  ;;
+compose | config | prompt | proxy | run | workspace)
+  __xcind_cmd="$1"
+  shift
+  exec "$XCIND_ROOT/bin/xcind-$__xcind_cmd" "$@"
+  ;;
+--version | -V | --xcind-version)
+  # Version needs the shared lib for the build-provenance suffix; this is
+  # the one non-exec path, so the sourcing cost is acceptable here.
+  # shellcheck disable=SC1091
+  source "$XCIND_ROOT/lib/xcind/xcind-bootstrap.bash"
+  echo "xcind $(__xcind-version-string)"
+  exit 0
+  ;;
+--help | -h | "")
+  __xcind_help
+  exit 0
+  ;;
+*)
+  echo "Error: Unknown command: $1" >&2
+  echo "Run 'xcind --help' for usage." >&2
+  exit 1
+  ;;
+esac

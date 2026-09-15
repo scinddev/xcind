@@ -1,4 +1,5 @@
 SHELL_FILES = \
+	bin/xcind \
 	bin/xcind-application \
 	bin/xcind-compose \
 	bin/xcind-config \
