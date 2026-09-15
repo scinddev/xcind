@@ -10,6 +10,7 @@ echo "Installing xcind to $PREFIX ..."
 install -d "$PREFIX/bin"
 install -d "$PREFIX/lib/xcind"
 
+install -m 755 "$XCIND_ROOT/bin/xcind" "$PREFIX/bin/xcind"
 install -m 755 "$XCIND_ROOT/bin/xcind-application" "$PREFIX/bin/xcind-application"
 install -m 755 "$XCIND_ROOT/bin/xcind-compose" "$PREFIX/bin/xcind-compose"
 install -m 755 "$XCIND_ROOT/bin/xcind-config" "$PREFIX/bin/xcind-config"

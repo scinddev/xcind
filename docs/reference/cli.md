@@ -2,6 +2,22 @@
 
 Quick reference. For exhaustive flag semantics, JSON contract, and edge cases, see [`engineering/reference/cli.md`](../../engineering/reference/cli.md).
 
+## `xcind`
+
+The dispatcher. `xcind <command> …` runs the matching `xcind-<command>` binary
+and passes every remaining argument through unchanged, so `xcind compose up -d`
+is exactly `xcind-compose up -d`. `app` is an alias for `application`.
+
+```bash
+xcind compose up -d       # = xcind-compose up -d
+xcind run fresh           # = xcind-run fresh
+xcind app status          # = xcind-application status
+xcind --help              # list the commands
+```
+
+Tab completion covers the command word and then continues with the selected
+command's own completion.
+
 ## `xcind-compose`
 
 The main wrapper around `docker compose`. Resolves files, applies hooks, forwards everything else.

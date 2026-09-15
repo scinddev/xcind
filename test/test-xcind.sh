@@ -6147,6 +6147,41 @@ for bin in xcind-compose xcind-config xcind-proxy xcind-application xcind-worksp
 done
 
 # ======================================================================
+echo ""
+echo "=== Test: bin/xcind dispatcher ==="
+
+dispatch_out=$("$XCIND_ROOT/bin/xcind" --version 2>&1)
+assert_contains "xcind --version contains XCIND_VERSION" "$XCIND_VERSION" "$dispatch_out"
+assert_contains "xcind --version names the binary" "xcind" "$dispatch_out"
+
+dispatch_help=$("$XCIND_ROOT/bin/xcind" --help 2>&1)
+for dispatch_cmd in app application compose config prompt proxy run workspace; do
+  assert_contains "xcind --help lists $dispatch_cmd" "$dispatch_cmd" "$dispatch_help"
+done
+
+dispatch_noargs=$("$XCIND_ROOT/bin/xcind" 2>&1)
+assert_eq "xcind with no args prints help" "$dispatch_help" "$dispatch_noargs"
+dispatch_noargs_status=$(capture_status "$XCIND_ROOT/bin/xcind")
+assert_eq "xcind with no args exits 0" "0" "$dispatch_noargs_status"
+
+dispatch_bogus_err=$("$XCIND_ROOT/bin/xcind" bogus 2>&1 || true)
+assert_contains "xcind rejects unknown commands" "Unknown command: bogus" "$dispatch_bogus_err"
+dispatch_bogus_status=$(capture_status "$XCIND_ROOT/bin/xcind" bogus)
+assert_eq "xcind unknown command exits 1" "1" "$dispatch_bogus_status"
+
+# Passthrough: the dispatcher forwards all remaining args verbatim, so the
+# dispatched help output must equal the direct invocation byte for byte.
+assert_eq "xcind config resolve --help equals xcind-config resolve --help" \
+  "$("$XCIND_ROOT/bin/xcind-config" resolve --help 2>&1)" \
+  "$("$XCIND_ROOT/bin/xcind" config resolve --help 2>&1)"
+assert_eq "xcind app --help equals xcind-application --help" \
+  "$("$XCIND_ROOT/bin/xcind-application" --help 2>&1)" \
+  "$("$XCIND_ROOT/bin/xcind" app --help 2>&1)"
+assert_eq "xcind run --names exits like xcind-run --names (usage error passthrough)" \
+  "$(capture_status "$XCIND_ROOT/bin/xcind-run" --names)" \
+  "$(capture_status "$XCIND_ROOT/bin/xcind" run --names)"
+
+# ======================================================================
 # xcind-application dispose CLI
 
 echo ""

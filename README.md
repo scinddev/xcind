@@ -34,7 +34,8 @@ xcind-compose up -d                  # like `docker compose`, but resolves confi
 ```
 
 That's it. `xcind-compose` is a drop-in for `docker compose` and forwards every
-argument straight through. From now on it works from any subdirectory of your
+argument straight through. Every command is also reachable through the `xcind`
+dispatcher — `xcind compose up -d` is exactly `xcind-compose up -d`. From now on it works from any subdirectory of your
 project, picks up `.override` siblings of your compose / env files, and runs
 the built-in hooks (naming, host-gateway, etc.).
 

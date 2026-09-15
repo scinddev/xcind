@@ -4,7 +4,7 @@ How to wire Xcind into your shell, editor, and dev container.
 
 ## Tab completion
 
-Xcind ships completions for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xcind-run`, `xcind-application`, and `xcind-workspace`.
+Xcind ships completions for `xcind` and for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xcind-run`, `xcind-application`, and `xcind-workspace`.
 
 ```bash
 # Bash (~/.bashrc)
@@ -15,6 +15,11 @@ Xcind ships completions for `xcind-compose`, `xcind-config`, `xcind-proxy`, `xci
 ```
 
 `xcind-compose` delegates to Docker's own completion, so you get the full `docker compose` UX.
+
+`xcind <TAB>` completes the command word (`app`, `compose`, `config`, …) and
+then hands off to that command's own completion, so `xcind run fr<TAB>` and
+`xcind compose <TAB>` behave exactly like `xcind-run fr<TAB>` and
+`xcind-compose <TAB>`.
 
 ### Short names
 

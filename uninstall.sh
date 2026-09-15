@@ -6,6 +6,7 @@ PREFIX="${1:-/usr/local}"
 
 echo "Uninstalling xcind from $PREFIX ..."
 
+rm -f "$PREFIX/bin/xcind"
 rm -f "$PREFIX/bin/xcind-app"
 rm -f "$PREFIX/bin/xcind-application"
 rm -f "$PREFIX/bin/xcind-compose"

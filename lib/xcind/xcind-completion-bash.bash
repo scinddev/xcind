@@ -437,9 +437,50 @@ _xcind_run_completions() {
 }
 
 # -----------------------------------------------------------------------------
+# xcind: dispatcher — complete the command, then delegate
+# -----------------------------------------------------------------------------
+
+# The per-command functions above key off word positions and never read the
+# command name at word 0 (that is what lets the x-* wrappers reuse them).
+# So after the command word is chosen, re-seat COMP_WORDS/COMP_CWORD as if
+# the user had typed `xcind-<command> …` and delegate to the matching
+# function. _xcind_compose_completions' ${COMP_WORDS[@]:1} slice then
+# forwards exactly the user's compose arguments to `docker __complete`.
+_xcind_completions() {
+  local cur="${COMP_WORDS[COMP_CWORD]}"
+
+  if [[ $COMP_CWORD -le 1 ]]; then
+    local commands="app application compose config prompt proxy run workspace --help -h --version -V"
+    COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+    return
+  fi
+
+  local fn=""
+  case "${COMP_WORDS[1]}" in
+  app | application) fn=_xcind_application_completions ;;
+  compose) fn=_xcind_compose_completions ;;
+  config) fn=_xcind_config_completions ;;
+  proxy) fn=_xcind_proxy_completions ;;
+  run) fn=_xcind_run_completions ;;
+  workspace) fn=_xcind_workspace_completions ;;
+  # prompt has no completion of its own; unknown words offer nothing
+  *) return ;;
+  esac
+
+  COMP_WORDS=("xcind-${COMP_WORDS[1]}" "${COMP_WORDS[@]:2}")
+  ((COMP_CWORD--))
+  "$fn"
+}
+
+# -----------------------------------------------------------------------------
 # Register completions
 # -----------------------------------------------------------------------------
 
+# The dispatcher registration is intentionally absent from
+# __XCIND_SHELL_ALIAS_MAP below: the map drives x-* wrappers over the
+# xcind-* binaries, and the drift guard in test-xcind-completion.sh only
+# matches `xcind-` names.
+complete -F _xcind_completions xcind
 complete -F _xcind_application_completions xcind-application
 complete -F _xcind_application_completions xcind-app
 complete -F _xcind_compose_completions xcind-compose

@@ -3,6 +3,7 @@
   "version": "0.7.3",
   "description": "Slim shell wrapper around docker compose with per-application config",
   "bin": {
+    "xcind": "bin/xcind",
     "xcind-app": "bin/xcind-application",
     "xcind-application": "bin/xcind-application",
     "xcind-compose": "bin/xcind-compose",

@@ -38,6 +38,7 @@ jobs:
       - name: Run shellcheck
         run: |
           shellcheck \
+            bin/xcind \
             bin/xcind-application \
             bin/xcind-compose \
             bin/xcind-config \
