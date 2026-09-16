@@ -506,16 +506,41 @@ _xcind-application() {
 # xcind-run: completion
 # -----------------------------------------------------------------------------
 
+# The docker compose subcommands xcind-run falls through to when the name
+# matches no declared bin or script. Keep in sync with
+# __XCIND_RUNNER_COMPOSE_COMMANDS in xcind-run-lib.bash and the list in
+# xcind-completion-bash.bash (drift guard in test-xcind-completion.sh).
+__XCIND_RUN_COMPOSE_SUBCOMMANDS=(attach build config cp create down events exec images kill logs ls pause port ps pull push restart rm run scale start stats stop top unpause up version wait watch)
+
 _xcind-run() {
-  # Once a name is on the line, the words after it belong to that bin or
-  # script — offer nothing.
+  # Once a name is on the line, the words after it belong to that name: a
+  # declared bin or script owns its args (offer nothing), and a compose
+  # subcommand (the passthrough) re-seats into the compose completion the
+  # same way the dispatcher re-seats into this one.
   local i
   for ((i = 2; i < CURRENT; i++)); do
     case "${words[$i]}" in
     -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
     --prefix) ((i++)) ;; # skip the prefix value
     --prefix=*) ;;
-    *) return ;;
+    *)
+      local _xcind_run_word="${words[$i]}"
+      local _xcind_run_known
+      while IFS= read -r _xcind_run_known; do
+        if [[ $_xcind_run_known == "$_xcind_run_word" ]]; then
+          return # declared bin or script
+        fi
+      done < <(xcind-run --list --names 2>/dev/null)
+      case " ${__XCIND_RUN_COMPOSE_SUBCOMMANDS[*]} " in
+      *" $_xcind_run_word "*)
+        words=("xcind-compose" "${words[@]:$((i - 1))}")
+        ((CURRENT -= i - 2))
+        local service="xcind-compose"
+        _xcind-compose
+        ;;
+      esac
+      return
+      ;;
     esac
   done
 
@@ -539,7 +564,8 @@ _xcind-run() {
     return
   fi
 
-  # First non-flag word: bin and script names from the app's declarations.
+  # First non-flag word: bin and script names from the app's declarations,
+  # then the compose passthrough subcommands as their own labeled group.
   # (A read loop instead of ${(f)...} so shfmt can parse this file.)
   local -a names
   local _xcind_run_name
@@ -549,6 +575,7 @@ _xcind-run() {
   if ((${#names[@]} > 0)); then
     _describe 'bin or script' names
   fi
+  _describe 'docker compose command' __XCIND_RUN_COMPOSE_SUBCOMMANDS
 }
 
 # -----------------------------------------------------------------------------

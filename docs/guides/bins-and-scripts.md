@@ -146,6 +146,29 @@ xcind-run @run app npm ci      # one-off container
 xcind-run @compose config --services
 ```
 
+## Compose passthrough
+
+A name that matches no declared bin or script, but is a docker compose
+subcommand (`up`, `down`, `ps`, `logs`, …), falls through to
+`docker compose` with the app's resolved options:
+
+```bash
+xcind-run up -d                # → docker compose … up -d
+xcind-run logs -f app          # → docker compose … logs -f app
+```
+
+Rules:
+
+- A declared bin or script with the same name takes precedence
+  (`xcind-run up` runs your `up` script). Use `@compose up` to bypass it.
+- `-T` does not apply; the args go to `docker compose` verbatim.
+- Step-level `@refs` inside scripts do not fall through — a typo in
+  `.xcind.sh` still fails loudly. Write `@compose up` in a step instead.
+- `--init-shell` does not generate wrappers for compose subcommands;
+  use `x-run up` (or `x-compose up`).
+- The subcommand list is static (see `xcind-run --list`); a compose
+  subcommand it misses still works through `@compose`.
+
 ## Shell wrappers
 
 `--init-shell` prints one wrapper function per visible bin and script:

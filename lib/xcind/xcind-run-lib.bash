@@ -539,6 +539,20 @@ __xcind-runner-compose() {
   docker compose ${XCIND_DOCKER_COMPOSE_OPTS[@]+"${XCIND_DOCKER_COMPOSE_OPTS[@]}"} "$@"
 }
 
+# The docker compose top-level subcommands that a CLI name falls through to
+# when it matches no declared bin or script. Keep in sync with the completion
+# word lists in xcind-completion-{bash,zsh}.bash (drift guard in
+# test/test-xcind-completion.sh).
+__XCIND_RUNNER_COMPOSE_COMMANDS="attach build config cp create down events exec images kill logs ls pause port ps pull push restart rm run scale start stats stop top unpause up version wait watch"
+
+#   $1 = name; 0 when it is a known compose subcommand
+__xcind-runner-is-compose-command() {
+  case " $__XCIND_RUNNER_COMPOSE_COMMANDS " in
+  *" $1 "*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 # Run one declared bin: exec (or run --rm) its cmd in its service, always
 # appending the caller's args.
 #   $1 = bin index, rest = args
@@ -748,7 +762,8 @@ __xcind-runner-run-script() {
   return 0
 }
 
-# Dispatch a CLI name: a step keyword, a bin, or a script.
+# Dispatch a CLI name: a step keyword, a bin, a script, or a docker compose
+# subcommand (passthrough; declared bins and scripts take precedence).
 # Requires __xcind-runner-load to have run.
 #   $1 = name, rest = args
 __xcind-runner-dispatch() {
@@ -768,6 +783,10 @@ __xcind-runner-dispatch() {
   elif idx=$(__xcind-runner-script-index "$name"); then
     __XCIND_RUNNER_STACK=""
     __xcind-runner-run-script "$idx" "$@"
+  elif __xcind-runner-is-compose-command "$name"; then
+    # Compose passthrough: forward verbatim, exactly like `@compose <name>`.
+    # No -T mapping — the user's args go to docker compose untouched.
+    __xcind-runner-compose "$name" "$@"
   else
     echo "xcind-run: unknown bin or script '$name'" >&2
     return 1
@@ -816,6 +835,26 @@ __xcind-runner-list() {
     return 0
   fi
 
+  # Compose passthrough: any of these subcommands also works as the name.
+  # Printed first so the sections read most-generic to most-specific;
+  # declared bins and scripts shadow these at dispatch time.
+  echo "compose:"
+  local line="" word
+  for word in $__XCIND_RUNNER_COMPOSE_COMMANDS; do
+    if [[ -z $line ]]; then
+      line="  $word"
+    elif [ $((${#line} + 1 + ${#word})) -gt 72 ]; then
+      echo "$line"
+      line="  $word"
+    else
+      line="$line $word"
+    fi
+  done
+  if [[ -n $line ]]; then
+    echo "$line"
+  fi
+  echo "  (docker compose passthrough; bins and scripts take precedence)"
+
   # Bins, pass 1: collect the visible entries and their tails, and measure
   # the widest name and tail so the description column lines up. Padding is
   # emitted as literal spaces, not through printf's field width: printf
@@ -851,6 +890,7 @@ __xcind-runner-list() {
     tail="${visible_tail[$i]}"
     i=$((i + 1))
     if [[ $printed_bins -eq 0 ]]; then
+      echo ""
       echo "bins:"
       printed_bins=1
     fi
@@ -883,9 +923,7 @@ __xcind-runner-list() {
     i=$((i + 1))
     [[ $name == _* ]] && continue
     if [[ $printed_scripts -eq 0 ]]; then
-      if [[ $printed_bins -eq 1 ]]; then
-        echo ""
-      fi
+      echo ""
       echo "scripts:"
       printed_scripts=1
     fi

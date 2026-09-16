@@ -470,6 +470,57 @@ assert_eq "xcind-run offers nothing after a name" "" "$out"
 out=$(comp_run fresh _xcind_run_completions xcind-run --list somename)
 assert_eq "xcind-run offers nothing after a name (with flags)" "" "$out"
 
+# Compose passthrough: the subcommands join the word-1 candidates once a
+# prefix is typed; a bare TAB stays project-only (nothing outside an app).
+out=$(comp_run fresh _xcind_run_completions xcind-run)
+assert_eq "xcind-run bare TAB offers nothing outside an app" "" "$out"
+
+out=$(comp_run partial _xcind_run_completions xcind-run u)
+assert_line "xcind-run 'u' offers compose 'up'" "up" "$out"
+assert_line "xcind-run 'u' offers compose 'unpause'" "unpause" "$out"
+
+out=$(comp_run partial _xcind_run_completions xcind-run wat)
+assert_line "xcind-run 'wat' offers compose 'watch'" "watch" "$out"
+
+# The wrappers reuse the same function, so the passthrough follows x-run.
+out=$(comp_run partial _xcind_run_completions x-run u)
+assert_line "x-run 'u' offers compose 'up'" "up" "$out"
+
+# Drift guard: the passthrough word list in the runner library and the one
+# in the bash completion (already sourced above) must not drift apart. The
+# zsh copy is checked in the zsh section below.
+runlib_compose_words=$(sed -n \
+  's/^__XCIND_RUNNER_COMPOSE_COMMANDS="\(.*\)"$/\1/p' \
+  "$XCIND_ROOT/lib/xcind/xcind-run-lib.bash" | tr ' ' '\n' | sort)
+bash_compose_words=$(printf '%s\n' "$__XCIND_RUN_COMPOSE_SUBCOMMANDS" |
+  tr ' ' '\n' | sort)
+assert_eq "bash passthrough list matches the runner list" \
+  "$runlib_compose_words" "$bash_compose_words"
+
+# After a compose subcommand the function re-seats into the compose
+# completion, so flag completion can only come from Docker's Cobra protocol.
+if command -v docker >/dev/null 2>&1 &&
+  docker __complete compose "" >/dev/null 2>&1; then
+  out=$(comp_run partial _xcind_run_completions xcind-run up --)
+  assert_line "xcind-run 'up --' re-seats into compose (--detach)" "--detach" "$out"
+
+  out=$(comp_run partial _xcind_run_completions xcind-run --list up --)
+  assert_line "xcind-run flags before the name survive the re-seat" "--detach" "$out"
+
+  RUN_RESEAT_PROJECT=$(mktemp_d)
+  cat >"$RUN_RESEAT_PROJECT/compose.yaml" <<'PROJEOF'
+services:
+  xcindrunweb:
+    image: nginx
+PROJEOF
+  out=$(cd "$RUN_RESEAT_PROJECT" && comp_run fresh _xcind_run_completions xcind-run logs)
+  assert_line "xcind-run 'logs ' completes a service via the re-seat" \
+    "xcindrunweb" "$out"
+else
+  echo "  … SKIP: docker with __complete support not available (run re-seat)"
+  SKIP=$((SKIP + 1))
+fi
+
 # Name completion shells out to `xcind-run --list --names`, which needs the
 # real pipeline: an app fixture and docker.
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -490,11 +541,17 @@ RUNEOF
     comp_run fresh _xcind_run_completions xcind-run)
   assert_line "xcind-run completes a bin name" "xcnpm" "$out"
   assert_line "xcind-run completes a script name" "xcfresh" "$out"
+  assert_no_line "xcind-run bare TAB omits compose 'up'" "up" "$out"
 
   out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
     comp_run partial _xcind_run_completions xcind-run xcn)
   assert_line "xcind-run partial name completes" "xcnpm" "$out"
   assert_no_line "xcind-run partial name filters" "xcfresh" "$out"
+
+  # A declared name owns its args: no compose re-seat, nothing offered.
+  out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+    comp_run fresh _xcind_run_completions xcind-run xcnpm)
+  assert_eq "xcind-run declared name does not re-seat" "" "$out"
 
   rm -rf "$RUN_FIXTURE"
 else
@@ -759,6 +816,18 @@ ZSHEOF
   out=$(zcomp_run _xcind-run 3 xcind-run --prefix)
   assert_eq "zsh: xcind-run '--prefix ' offers nothing" "" "$out"
 
+  # Compose passthrough: word 1 always shows the compose subcommands as
+  # their own labeled group (zsh groups, unlike bash's flat list).
+  out=$(zcomp_run _xcind-run 2 xcind-run)
+  assert_line "zsh: xcind-run word 1 offers compose 'up'" "up" "$out"
+  assert_line "zsh: xcind-run word 1 offers compose 'watch'" "watch" "$out"
+
+  # Drift guard: the zsh passthrough list matches the runner library's.
+  zsh_compose_words=$(zsh -c "source '$ZSH_COMPLETION' 2>/dev/null
+    print -rl -- \$__XCIND_RUN_COMPOSE_SUBCOMMANDS" | sort)
+  assert_eq "zsh passthrough list matches the runner list" \
+    "$runlib_compose_words" "$zsh_compose_words"
+
   out=$(zcomp_run _xcind-proxy 2 xcind-proxy)
   assert_line "zsh: top level offers init" \
     "init:Create proxy infrastructure files" "$out"
@@ -867,6 +936,11 @@ ZSHEOF
       echo "  ✗ zsh: delegation offers 'watch' (not in fallback list)"
       FAIL=$((FAIL + 1))
     fi
+
+    # Compose passthrough: after a compose subcommand, _xcind-run re-seats
+    # into _xcind-compose, so flag completion comes from Docker.
+    out=$(zcomp_run _xcind-run 3 xcind-run up --)
+    assert_contains "zsh: run 'up --' re-seats into compose" "--detach" "$out"
   else
     echo "  … SKIP: docker with __complete support not available (zsh)"
     SKIP=$((SKIP + 1))

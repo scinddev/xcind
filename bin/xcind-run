@@ -4,11 +4,14 @@
 # Usage:
 #   xcind-run [-T|--no-tty] <name> [args…]
 #   xcind-run [-T] @exec <svc> [cmd…] | @run <svc> <cmd…> | @compose <args…>
+#   xcind-run <compose-subcommand> [args…]
 #   xcind-run --list [--names]
 #
 # Bins come from XCIND_BINS (name:service[;key=value…]); scripts come from
 # XCIND_SCRIPTS (name: followed by steps, one per line). Runner flags go
-# before the name; everything after the name is passed to it.
+# before the name; everything after the name is passed to it. A name that
+# matches no bin or script but is a docker compose subcommand falls through
+# to docker compose (declared bins and scripts take precedence).
 
 set -euo pipefail
 
@@ -53,9 +56,16 @@ The step keywords also work as the name:
   xcind-run @run <svc> <cmd…>    docker compose run --rm
   xcind-run @compose <args…>     docker compose, args verbatim
 
+Any docker compose subcommand also works as the name:
+  xcind-run up -d                docker compose up -d
+A declared bin or script with the same name takes precedence; use
+@compose to bypass it. -T does not apply here — args go to docker
+compose verbatim.
+
 Examples:
   xcind-run npm --version
   xcind-run fresh
+  xcind-run up -d
   xcind-run @exec app echo ok
   xcind-run @compose config --services
 HELPEOF

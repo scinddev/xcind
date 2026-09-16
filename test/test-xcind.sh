@@ -4234,12 +4234,48 @@ rm -f "$kw_err_file"
 assert_eq "dispatch unknown keyword rc" "1" "$rc"
 assert_contains "dispatch unknown keyword message" "unknown keyword '@bogus'" "$kw_err"
 
-# 8. Unknown name exits 1
+# 8. Unknown name (not a compose subcommand) exits 1 with the error
 runner_setup
 __xcind-runner-load
 rc=0
-__xcind-runner-dispatch nosuch </dev/null 2>/dev/null || rc=$?
+unk_err_file=$(mktemp)
+__xcind-runner-dispatch nosuch </dev/null 2>"$unk_err_file" || rc=$?
+unk_err=$(<"$unk_err_file")
+rm -f "$unk_err_file"
 assert_eq "dispatch unknown name rc" "1" "$rc"
+assert_contains "dispatch unknown name message" "unknown bin or script 'nosuch'" "$unk_err"
+
+# 8b. Compose passthrough: a compose subcommand with no matching bin or
+# script forwards verbatim, exactly like @compose
+runner_setup
+__xcind-runner-load
+__xcind-runner-dispatch up -d </dev/null
+assert_eq "dispatch compose passthrough argv" \
+  "compose
+-f
+compose.yaml
+up
+-d" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8c. Passthrough ignores -T; args go to docker compose untouched
+runner_setup
+__xcind-runner-load
+__XCIND_RUNNER_NO_TTY=1
+__xcind-runner-dispatch ps </dev/null
+assert_eq "dispatch compose passthrough no -T" \
+  "compose
+-f
+compose.yaml
+ps" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8d. A declared script shadows the compose subcommand of the same name
+runner_setup
+XCIND_SCRIPTS=("up:
+    echo shadowed >>'$RUN_DIR/shadow.log'")
+__xcind-runner-load
+__xcind-runner-dispatch up </dev/null
+assert_eq "dispatch declared name shadows compose" "shadowed" "$(cat "$RUN_DIR/shadow.log")"
+assert_eq "dispatch shadowed compose skips docker" "" "$(cat "$DOCKER_SHIM_LOG")"
 
 # 9. Script steps run in order; host steps run on the host
 runner_setup
@@ -4360,8 +4396,13 @@ XCIND_SCRIPTS=("fresh:
     echo ok" "_hiddenscript:echo hi")
 __xcind-runner-load
 list_out=$(__xcind-runner-list 0)
+assert_contains "list shows compose header" "compose:" "$list_out"
+assert_contains "list shows compose note" "docker compose passthrough" "$list_out"
 assert_contains "list shows bins header" "bins:" "$list_out"
 assert_contains "list shows scripts header" "scripts:" "$list_out"
+assert_eq "list compose before bins" "true" \
+  "$([ "$(echo "$list_out" | grep -n 'compose:' | cut -d: -f1)" -lt \
+    "$(echo "$list_out" | grep -n 'bins:' | cut -d: -f1)" ] && echo true || echo false)"
 assert_contains "list shows bin desc" "Node package manager" "$list_out"
 assert_contains "list shows script desc" "Rebuild everything" "$list_out"
 assert_eq "list hides _ names" "false" \
