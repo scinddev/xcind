@@ -414,40 +414,50 @@ _xcind_run_completions() {
   # declared bin or script owns its args (offer nothing), and a compose
   # subcommand (the passthrough) re-seats into the compose completion the
   # same way the dispatcher re-seats into this one.
-  local i word
+  local i word options=1
   for ((i = 1; i < COMP_CWORD; i++)); do
     word="${COMP_WORDS[$i]}"
-    case $word in
-    -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
-    --prefix) ((i++)) ;; # skip the prefix value
-    --prefix=*) ;;
-    *)
-      local names nl=$'\n'
-      names=$(xcind-run --list --names 2>/dev/null)
-      case "$nl$names$nl" in
-      *"$nl$word$nl"*) return ;; # declared bin or script
+    if ((options)); then
+      case $word in
+      -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) continue ;;
+      --prefix)
+        ((i++))
+        continue
+        ;; # skip the prefix value
+      --prefix=*) continue ;;
+      --)
+        options=0
+        continue
+        ;; # stop parsing runner options
       esac
-      case " $__XCIND_RUN_COMPOSE_SUBCOMMANDS " in
-      *" $word "*)
-        COMP_WORDS=("xcind-compose" "${COMP_WORDS[@]:i}")
-        COMP_CWORD=$((COMP_CWORD - i + 1))
-        _xcind_compose_completions
-        ;;
-      esac
-      return
+    fi
+
+    local names nl=$'\n'
+    names=$(xcind-run --list --names 2>/dev/null)
+    case "$nl$names$nl" in
+    *"$nl$word$nl"*) return ;; # declared bin or script
+    esac
+    case " $__XCIND_RUN_COMPOSE_SUBCOMMANDS " in
+    *" $word "*)
+      COMP_WORDS=("xcind-compose" "${COMP_WORDS[@]:i}")
+      COMP_CWORD=$((COMP_CWORD - i + 1))
+      _xcind_compose_completions
       ;;
     esac
+    return
   done
 
-  # --prefix takes free text
-  if [[ $prev == "--prefix" ]]; then
-    return
-  fi
+  if ((options)); then
+    # --prefix takes free text
+    if [[ $prev == "--prefix" ]]; then
+      return
+    fi
 
-  if [[ $cur == -* ]]; then
-    local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
-    COMPREPLY=($(compgen -W "$opts" -- "$cur"))
-    return
+    if [[ $cur == -* ]]; then
+      local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
+      COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+      return
+    fi
   fi
 
   # First non-flag word: bin and script names from the app's declarations.

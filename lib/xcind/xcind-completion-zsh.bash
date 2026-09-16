@@ -517,51 +517,61 @@ _xcind-run() {
   # declared bin or script owns its args (offer nothing), and a compose
   # subcommand (the passthrough) re-seats into the compose completion the
   # same way the dispatcher re-seats into this one.
-  local i
+  local i _xcind_run_options=1
   for ((i = 2; i < CURRENT; i++)); do
-    case "${words[$i]}" in
-    -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
-    --prefix) ((i++)) ;; # skip the prefix value
-    --prefix=*) ;;
-    *)
-      local _xcind_run_word="${words[$i]}"
-      local _xcind_run_known
-      while IFS= read -r _xcind_run_known; do
-        if [[ $_xcind_run_known == "$_xcind_run_word" ]]; then
-          return # declared bin or script
-        fi
-      done < <(xcind-run --list --names 2>/dev/null)
-      case " ${__XCIND_RUN_COMPOSE_SUBCOMMANDS[*]} " in
-      *" $_xcind_run_word "*)
-        words=("xcind-compose" "${words[@]:$((i - 1))}")
-        ((CURRENT -= i - 2))
-        local service="xcind-compose"
-        _xcind-compose
-        ;;
+    if ((_xcind_run_options)); then
+      case "${words[$i]}" in
+      -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) continue ;;
+      --prefix)
+        ((i++))
+        continue
+        ;; # skip the prefix value
+      --prefix=*) continue ;;
+      --)
+        _xcind_run_options=0
+        continue
+        ;; # stop parsing runner options
       esac
-      return
+    fi
+
+    local _xcind_run_word="${words[$i]}"
+    local _xcind_run_known
+    while IFS= read -r _xcind_run_known; do
+      if [[ $_xcind_run_known == "$_xcind_run_word" ]]; then
+        return # declared bin or script
+      fi
+    done < <(xcind-run --list --names 2>/dev/null)
+    case " ${__XCIND_RUN_COMPOSE_SUBCOMMANDS[*]} " in
+    *" $_xcind_run_word "*)
+      words=("xcind-compose" "${words[@]:$((i - 1))}")
+      ((CURRENT -= i - 2))
+      local service="xcind-compose"
+      _xcind-compose
       ;;
     esac
+    return
   done
 
-  # --prefix takes free text
-  if [[ ${words[CURRENT - 1]} == "--prefix" ]]; then
-    return
-  fi
+  if ((_xcind_run_options)); then
+    # --prefix takes free text
+    if [[ ${words[CURRENT - 1]} == "--prefix" ]]; then
+      return
+    fi
 
-  if [[ ${words[CURRENT]} == -* ]]; then
-    local -a opts=(
-      '-T:Pass -T to docker compose exec/run'
-      '--no-tty:Pass -T to docker compose exec/run'
-      '--list:List runnable bins and scripts'
-      '--names:With --list, print bare names only'
-      '--init-shell:Print shell wrapper functions for eval'
-      '--prefix:Wrapper prefix for --init-shell (default x-)'
-      '--help:Show help'
-      '--version:Show version'
-    )
-    _describe 'xcind-run option' opts
-    return
+    if [[ ${words[CURRENT]} == -* ]]; then
+      local -a opts=(
+        '-T:Pass -T to docker compose exec/run'
+        '--no-tty:Pass -T to docker compose exec/run'
+        '--list:List runnable bins and scripts'
+        '--names:With --list, print bare names only'
+        '--init-shell:Print shell wrapper functions for eval'
+        '--prefix:Wrapper prefix for --init-shell (default x-)'
+        '--help:Show help'
+        '--version:Show version'
+      )
+      _describe 'xcind-run option' opts
+      return
+    fi
   fi
 
   # First non-flag word: bin and script names from the app's declarations,

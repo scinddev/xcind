@@ -461,6 +461,10 @@ assert_line "xcind-run '--' offers --no-tty" "--no-tty" "$out"
 out=$(comp_run partial _xcind_run_completions xcind-run -)
 assert_line "xcind-run '-' offers -T" "-T" "$out"
 
+out=$(comp_run partial _xcind_run_completions xcind-run -- --no-tty)
+assert_no_line "xcind-run separator stops runner option completion" \
+  "--no-tty" "$out"
+
 out=$(comp_run fresh _xcind_run_completions xcind-run --prefix)
 assert_eq "xcind-run '--prefix ' offers nothing" "" "$out"
 
@@ -507,6 +511,10 @@ if command -v docker >/dev/null 2>&1 &&
   out=$(comp_run partial _xcind_run_completions xcind-run --list up --)
   assert_line "xcind-run flags before the name survive the re-seat" "--detach" "$out"
 
+  out=$(comp_run partial _xcind_run_completions xcind-run -- up --)
+  assert_line "xcind-run separator before the name survives the re-seat" \
+    "--detach" "$out"
+
   RUN_RESEAT_PROJECT=$(mktemp_d)
   cat >"$RUN_RESEAT_PROJECT/compose.yaml" <<'PROJEOF'
 services:
@@ -528,7 +536,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   cat >"$RUN_FIXTURE/.xcind.sh" <<'RUNEOF'
 XCIND_APP="comp-run-app"
 XCIND_COMPOSE_FILES=("compose.yaml")
-XCIND_BINS=("xcnpm:app")
+XCIND_BINS=("xcnpm:app" "up:app")
 XCIND_SCRIPTS=("xcfresh:echo ok")
 RUNEOF
   cat >"$RUN_FIXTURE/compose.yaml" <<'RUNEOF'
@@ -541,7 +549,7 @@ RUNEOF
     comp_run fresh _xcind_run_completions xcind-run)
   assert_line "xcind-run completes a bin name" "xcnpm" "$out"
   assert_line "xcind-run completes a script name" "xcfresh" "$out"
-  assert_no_line "xcind-run bare TAB omits compose 'up'" "up" "$out"
+  assert_no_line "xcind-run bare TAB omits compose 'down'" "down" "$out"
 
   out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
     comp_run partial _xcind_run_completions xcind-run xcn)
@@ -552,6 +560,10 @@ RUNEOF
   out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
     comp_run fresh _xcind_run_completions xcind-run xcnpm)
   assert_eq "xcind-run declared name does not re-seat" "" "$out"
+
+  out=$(cd "$RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+    comp_run partial _xcind_run_completions xcind-run up --)
+  assert_eq "xcind-run declared compose name does not re-seat" "" "$out"
 
   rm -rf "$RUN_FIXTURE"
 else
@@ -810,6 +822,10 @@ ZSHEOF
   assert_line "zsh: xcind-run '-' offers --init-shell" \
     "--init-shell:Print shell wrapper functions for eval" "$out"
 
+  out=$(zcomp_run _xcind-run 3 xcind-run -- --no-tty)
+  assert_no_line "zsh: separator stops runner option completion" \
+    "--no-tty:Pass -T to docker compose exec/run" "$out"
+
   out=$(zcomp_run _xcind-run 3 xcind-run somename)
   assert_eq "zsh: xcind-run offers nothing after a name" "" "$out"
 
@@ -941,6 +957,25 @@ ZSHEOF
     # into _xcind-compose, so flag completion comes from Docker.
     out=$(zcomp_run _xcind-run 3 xcind-run up --)
     assert_contains "zsh: run 'up --' re-seats into compose" "--detach" "$out"
+
+    out=$(zcomp_run _xcind-run 4 xcind-run -- up --)
+    assert_contains "zsh: run '-- up --' re-seats into compose" "--detach" "$out"
+
+    ZSH_RUN_FIXTURE=$(mktemp_d)
+    cat >"$ZSH_RUN_FIXTURE/.xcind.sh" <<'RUNEOF'
+XCIND_APP="comp-run-app"
+XCIND_COMPOSE_FILES=("compose.yaml")
+XCIND_BINS=("up:app")
+RUNEOF
+    cat >"$ZSH_RUN_FIXTURE/compose.yaml" <<'RUNEOF'
+services:
+  app:
+    image: nginx
+RUNEOF
+    out=$(cd "$ZSH_RUN_FIXTURE" && PATH="$XCIND_ROOT/bin:$PATH" \
+      zcomp_run _xcind-run 3 xcind-run up --)
+    assert_eq "zsh: declared compose name does not re-seat" "" "$out"
+    rm -rf "$ZSH_RUN_FIXTURE"
   else
     echo "  … SKIP: docker with __complete support not available (zsh)"
     SKIP=$((SKIP + 1))
