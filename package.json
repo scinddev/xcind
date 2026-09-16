@@ -1,6 +1,6 @@
 {
   "name": "@scinddev/xcind",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Slim shell wrapper around docker compose with per-application config",
   "bin": {
     "xcind": "bin/xcind",

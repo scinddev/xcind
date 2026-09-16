@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.1] - 2026-09-16
+
+### Added
+
+- feat(completions): xcind-shell-alias — ad-hoc aliases with completion (#99) by @simensen in [#99](https://github.com/scinddev/xcind/pull/99)
 ## [0.8.0] - 2026-09-16
 
 ### Added
