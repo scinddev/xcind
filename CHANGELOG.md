@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-09-16
+
+### Added
+
+- feat: xcind — standalone dispatcher with full tab completion (#96) by @simensen in [#96](https://github.com/scinddev/xcind/pull/96)
+- feat(run): fall through to docker compose subcommands (#97) by @simensen in [#97](https://github.com/scinddev/xcind/pull/97)
+- feat(run): send unknown commands to a __default bin (#98) by @simensen in [#98](https://github.com/scinddev/xcind/pull/98)
 ## [0.7.3] - 2026-09-04
 
 ### Added
