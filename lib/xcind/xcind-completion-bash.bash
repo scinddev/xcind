@@ -515,7 +515,8 @@ _xcind_completions() {
 # The dispatcher registration is intentionally absent from
 # __XCIND_SHELL_ALIAS_MAP below: the map drives x-* wrappers over the
 # xcind-* binaries, and the drift guard in test-xcind-completion.sh only
-# matches `xcind-` names.
+# matches `xcind-` names. Ad-hoc aliases reach the dispatcher through
+# `xcind-shell-alias NAME xcind`, which special-cases the name.
 complete -F _xcind_completions xcind
 complete -F _xcind_application_completions xcind-application
 complete -F _xcind_application_completions xcind-app
@@ -529,9 +530,9 @@ complete -F _xcind_run_completions xcind-run
 # Prefixed wrappers for the xcind commands
 # -----------------------------------------------------------------------------
 
-# Command suffix → completion function, for the wrappers below. Keep in sync
-# with the `complete -F` block above; test-xcind-completion.sh asserts the two
-# agree.
+# Command suffix → completion function, for xcind-shell-alias and the
+# wrappers below. Keep in sync with the `complete -F` block above;
+# test-xcind-completion.sh asserts the two agree.
 __XCIND_SHELL_ALIAS_MAP="application:_xcind_application_completions
 app:_xcind_application_completions
 compose:_xcind_compose_completions
@@ -540,9 +541,53 @@ proxy:_xcind_proxy_completions
 workspace:_xcind_workspace_completions
 run:_xcind_run_completions"
 
+# Define one ad-hoc wrapper NAME for a single xcind command and register its
+# completion, so `x …` can complete like `xcind-run …`. COMMAND is a key of
+# __XCIND_SHELL_ALIAS_MAP or the literal `xcind` (the bare dispatcher).
+# Digit-leading names are fine (bash accepts them as function names); a
+# leading dash is not, because `complete` would parse the name as an option.
+#
+# Usage: xcind-shell-alias NAME COMMAND   (e.g. xcind-shell-alias x run)
+xcind-shell-alias() {
+  local name=${1-} command=${2-} fn="" target="" valid=""
+  if [[ $# -ne 2 || -z $name || -z $command ]]; then
+    echo "xcind-shell-alias: usage: xcind-shell-alias NAME COMMAND" >&2
+    return 64
+  fi
+  if [[ $name =~ [^a-zA-Z0-9_-] ]]; then
+    echo "xcind-shell-alias: name must contain only alphanumeric, dash, or underscore characters" >&2
+    return 64
+  fi
+  if [[ $name == -* ]]; then
+    echo "xcind-shell-alias: name must not start with a dash" >&2
+    return 64
+  fi
+  if [[ $command == xcind ]]; then
+    target=xcind
+    fn=_xcind_completions
+  else
+    local mshort mfn
+    while IFS=: read -r mshort mfn; do
+      [ -z "$mshort" ] && continue
+      valid="$valid$mshort "
+      if [[ $mshort == "$command" ]]; then
+        target="xcind-$mshort"
+        fn=$mfn
+      fi
+    done <<<"$__XCIND_SHELL_ALIAS_MAP"
+    if [[ -z $target ]]; then
+      echo "xcind-shell-alias: unknown command '$command' (valid: ${valid}xcind)" >&2
+      return 64
+    fi
+  fi
+  eval "${name}() { ${target} \"\$@\"; }"
+  complete -F "$fn" "$name"
+}
+
 # Define <prefix><name> wrappers for the xcind commands and register each
 # one's completion, so `x-config …` completes like `xcind-config …` instead of
-# falling back to filenames.
+# falling back to filenames. Each wrapper is defined through
+# xcind-shell-alias above.
 #
 # The command set comes from this file, not from an app's .xcind.sh, so one
 # call per shell covers every directory. Nothing here touches XCIND_BINS or
@@ -551,14 +596,17 @@ run:_xcind_run_completions"
 #
 # Usage: xcind-shell-aliases [PREFIX]   (default prefix: x-)
 xcind-shell-aliases() {
-  local prefix=${1:-x-} short fn
+  local prefix=${1:-x-} short
   if [[ $prefix =~ [^a-zA-Z0-9_-] ]]; then
     echo "xcind-shell-aliases: prefix value must contain only alphanumeric, dash, or underscore characters" >&2
     return 64
   fi
-  while IFS=: read -r short fn; do
+  if [[ $prefix == -* ]]; then
+    echo "xcind-shell-aliases: prefix value must not start with a dash" >&2
+    return 64
+  fi
+  while IFS=: read -r short _; do
     [ -z "$short" ] && continue
-    eval "${prefix}${short}() { xcind-${short} \"\$@\"; }"
-    complete -F "$fn" "${prefix}${short}"
+    xcind-shell-alias "${prefix}${short}" "$short"
   done <<<"$__XCIND_SHELL_ALIAS_MAP"
 }

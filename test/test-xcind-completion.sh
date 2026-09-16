@@ -775,6 +775,117 @@ assert_line "x-run '--' offers --no-tty" "--no-tty" "$out"
 out=$(comp_run fresh _xcind_config_completions x-config)
 assert_line "x-config offers the resolve subcommand" "resolve" "$out"
 
+# A leading-dash prefix is rejected before it reaches `complete`.
+out=$(
+  set +e
+  xcind-shell-aliases -x 2>&1
+  echo "rc=$?"
+)
+assert_line "leading-dash prefix exits 64" "rc=64" "$out"
+assert_contains "leading-dash prefix explains the rule" \
+  "must not start with a dash" "$out"
+
+# ======================================================================
+echo "=== Test: xcind-shell-alias — ad-hoc single wrappers ==="
+
+# Happy path: alias a command, alias a second name to the same command.
+out=$(
+  set +e
+  xcind-shell-alias x run
+  echo "rc=$?"
+  xcind-shell-alias xr run
+  echo "rc2=$?"
+  echo "x=$(type -t x)"
+  echo "xr=$(type -t xr)"
+  complete -p x xr 2>/dev/null
+  declare -f x
+)
+assert_line "alias to run succeeds" "rc=0" "$out"
+assert_line "second alias to run succeeds" "rc2=0" "$out"
+assert_line "alias defines x" "x=function" "$out"
+assert_line "alias defines xr" "xr=function" "$out"
+assert_line "x carries xcind-run's completion" \
+  "complete -F _xcind_run_completions x" "$out"
+assert_line "xr carries xcind-run's completion" \
+  "complete -F _xcind_run_completions xr" "$out"
+assert_contains "x forwards to xcind-run" 'xcind-run "$@"' "$out"
+
+# The bare dispatcher is a valid target, forwarding to `xcind` itself.
+out=$(
+  set +e
+  xcind-shell-alias x xcind
+  echo "rc=$?"
+  complete -p x 2>/dev/null
+  declare -f x
+)
+assert_line "alias to the dispatcher succeeds" "rc=0" "$out"
+assert_line "dispatcher alias carries the dispatcher completion" \
+  "complete -F _xcind_completions x" "$out"
+assert_contains "dispatcher alias forwards to xcind" 'xcind "$@"' "$out"
+assert_not_contains "dispatcher alias does not forward to xcind-xcind" \
+  'xcind-xcind' "$out"
+
+# Unknown command: exit 64, name valid values, define nothing.
+out=$(
+  set +e
+  xcind-shell-alias x bogus 2>&1
+  echo "rc=$?"
+  echo "x=$(type -t x)"
+)
+assert_line "unknown command exits 64" "rc=64" "$out"
+assert_contains "unknown command names the culprit" \
+  "unknown command 'bogus'" "$out"
+assert_contains "unknown command lists run" "run" "$out"
+assert_contains "unknown command lists xcind" "xcind" "$out"
+assert_line "unknown command defines nothing" "x=" "$out"
+
+# Bad names: same charset rule as the prefix, plus the leading-dash guard.
+out=$(
+  set +e
+  xcind-shell-alias 'a;b' run 2>&1
+  echo "rc=$?"
+)
+assert_line "bad-charset name exits 64" "rc=64" "$out"
+assert_contains "bad-charset name explains the charset" \
+  "must contain only alphanumeric, dash, or underscore" "$out"
+
+out=$(
+  set +e
+  xcind-shell-alias -x run 2>&1
+  echo "rc=$?"
+)
+assert_line "leading-dash name exits 64" "rc=64" "$out"
+assert_contains "leading-dash name explains the rule" \
+  "must not start with a dash" "$out"
+
+# Arity: exactly two non-empty arguments.
+for args in "" "x" "x run extra"; do
+  out=$(
+    set +e
+    # shellcheck disable=SC2086
+    xcind-shell-alias $args 2>&1
+    echo "rc=$?"
+  )
+  assert_line "arity '$args' exits 64" "rc=64" "$out"
+  assert_contains "arity '$args' prints usage" \
+    "usage: xcind-shell-alias NAME COMMAND" "$out"
+done
+out=$(
+  set +e
+  xcind-shell-alias "" run 2>&1
+  echo "rc=$?"
+)
+assert_line "empty name exits 64" "rc=64" "$out"
+
+# End to end: the ad-hoc name completes exactly like the real command.
+out=$(
+  set +e
+  xcind-shell-alias x run >/dev/null 2>&1
+  comp_run partial _xcind_run_completions x --
+)
+assert_line "x '--' offers --list" "--list" "$out"
+assert_line "x '--' offers --no-tty" "--no-tty" "$out"
+
 # ======================================================================
 echo "=== Test: zsh completion functions ==="
 
@@ -1057,6 +1168,53 @@ ZSHALIASEOF
   assert_line "zsh: bad prefix exits 64" "rc=64" "$out"
   assert_contains "zsh: bad prefix explains the charset" \
     "must contain only alphanumeric, dash, or underscore" "$out"
+
+  # -------------------------------------------------------------------
+  # xcind-shell-alias (zsh) — same real-compsys need as the plural above.
+  # -------------------------------------------------------------------
+  ZSH_SINGULAR_DRIVER="$COMPLETION_TMP/zsh-singular-driver.zsh"
+  cat >"$ZSH_SINGULAR_DRIVER" <<'ZSHSINGULAREOF'
+# Usage: zsh driver.zsh <completion-file> [name [command]]
+autoload -Uz compinit
+compinit -u -d "${TMPDIR:-/tmp}/xcind-comp-test-zcompdump-$$" 2>/dev/null
+source $1
+xcind-shell-alias "${@:2}"
+print -r -- "rc=$?"
+if (( $# > 1 )); then
+  print -r -- "$2=${$(whence -w -- $2)#*: }"
+  print -r -- "comp:$2=${_comps[$2]}"
+fi
+ZSHSINGULAREOF
+
+  out=$(zsh "$ZSH_SINGULAR_DRIVER" "$ZSH_COMPLETION" x run 2>/dev/null || true)
+  assert_line "zsh: alias to run succeeds" "rc=0" "$out"
+  assert_line "zsh: alias defines x" "x=function" "$out"
+  assert_line "zsh: x carries xcind-run's completion" "comp:x=_xcind-run" "$out"
+
+  out=$(zsh "$ZSH_SINGULAR_DRIVER" "$ZSH_COMPLETION" x xcind 2>/dev/null || true)
+  assert_line "zsh: alias to the dispatcher succeeds" "rc=0" "$out"
+  assert_line "zsh: dispatcher alias carries the dispatcher completion" \
+    "comp:x=_xcind" "$out"
+
+  out=$(zsh "$ZSH_SINGULAR_DRIVER" "$ZSH_COMPLETION" x bogus 2>&1 || true)
+  assert_line "zsh: unknown command exits 64" "rc=64" "$out"
+  assert_contains "zsh: unknown command names the culprit" \
+    "unknown command 'bogus'" "$out"
+
+  out=$(zsh "$ZSH_SINGULAR_DRIVER" "$ZSH_COMPLETION" 'a;b' run 2>&1 || true)
+  assert_line "zsh: bad-charset name exits 64" "rc=64" "$out"
+  assert_contains "zsh: bad-charset name explains the charset" \
+    "must contain only alphanumeric, dash, or underscore" "$out"
+
+  out=$(zsh "$ZSH_SINGULAR_DRIVER" "$ZSH_COMPLETION" x 2>&1 || true)
+  assert_line "zsh: one argument exits 64" "rc=64" "$out"
+  assert_contains "zsh: one argument prints usage" \
+    "usage: xcind-shell-alias NAME COMMAND" "$out"
+
+  out=$(zsh "$ZSH_ALIAS_DRIVER" "$ZSH_COMPLETION" '-x' 2>&1 || true)
+  assert_line "zsh: leading-dash prefix exits 64" "rc=64" "$out"
+  assert_contains "zsh: leading-dash prefix explains the rule" \
+    "must not start with a dash" "$out"
 
   # Same drift guard as the bash side, against the compdef registrations.
   map_pairs=$(zsh -c "source '$ZSH_COMPLETION' 2>/dev/null

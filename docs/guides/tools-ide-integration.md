@@ -37,6 +37,16 @@ xcind-shell-aliases acme-      # acme-compose, acme-config, …
 `x-compose <TAB>` then completes services and compose flags exactly as
 `xcind-compose <TAB>` does.
 
+For a single ad-hoc name instead of the full set, `xcind-shell-alias` maps
+one name to one command — or to the bare `xcind` dispatcher — and registers
+its completion:
+
+```bash
+xcind-shell-alias x run        # x <TAB> completes the app's bins and scripts
+xcind-shell-alias xr run       # any name you like
+xcind-shell-alias xc xcind     # xc <TAB> completes like xcind <TAB>
+```
+
 The command set comes from the completion script, not from an app's
 `.xcind.sh`, so one call per shell covers every directory. Reach an app's
 bins and scripts through `xcind-run <TAB>`, which re-reads the current app on

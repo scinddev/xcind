@@ -66,6 +66,8 @@ xcind-config completion zsh             # zsh completions
 # After sourcing either one, define completing short names (default prefix x-)
 xcind-shell-aliases                     # x-compose, x-config, x-run, …
 xcind-shell-aliases acme-               # acme-compose, acme-config, …
+xcind-shell-alias x run                 # one ad-hoc name for one command
+xcind-shell-alias xc xcind              # or for the bare dispatcher
 ```
 
 `resolve` accepts dotted keys and array indexes such as `configFiles[0]`.
