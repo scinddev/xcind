@@ -22,6 +22,30 @@ source "$SCRIPT_DIR/lib/assert.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/setup.sh"
 
+# Exercise both line assertions with an early match and more input than a
+# pipe can buffer. An early-exiting reader must not reverse either result.
+echo "=== Test: line assertions consume all input under pipefail ==="
+line_assertion_counts() {
+  local PASS=0 FAIL=0
+  "$@" >/dev/null
+  printf '%s:%s' "$PASS" "$FAIL"
+}
+assertion_haystack=$(printf 'match\n%1048576s\n' '')
+for assertion_helper in assert_line assert_no_line; do
+  for assertion_needle in match absent; do
+    assertion_counts=$(line_assertion_counts "$assertion_helper" \
+      "large input" "$assertion_needle" "$assertion_haystack")
+    assertion_expected="0:1"
+    if [[ $assertion_helper == assert_line && $assertion_needle == match ]] ||
+      [[ $assertion_helper == assert_no_line && $assertion_needle == absent ]]; then
+      assertion_expected="1:0"
+    fi
+    assert_eq "$assertion_helper with $assertion_needle in large input" \
+      "$assertion_expected" "$assertion_counts"
+  done
+done
+unset assertion_haystack
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
