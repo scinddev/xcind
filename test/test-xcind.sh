@@ -3841,6 +3841,19 @@ fi
 assert_contains "bins pair without '=' names the pair" \
   "unknown XCIND_BINS attribute 'bogus'" "$(cat "$noeq_err_file")"
 rm -f "$noeq_err_file"
+
+# 16b. __default keeps an empty cmd (a prefix, not a command); an explicit
+# cmd is stored as-is
+reset_xcind_state
+XCIND_BINS=("__default:app")
+__xcind-runner-parse-bins
+assert_eq "__default cmd stays empty" "" "${__XCIND_RUNNER_BIN_CMDS[0]}"
+
+reset_xcind_state
+XCIND_BINS=("__default:app;cmd=with-env")
+__xcind-runner-parse-bins
+assert_eq "__default explicit cmd kept" "with-env" "${__XCIND_RUNNER_BIN_CMDS[0]}"
+
 # 17. SHA changes when XCIND_BINS changes
 reset_xcind_state
 XCIND_BINS=("php:app")
@@ -4244,6 +4257,7 @@ unk_err=$(<"$unk_err_file")
 rm -f "$unk_err_file"
 assert_eq "dispatch unknown name rc" "1" "$rc"
 assert_contains "dispatch unknown name message" "unknown bin or script 'nosuch'" "$unk_err"
+assert_contains "dispatch unknown name hint" "declare a __default bin" "$unk_err"
 
 # 8b. Compose passthrough: a compose subcommand with no matching bin or
 # script forwards verbatim, exactly like @compose
@@ -4276,6 +4290,120 @@ __xcind-runner-load
 __xcind-runner-dispatch up </dev/null
 assert_eq "dispatch declared name shadows compose" "shadowed" "$(cat "$RUN_DIR/shadow.log")"
 assert_eq "dispatch shadowed compose skips docker" "" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8e. __default fallback: an unknown name execs on the declared service
+runner_setup
+XCIND_BINS=("__default:app")
+__xcind-runner-load
+__xcind-runner-dispatch foo.sh --bar </dev/null
+assert_eq "dispatch __default exec argv" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+foo.sh
+--bar" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8f. __default with use=run → run --rm
+runner_setup
+XCIND_BINS=("__default:worker;use=run")
+__xcind-runner-load
+__xcind-runner-dispatch foo.sh </dev/null
+assert_eq "dispatch __default use=run argv" \
+  "compose
+-f
+compose.yaml
+run
+--rm
+-T
+worker
+foo.sh" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8g. __default cmd is a prefix before the unknown command
+runner_setup
+XCIND_BINS=("__default:app;cmd=with-env extra")
+__xcind-runner-load
+__xcind-runner-dispatch foo.sh --bar </dev/null
+assert_eq "dispatch __default cmd prefix argv" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+with-env
+extra
+foo.sh
+--bar" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8h. Compose subcommands still pass through when __default is declared
+runner_setup
+XCIND_BINS=("__default:app")
+__xcind-runner-load
+__xcind-runner-dispatch ps </dev/null
+assert_eq "dispatch compose beats __default" \
+  "compose
+-f
+compose.yaml
+ps" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8i. Declared bins still shadow the __default fallback
+runner_setup
+XCIND_BINS=("__default:app" "npm:tools")
+__xcind-runner-load
+__xcind-runner-dispatch npm ci </dev/null
+assert_eq "dispatch bin beats __default" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+tools
+npm
+ci" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8j. Unknown @ref inside a script stays strict — no __default fallback
+runner_setup
+XCIND_BINS=("__default:app")
+XCIND_SCRIPTS=("broken:@nosuch")
+__xcind-runner-load
+rc=0
+strict_err_file=$(mktemp)
+__xcind-runner-dispatch broken </dev/null 2>"$strict_err_file" || rc=$?
+strict_err=$(<"$strict_err_file")
+rm -f "$strict_err_file"
+assert_eq "dispatch strict step rc" "1" "$rc"
+assert_contains "dispatch strict step message" "unknown bin or script 'nosuch'" "$strict_err"
+assert_eq "dispatch strict step skips docker" "" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8k. __default itself dispatches as a normal bin (same shape as the fallback)
+runner_setup
+XCIND_BINS=("__default:app")
+__xcind-runner-load
+__xcind-runner-dispatch __default echo hi </dev/null
+assert_eq "dispatch __default direct argv" \
+  "compose
+-f
+compose.yaml
+exec
+-T
+app
+echo
+hi" "$(cat "$DOCKER_SHIM_LOG")"
+
+# 8l. A script named __default is a load-time error
+runner_setup
+XCIND_SCRIPTS=("__default:echo hi")
+rc=0
+defscript_err_file=$(mktemp)
+__xcind-runner-load 2>"$defscript_err_file" || rc=$?
+defscript_err=$(<"$defscript_err_file")
+rm -f "$defscript_err_file"
+assert_eq "load __default script rc" "1" "$rc"
+assert_contains "load __default script message" \
+  "__default must be a bin, not a script" "$defscript_err"
 
 # 9. Script steps run in order; host steps run on the host
 runner_setup
@@ -4461,6 +4589,40 @@ assert_contains "list shows script step" "@exec app composer install" "$steps_ou
 assert_contains "list keeps the - prefix" "-@exec app php artisan migrate" "$steps_out"
 assert_eq "list indents script steps" "true" \
   "$(echo "$steps_out" | grep -q '^      @exec app composer install$' && echo true || echo false)"
+
+# 17d. --list: default section when __default is declared; name stays hidden
+runner_setup
+XCIND_BINS=("__default:app" "npm:app")
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=()
+__xcind-runner-load
+def_out=$(__xcind-runner-list 0)
+assert_contains "list shows default header" "default:" "$def_out"
+assert_contains "list shows default tail" \
+  "(unknown commands run as … exec app <command>)" "$def_out"
+assert_eq "list hides the __default name" "false" \
+  "$(echo "$def_out" | grep -q '__default' && echo true || echo false)"
+assert_eq "list --names omits __default" "npm" "$(__xcind-runner-list 1)"
+
+# 17e. --list: default tail carries use=run and the cmd prefix
+runner_setup
+XCIND_BINS=("__default:worker;use=run;cmd=with-env")
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=()
+__xcind-runner-load
+def_out=$(__xcind-runner-list 0)
+assert_contains "list default run --rm with prefix" \
+  "(unknown commands run as … run --rm worker with-env <command>)" "$def_out"
+
+# 17f. --list: no default section without __default
+runner_setup
+XCIND_BINS=("npm:app")
+# shellcheck disable=SC2034  # read by __xcind-runner-load
+XCIND_SCRIPTS=()
+__xcind-runner-load
+def_out=$(__xcind-runner-list 0)
+assert_eq "list omits default section" "false" \
+  "$(echo "$def_out" | grep -q '^default:' && echo true || echo false)"
 
 # 18. Hidden names stay runnable
 runner_setup

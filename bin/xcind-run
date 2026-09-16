@@ -11,7 +11,9 @@
 # XCIND_SCRIPTS (name: followed by steps, one per line). Runner flags go
 # before the name; everything after the name is passed to it. A name that
 # matches no bin or script but is a docker compose subcommand falls through
-# to docker compose (declared bins and scripts take precedence).
+# to docker compose (declared bins and scripts take precedence). A bin
+# named __default catches every remaining name and runs it on __default's
+# service (its cmd acts as a prefix).
 
 set -euo pipefail
 
@@ -61,6 +63,13 @@ Any docker compose subcommand also works as the name:
 A declared bin or script with the same name takes precedence; use
 @compose to bypass it. -T does not apply here — args go to docker
 compose verbatim.
+
+A bin named __default catches every other name and runs it on
+__default's service (see xcind-run --list):
+  XCIND_BINS+=("__default:app")
+  xcind-run foo.sh --bar         docker compose exec app foo.sh --bar
+__default's cmd is a prefix for the command; use=run starts a fresh
+container with run --rm.
 
 Examples:
   xcind-run npm --version

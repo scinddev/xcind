@@ -69,7 +69,7 @@ XCIND_BINS=("npm:app")
 XCIND_SCRIPTS=("fresh:@npm install")
 ```
 
-`XCIND_BINS` (`name:service[;cmd=…][;use=exec|run][;desc=…]`) and `XCIND_SCRIPTS` (`name:` followed by steps, one per line) declare the app's runnable commands for `xcind-run`; both surface in the `xcind-config --json` contract as `bins` and `scripts`. See [`engineering/reference/configuration.md`](../reference/configuration.md#xcind_bins).
+`XCIND_BINS` (`name:service[;cmd=…][;use=exec|run][;desc=…]`) and `XCIND_SCRIPTS` (`name:` followed by steps, one per line) declare the app's runnable commands for `xcind-run`; both surface in the `xcind-config --json` contract as `bins` and `scripts`. The bin name `__default` declares the fallback for unknown `xcind-run` names (its `cmd` is a prefix and defaults to empty). See [`engineering/reference/configuration.md`](../reference/configuration.md#xcind_bins).
 
 ### Source Order
 
