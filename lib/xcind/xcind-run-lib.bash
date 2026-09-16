@@ -14,14 +14,16 @@
 # on the first error (message to stderr).
 #
 # Format: name:service[;key=value…]
-# Keys: cmd (default = name), use = exec|run, desc
+# Keys: cmd (default = name; stays empty for __default, where it is a
+# prefix for the dispatched command), use = exec|run, desc
 # Duplicate names are an error (no first-wins).
 #
 # Fills:
 #   __XCIND_RUNNER_BIN_NAMES    — bin names
 #   __XCIND_RUNNER_BIN_SERVICES — Compose service per bin
 #   __XCIND_RUNNER_BIN_USES     — exec | run
-#   __XCIND_RUNNER_BIN_CMDS     — command inside the service (default = name)
+#   __XCIND_RUNNER_BIN_CMDS     — command inside the service (default = name;
+#                                 "" for __default)
 #   __XCIND_RUNNER_BIN_DESCS    — descriptions ("" when none)
 __xcind-runner-parse-bins() {
   __XCIND_RUNNER_BIN_NAMES=()
@@ -124,8 +126,9 @@ __xcind-runner-parse-bins() {
       done
     fi
 
-    # Default cmd to name if not specified
-    if [[ -z $cmd ]]; then
+    # Default cmd to name if not specified. __default keeps an empty cmd:
+    # its cmd is a prefix for the dispatched command, not a command itself.
+    if [[ -z $cmd ]] && [[ $name != "__default" ]]; then
       cmd="$name"
     fi
 
@@ -493,6 +496,12 @@ __xcind-runner-load() {
       return 1
       ;;
     esac
+    # The unknown-command fallback consults bins only; a __default script
+    # would never run.
+    if [[ $_n == "__default" ]]; then
+      echo "xcind-run: __default must be a bin, not a script" >&2
+      return 1
+    fi
   done
   __XCIND_RUNNER_LOADED=1
   return 0
@@ -564,19 +573,20 @@ __xcind-runner-exec-bin() {
   local cmd="${__XCIND_RUNNER_BIN_CMDS[$idx]}"
 
   # The cmd may contain spaces; tokenize it at run time (no expansion).
+  # __default has an empty cmd, so the array may hold no tokens.
   __xcind-runner-split "$cmd" || return $?
   local cmd_argv
-  cmd_argv=("${__XCIND_RUNNER_TOKENS[@]}")
+  cmd_argv=(${__XCIND_RUNNER_TOKENS[@]+"${__XCIND_RUNNER_TOKENS[@]}"})
 
   __xcind-runner-tty-opts
   if [[ $use == "run" ]]; then
     __xcind-runner-compose run --rm \
       ${__XCIND_RUNNER_TTY[@]+"${__XCIND_RUNNER_TTY[@]}"} \
-      "$service" "${cmd_argv[@]}" "$@"
+      "$service" ${cmd_argv[@]+"${cmd_argv[@]}"} "$@"
   else
     __xcind-runner-compose exec \
       ${__XCIND_RUNNER_TTY[@]+"${__XCIND_RUNNER_TTY[@]}"} \
-      "$service" "${cmd_argv[@]}" "$@"
+      "$service" ${cmd_argv[@]+"${cmd_argv[@]}"} "$@"
   fi
 }
 
@@ -762,8 +772,10 @@ __xcind-runner-run-script() {
   return 0
 }
 
-# Dispatch a CLI name: a step keyword, a bin, a script, or a docker compose
-# subcommand (passthrough; declared bins and scripts take precedence).
+# Dispatch a CLI name: a step keyword, a bin, a script, a docker compose
+# subcommand (passthrough; declared bins and scripts take precedence), or —
+# when a __default bin is declared — any other name, sent to __default's
+# service with __default's cmd as a prefix.
 # Requires __xcind-runner-load to have run.
 #   $1 = name, rest = args
 __xcind-runner-dispatch() {
@@ -787,8 +799,13 @@ __xcind-runner-dispatch() {
     # Compose passthrough: forward verbatim, exactly like `@compose <name>`.
     # No -T mapping — the user's args go to docker compose untouched.
     __xcind-runner-compose "$name" "$@"
+  elif idx=$(__xcind-runner-bin-index "__default"); then
+    # __default fallback: the unknown name runs on __default's service,
+    # after __default's cmd prefix (empty unless declared).
+    __xcind-runner-exec-bin "$idx" "$name" "$@"
   else
     echo "xcind-run: unknown bin or script '$name'" >&2
+    echo 'xcind-run: to send unknown commands to a service, declare a __default bin in .xcind.sh, e.g. XCIND_BINS+=("__default:app")' >&2
     return 1
   fi
 }
@@ -854,6 +871,22 @@ __xcind-runner-list() {
     echo "$line"
   fi
   echo "  (docker compose passthrough; bins and scripts take precedence)"
+
+  # __default fallback: any name that matches nothing above runs on its
+  # service. Built inline — __xcind-runner-bin-tail assumes a non-empty cmd.
+  local didx dverb dsvc dcmd
+  if didx=$(__xcind-runner-bin-index "__default"); then
+    dsvc="${__XCIND_RUNNER_BIN_SERVICES[$didx]}"
+    dcmd="${__XCIND_RUNNER_BIN_CMDS[$didx]}"
+    dverb="exec"
+    [[ ${__XCIND_RUNNER_BIN_USES[$didx]} == "run" ]] && dverb="run --rm"
+    echo "default:"
+    if [[ -n $dcmd ]]; then
+      echo "  (unknown commands run as … $dverb $dsvc $dcmd <command>)"
+    else
+      echo "  (unknown commands run as … $dverb $dsvc <command>)"
+    fi
+  fi
 
   # Bins, pass 1: collect the visible entries and their tails, and measure
   # the widest name and tail so the description column lines up. Padding is

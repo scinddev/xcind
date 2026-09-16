@@ -169,6 +169,34 @@ Rules:
 - The subcommand list is static (see `xcind-run --list`); a compose
   subcommand it misses still works through `@compose`.
 
+## Default bin
+
+A name that matches nothing above — no bin, no script, no compose
+subcommand — normally fails. Declare a bin named `__default` to send
+those names to a service instead:
+
+```bash
+XCIND_BINS+=("__default:app")
+
+xcind-run bin/setup --force    # → docker compose … exec app bin/setup --force
+```
+
+Rules:
+
+- Everything else takes precedence: declared bins and scripts, then the
+  compose passthrough, then `__default`.
+- `use=run` starts a fresh container (`run --rm`), exactly as on any bin.
+- `cmd` is a prefix, not a command: with
+  `"__default:app;cmd=with-env"`, `xcind-run foo.sh` becomes
+  `… exec app with-env foo.sh`. Without `cmd` there is no prefix.
+- Step-level `@refs` inside scripts do not use the fallback — a typo in
+  `.xcind.sh` still fails loudly.
+- `__default` starts with `_`, so it is hidden from `--list --names` and
+  `--init-shell`. `xcind-run --list` shows the fallback on its own
+  `default:` line.
+- A script named `__default` is a load-time error; the fallback reads
+  bins only.
+
 ## Shell wrappers
 
 `--init-shell` prints one wrapper function per visible bin and script:

@@ -102,11 +102,14 @@ Array of bin declarations: per-service commands run by `xcind-run` and picked up
 
 Validation is strict: a missing colon, an empty name or service, a name starting with `@` or `-` or containing whitespace, an unknown key, a bad `use`, or a duplicate name is an error.
 
+The name `__default` is special: it declares the fallback for `xcind-run` names that match no bin, script, or compose subcommand. Its `cmd` defaults to empty and acts as a prefix before the dispatched command, not as a command itself. Declaring `__default` as a script is a load-time error. Like every declared bin, `__default` appears in the `bins` object of the JSON output.
+
 ```bash
 XCIND_BINS=(
     "php:app"
     "npm:app"
     "composer:app;cmd=/usr/bin/composer"
+    "__default:app"
 )
 ```
 

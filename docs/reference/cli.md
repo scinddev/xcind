@@ -136,6 +136,7 @@ Run bins and scripts declared in `.xcind.sh` (`XCIND_BINS` / `XCIND_SCRIPTS`) in
 
 ```bash
 xcind-run <name> [args…]          # run a bin or script (args append / splice at $@)
+xcind-run <compose-subcommand> [args…]  # docker compose passthrough (declared names win)
 xcind-run -T <name> [args…]       # force -T (also automatic when not a terminal)
 xcind-run @exec <svc> [cmd…]      # docker compose exec (no cmd: bash)
 xcind-run @run <svc> <cmd…>       # docker compose run --rm
@@ -146,7 +147,7 @@ xcind-run --init-shell [--prefix PREFIX]  # print x-<name>() wrapper functions
 xcind-run --version
 ```
 
-`xcind-run` runs the same resolution pipeline as `xcind-compose`, including EXECUTE hooks. Script steps run in order and stop at the first failure; a step's leading `-` ignores its failure.
+`xcind-run` runs the same resolution pipeline as `xcind-compose`, including EXECUTE hooks. Script steps run in order and stop at the first failure; a step's leading `-` ignores its failure. A bin named `__default` catches every name that matches no bin, script, or compose subcommand and runs it on `__default`'s service (its `cmd` acts as a prefix).
 
 Walkthrough: [Bins and scripts](../guides/bins-and-scripts.md).
 

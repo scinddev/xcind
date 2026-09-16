@@ -271,7 +271,8 @@ __xcind-app-root() {
 #   XCIND_COMPOSE_ENV_FILES=()   — Env file patterns for compose YAML interpolation (--env-file)
 #   XCIND_APP_ENV_FILES=()       — Env file patterns injected into containers (env_file:)
 #   XCIND_BAKE_FILES=()          — Bake file patterns (reserved for future use)
-#   XCIND_BINS=()                — Bin declarations (name:service[;key=value…])
+#   XCIND_BINS=()                — Bin declarations (name:service[;key=value…];
+#                                  __default declares the unknown-name fallback)
 #   XCIND_SCRIPTS=()             — Script declarations (name:steps)
 #   XCIND_COMPOSE_DIR=""         — Subdirectory for compose files (optional convenience)
 #

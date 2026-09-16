@@ -74,7 +74,7 @@ Walkthrough: [Author custom hooks](../guides/custom-hooks.md), [host-gateway](..
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `XCIND_BINS` | `()` | Per-service commands for `xcind-run` and IDE integration. Entry: `name:service[;cmd=…][;use=exec\|run][;desc=…]` |
+| `XCIND_BINS` | `()` | Per-service commands for `xcind-run` and IDE integration. Entry: `name:service[;cmd=…][;use=exec\|run][;desc=…]`. The name `__default` declares the fallback for unknown `xcind-run` names; there `cmd` is a prefix and defaults to empty |
 | `XCIND_SCRIPTS` | `()` | Named step lists for `xcind-run`. Entry: `name:` followed by steps, one per line |
 
 Walkthroughs: [Bins and scripts](../guides/bins-and-scripts.md), [IDE and tool integration](../guides/tools-ide-integration.md).

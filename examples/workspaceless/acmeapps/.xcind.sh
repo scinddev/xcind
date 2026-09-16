@@ -43,9 +43,12 @@ XCIND_COMPOSE_FILES=(
 # Declare which bins are available in which Compose service.
 # Format: name:service[;key=value…]
 # Keys: cmd (default = name), use = exec|run, desc
+# The name __default catches xcind-run names that match no bin, script,
+# or compose subcommand and runs them on its service (cmd is a prefix).
 XCIND_BINS=(
   "node:app"
   "npm:app"
+  # "__default:app"
 )
 
 # --- Scripts ---
