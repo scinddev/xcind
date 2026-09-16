@@ -710,9 +710,12 @@ name, so a short name completes exactly like the command it wraps.
 `x-workspace`. `xcind-prompt` is excluded: it draws prompt segments, has no
 completion, and is not typed interactively.
 
-**Validation:** `PREFIX` must match `[a-zA-Z0-9_-]*`; anything else returns
-64 with the same wording as [`xcind-run --prefix`](#xcind-run). An empty
-`PREFIX` falls back to `x-`.
+**Validation:** `PREFIX` must match `[a-zA-Z0-9_-]*` and must not start with
+a dash; anything else returns 64 (the charset wording matches
+[`xcind-run --prefix`](#xcind-run)). An empty `PREFIX` falls back to `x-`.
+
+Each wrapper is defined through `xcind-shell-alias` below, one call per map
+entry.
 
 **Scope:** install-scoped. The command list lives in the completion script,
 not in an app's `.xcind.sh`, so one call per shell applies in every
@@ -731,6 +734,32 @@ agree, so the two cannot drift.
 xcind-shell-aliases
 x-compose up -d
 x-config --json
+```
+
+### `xcind-shell-alias NAME COMMAND`
+
+Defined by both completion scripts. Defines one ad-hoc shell function `NAME`
+that forwards to a single xcind command, and registers that command's
+completion function against `NAME`. Use it when you want one short name —
+`x`, `xr` — without the full wrapper set.
+
+**`COMMAND`:** one of `application`, `app`, `compose`, `config`, `proxy`,
+`workspace`, `run`, or the literal `xcind` for the bare dispatcher. An
+unknown `COMMAND` returns 64 and lists the valid values.
+
+**Validation:** `NAME` must match `[a-zA-Z0-9_-]+` and must not start with a
+dash (`complete`/`compdef` would parse it as an option). The call takes
+exactly two non-empty arguments. Every violation returns 64, and a failed
+call defines nothing.
+
+**Scope:** install-scoped, like `xcind-shell-aliases`. An alias for `run`
+still re-reads the current app's `.xcind.sh` on every completion request.
+
+```bash
+. <(xcind-config completion bash)
+xcind-shell-alias x run       # x <TAB> completes bins, scripts, flags
+xcind-shell-alias xr run      # any name works
+xcind-shell-alias xc xcind    # the bare dispatcher, with its completion
 ```
 
 ---
