@@ -49,9 +49,11 @@ assert_not_contains() {
 # Assert that a newline-separated haystack contains an exact whole line.
 # Used by the completion suite, where "up" must not match "unpause" or
 # "--build". Compares literally, so flags like --detach are safe.
+# Read all input: grep -q can close the pipe early and make printf fail
+# under pipefail, which would reverse the assertion result.
 assert_line() {
   local label="$1" needle="$2" haystack="$3"
-  if printf '%s\n' "$haystack" | grep -qxF -- "$needle"; then
+  if printf '%s\n' "$haystack" | grep -xF -- "$needle" >/dev/null; then
     echo "  ✓ $label"
     PASS=$((PASS + 1))
   else
@@ -64,7 +66,7 @@ assert_line() {
 
 assert_no_line() {
   local label="$1" needle="$2" haystack="$3"
-  if printf '%s\n' "$haystack" | grep -qxF -- "$needle"; then
+  if printf '%s\n' "$haystack" | grep -xF -- "$needle" >/dev/null; then
     echo "  ✗ $label"
     echo "    expected NO line: $needle"
     echo "    actual lines:     $(printf '%s' "$haystack" | tr '\n' ' ')"

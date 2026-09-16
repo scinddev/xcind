@@ -399,39 +399,75 @@ _xcind_application_completions() {
 # xcind-run: native completion
 # -----------------------------------------------------------------------------
 
+# The docker compose subcommands xcind-run falls through to when the name
+# matches no declared bin or script. Keep in sync with
+# __XCIND_RUNNER_COMPOSE_COMMANDS in xcind-run-lib.bash and the array in
+# xcind-completion-zsh.bash (drift guard in test-xcind-completion.sh).
+__XCIND_RUN_COMPOSE_SUBCOMMANDS="attach build config cp create down events exec images kill logs ls pause port ps pull push restart rm run scale start stats stop top unpause up version wait watch"
+
 _xcind_run_completions() {
   local cur prev
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
-  # Once a name is on the line, the words after it belong to that bin or
-  # script — offer nothing.
-  local i word
+  # Once a name is on the line, the words after it belong to that name: a
+  # declared bin or script owns its args (offer nothing), and a compose
+  # subcommand (the passthrough) re-seats into the compose completion the
+  # same way the dispatcher re-seats into this one.
+  local i word options=1
   for ((i = 1; i < COMP_CWORD; i++)); do
     word="${COMP_WORDS[$i]}"
-    case $word in
-    -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) ;;
-    --prefix) ((i++)) ;; # skip the prefix value
-    --prefix=*) ;;
-    *) return ;;
+    if ((options)); then
+      case $word in
+      -T | --no-tty | --list | --names | --init-shell | --help | -h | --version | -V) continue ;;
+      --prefix)
+        ((i++))
+        continue
+        ;; # skip the prefix value
+      --prefix=*) continue ;;
+      --)
+        options=0
+        continue
+        ;; # stop parsing runner options
+      esac
+    fi
+
+    local names nl=$'\n'
+    names=$(xcind-run --list --names 2>/dev/null)
+    case "$nl$names$nl" in
+    *"$nl$word$nl"*) return ;; # declared bin or script
     esac
+    case " $__XCIND_RUN_COMPOSE_SUBCOMMANDS " in
+    *" $word "*)
+      COMP_WORDS=("xcind-compose" "${COMP_WORDS[@]:i}")
+      COMP_CWORD=$((COMP_CWORD - i + 1))
+      _xcind_compose_completions
+      ;;
+    esac
+    return
   done
 
-  # --prefix takes free text
-  if [[ $prev == "--prefix" ]]; then
-    return
+  if ((options)); then
+    # --prefix takes free text
+    if [[ $prev == "--prefix" ]]; then
+      return
+    fi
+
+    if [[ $cur == -* ]]; then
+      local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
+      COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+      return
+    fi
   fi
 
-  if [[ $cur == -* ]]; then
-    local opts="-T --no-tty --list --names --init-shell --prefix --help -h --version -V"
-    COMPREPLY=($(compgen -W "$opts" -- "$cur"))
-    return
-  fi
-
-  # First non-flag word: bin and script names from the app's declarations
+  # First non-flag word: bin and script names from the app's declarations.
+  # Compose subcommands (the passthrough) join only once a prefix is typed,
+  # so a bare TAB shows just the project's own names.
   local names
   names=$(xcind-run --list --names 2>/dev/null)
-  if [[ -n $names ]]; then
+  if [[ -n $cur ]]; then
+    COMPREPLY=($(compgen -W "$names $__XCIND_RUN_COMPOSE_SUBCOMMANDS" -- "$cur"))
+  elif [[ -n $names ]]; then
     COMPREPLY=($(compgen -W "$names" -- "$cur"))
   fi
 }

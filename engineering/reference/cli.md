@@ -401,6 +401,7 @@ Runs bins and scripts declared in `XCIND_BINS` / `XCIND_SCRIPTS` inside the app'
 ```
 xcind-run [-T|--no-tty] <name> [args…]
 xcind-run [-T] @exec <svc> [cmd…] | @run <svc> <cmd…> | @compose <args…>
+xcind-run <compose-subcommand> [args…]
 xcind-run --list [--names]
 xcind-run --init-shell [--prefix PREFIX]
 xcind-run --help | --version
@@ -413,6 +414,7 @@ Runner flags go before the name; everything after the name belongs to it.
 - **Arguments**: spliced at bare `$@`/`"$@"` tokens; a one-step script with no `$@` appends them; args to a multi-step script with no `$@` exit 64.
 - **TTY**: `-T` is passed to `exec`/`run` when stdin or stdout is not a terminal, or when forced with `-T`/`--no-tty`.
 - **Namespace**: bins and scripts share one namespace; a name in both is a load-time error. A leading `_` hides a name from `--list` and `--init-shell` but it stays runnable.
+- **Compose passthrough**: a name that is neither a declared bin/script nor a step keyword, but is a known compose subcommand (static list in `__XCIND_RUNNER_COMPOSE_COMMANDS`), runs `docker compose … <name> <args…>` verbatim. Declared names take precedence (`@compose` bypasses the shadow); `-T` does not apply; step-level `@refs` inside scripts do not fall through; `--list --names` (and so `--init-shell`) excludes the compose subcommands.
 - **Pipeline**: runs `__xcind-prepare-app` (with the GENERATE-hook TTL) and the EXECUTE hooks, like `xcind-compose`.
 
 `--init-shell` emits `<prefix><name>() { xcind-run <name> "$@"; }` per visible name (default prefix `x-`), for `eval` in a shell rc.
