@@ -2,8 +2,11 @@
 # xcind-hostenv-lib.bash — EXECUTE hook that writes a host-view env file.
 #
 # Emits the discovery variable set (XCIND_{APP}_{EXPORT}_*) with host-flavored
-# values for assigned exports — _HOST=127.0.0.1 + the allocated host port —
-# while proxied/apex hosts stay the routable proxied hostname. Host-run
+# values for assigned exports — _HOST = the external host + the allocated host
+# port — while proxied/apex hosts stay the routable proxied hostname. The
+# external host is 127.0.0.1 by default, or the export's URL-template hostname
+# with XCIND_HOST_ENV_ASSIGNED_HOST=hostname (validated by the pair builder).
+# _INTERNAL_* variables and unpublished exports never appear in the host view. Host-run
 # processes (mise/direnv) then compose the same DATABASE_URL etc. as containers
 # do: dotenv loaders never override a real OS env var, and Compose
 # `environment:` beats `env_file:`, so one committed expression resolves to the
@@ -234,12 +237,16 @@ __xcind-hostenv-execute-hook() {
     return 1
   fi
 
-  # Collect host-view pairs from the shared discovery seam.
+  # Collect host-view pairs from the shared discovery seam. Captured so an
+  # export error (prefix collision, invalid XCIND_HOST_ENV_ASSIGNED_HOST) fails
+  # the hook instead of writing a partial file.
+  local pairs
+  pairs=$(__xcind-discovery-build-pairs "$app_root" host) || return 1
   local -a env_lines=()
   local _pair
   while IFS= read -r _pair; do
     [[ -n $_pair ]] && env_lines+=("$_pair")
-  done < <(__xcind-discovery-build-pairs "$app_root" host)
+  done <<<"$pairs"
 
   # Render the dotenv body once (shared by both modes). The +"" guard keeps the
   # empty-array expansion safe under set -u on Bash 3.2.

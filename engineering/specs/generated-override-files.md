@@ -255,19 +255,33 @@ services:
       - "XCIND_MYAPP_WEB_PORT=443"
       - "XCIND_MYAPP_WEB_SCHEME=https"
       - "XCIND_MYAPP_WEB_URL=https://myapp-web.localhost.scind.io"
+      - "XCIND_MYAPP_WEB_INTERNAL_HOST=myapp-web"
+      - "XCIND_MYAPP_WEB_INTERNAL_PORT=8080"
+      - "XCIND_MYAPP_WEB_EXTERNAL_HOST=myapp-web.localhost.scind.io"
+      - "XCIND_MYAPP_WEB_EXTERNAL_PORT=443"
       - "XCIND_MYAPP_APEX_HOST=myapp.localhost.scind.io"
       - "XCIND_MYAPP_APEX_URL=https://myapp.localhost.scind.io"
       - "XCIND_MYAPP_DB_HOST=myapp-db"
       - "XCIND_MYAPP_DB_PORT=5432"
       - "XCIND_MYAPP_DB_HOST_PORT=54320"
+      - "XCIND_MYAPP_DB_INTERNAL_HOST=myapp-db"
+      - "XCIND_MYAPP_DB_INTERNAL_PORT=5432"
+      - "XCIND_MYAPP_DB_EXTERNAL_HOST=127.0.0.1"
+      - "XCIND_MYAPP_DB_EXTERNAL_PORT=54320"
+      - "XCIND_MYAPP_SMTP_HOST=myapp-mail"
+      - "XCIND_MYAPP_SMTP_PORT=1025"
+      - "XCIND_MYAPP_SMTP_INTERNAL_HOST=myapp-mail"
+      - "XCIND_MYAPP_SMTP_INTERNAL_PORT=1025"
 
   db:
     environment:
       # …same block…
 ```
 
-See [Environment Variables](./environment-variables.md) for the full schema and
-[ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the design.
+See [Environment Variables](./environment-variables.md) for the full schema,
+[ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the design, and
+[ADR-0024](../decisions/0024-internal-external-discovery-and-unpublished-exports.md)
+for the internal/external pairs and unpublished exports (here `smtp`).
 
 ---
 

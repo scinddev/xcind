@@ -9,7 +9,7 @@ DIVERGENCE-must-be-earned, §5 Go/Bash exclusion), [`correspondence-map.md`](./c
 of `bin/xcind-*` + `lib/xcind/*.bash`.
 **Feeds**: P6 (PROMOTE → propose a Scind change), P7 (DIVERGENCE → registry),
 P3 (one apex row handed back).
-**Machine companion**: [`xcind-ahead.json`](./xcind-ahead.json) (44 capability records + 2 reverse gaps).
+**Machine companion**: [`xcind-ahead.json`](./xcind-ahead.json) (45 capability records + 2 reverse gaps).
 
 > **Supplement (2026-07-15) — human product-calls folded in.** After the initial
 > synthesis, three human product-calls were received; they **override** the
@@ -79,7 +79,7 @@ here, and they are handed back to P3 (XA-0025).
 
 ---
 
-## PROMOTE — 20 capabilities Scind should adopt (18 base + 2 supplement: XA-0043, XA-0044)
+## PROMOTE — 21 capabilities Scind should adopt (18 base + 2 supplement: XA-0043, XA-0044 + 1 post-sync: XA-0045)
 
 Each names a target Scind change for P6.
 
@@ -124,6 +124,14 @@ Each names a target Scind change for P6.
 |----|-----------|---------------------|
 | **XA-0043** | **Two-track documentation (ADR-0014)** — a user-facing Diátaxis track (`docs/`) plus a separate engineering LDS track (`engineering/`) mirroring the design canon, so the two audiences evolve independently. Scind keeps a single `docs/` LDS tree. *(Overrides the initial likely-PROCESS/DIVERGENCE reading.)* | Rename Scind `docs/` → `engineering/` (matching Xcind's LDS track); optionally add a placeholder `docs/README.md` stating intent for a future Diátaxis track (no real Diátaxis content exists yet in either project). |
 | **XA-0044** | **XDG Base Directory split** — config under `$XDG_CONFIG_HOME` (`~/.config/xcind`), ephemeral state (assigned-port TSV, registry, proxy state) under `$XDG_STATE_HOME` (`~/.local/state/xcind`). Scind defaults **both** `SCIND_CONFIG_DIR` and `SCIND_STATE_DIR` to `~/.config/scind`, collapsing state under config-home. This is ADR-0005 (structure-vs-state) encoded at the filesystem level. | Default `SCIND_STATE_DIR` to `$XDG_STATE_HOME/scind`; keep `SCIND_CONFIG_DIR` under `$XDG_CONFIG_HOME/scind`; align with the XDG spec (config vs state vs data) in `environment-variables.md`/`state-management.md`. |
+
+### Post-sync additions
+
+*Recorded after the P4 synthesis; classified by the originating ADR.*
+
+| ID | Capability | Target Scind change |
+|----|-----------|---------------------|
+| **XA-0045** | **Internal/external discovery pairs + `unpublished` port type (ADR-0024)** — every export carries `_INTERNAL_HOST/_PORT` (in-network alias + container port, container view only) and view-invariant `_EXTERNAL_HOST/_PORT`; a third port type `unpublished` gives containers discovery variables with no proxy route and no host port; an opt-in hostname mode for the assigned external host in the host-view env file; prefix collisions fail generation. Scind has two port types, no in-network variables for proxied exports, and leaves name collisions undefined. **Self-flagged PROMOTE in ADR-0024.** | Add `_INTERNAL_*`/`_EXTERNAL_*` to `environment-variables.md`; add `type: unpublished` to `port-types.md`/`configuration-schemas.md`; add the external-host mode to the host-view env file (Scind ADR-0015); specify the collision error. Reconcile Scind ADR-0002 ("protected services remain internal") with advisory `visibility`. |
 
 ---
 

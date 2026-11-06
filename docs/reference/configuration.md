@@ -12,6 +12,7 @@
 | `XCIND_APP_ENV_FILES` | `()` | Env files injected into running containers via `env_file:` |
 | `XCIND_HOST_ENV_FILE` | _(unset)_ | Opt-in: write a [host-view env file](../guides/env-files.md#host-view-env-file-xcind_host_env_file) — the discovery variables with host-flavored values for assigned exports — for host-run processes |
 | `XCIND_HOST_ENV_MODE` | `own` | How `XCIND_HOST_ENV_FILE` is written: `own` (xcind owns the whole file) or `block` (rewrite only the `# >>> xcind >>>` marked region) |
+| `XCIND_HOST_ENV_ASSIGNED_HOST` | `loopback` | Host-reachable host for assigned exports: `loopback` (`127.0.0.1`) or `hostname` (the export's proxy-domain hostname, for wildcard-DNS setups). Also sets `_EXTERNAL_HOST` inside containers |
 | `XCIND_ADDITIONAL_CONFIG_FILES` | `()` | Extra shell scripts to source after `.xcind.sh` |
 
 For each compose, compose-env, and app-env file pattern, Xcind also checks for an `.override` variant — see [Override files](../guides/override-files.md). `XCIND_HOST_ENV_FILE` is a generated output path and does not derive an override sibling.
@@ -40,10 +41,10 @@ Walkthrough: [Workspaces vs single apps](../guides/workspaces-vs-apps.md).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `XCIND_PROXY_EXPORTS` | `()` | Service exports (proxied or assigned ports) |
+| `XCIND_PROXY_EXPORTS` | `()` | Service exports (proxied, assigned, or unpublished ports) |
 | `XCIND_PROXY_DOMAIN` | `localhost.scind.io` | Domain suffix for generated hostnames (must be ≥2 labels — see [Local HTTPS](../guides/https-tls.md)) |
 
-`XCIND_PROXY_EXPORTS` entry format: `export[=service][:port][;type=proxied\|assigned[;…]]`
+`XCIND_PROXY_EXPORTS` entry format: `export[=service][:port][;type=proxied\|assigned\|unpublished[;…]]`
 
 ```bash
 XCIND_PROXY_EXPORTS=(
@@ -51,6 +52,7 @@ XCIND_PROXY_EXPORTS=(
     "web:8080"
     "app"                             # port inferred from compose
     "worker:9000;type=assigned"       # stable host port
+    "smtp=mail:1025;type=unpublished" # containers only: discovery variables, no host port
 )
 ```
 

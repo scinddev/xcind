@@ -90,7 +90,7 @@ Xcind keys (top level):
   appEnvFiles[]       bakeFiles[]
   bins
   scripts
-  assignedExports     proxiedExports
+  assignedExports     proxiedExports  unpublishedExports
   apex                .enabled .hostname .url .scheme
 
 Compose keys (need the resolved cache):

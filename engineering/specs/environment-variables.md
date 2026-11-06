@@ -11,7 +11,7 @@ Xcind exposes export hostnames, ports, and URLs to applications two ways:
 1. **Injected discovery variables** (`xcind-discovery-hook` → `compose.discovery.yaml`) — an `environment:` block of `XCIND_{APP}_{EXPORT}_*` variables added to every container of the current app, so application code can read its own service hostnames at runtime without hardcoding them.
 2. **Docker labels** (`xcind-proxy-hook` → `compose.proxy.yaml`) — the same hostname/URL information as labels, for external tooling that inspects containers.
 
-This document covers both. See [ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the injection design.
+This document covers both. See [ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the injection design and [ADR-0024](../decisions/0024-internal-external-discovery-and-unpublished-exports.md) for the internal/external pairs and unpublished exports.
 
 ---
 
@@ -23,6 +23,17 @@ For each export the `xcind-discovery-hook` generates `environment:` variables an
 
 **Name transformation**: the application and export name segments are independently converted — hyphens to underscores, then uppercased (e.g. `shared-db` → `SHARED_DB`). Pattern: `XCIND_{APP}_{EXPORT}_{SUFFIX}`.
 
+**Prefix collisions are errors.** When two different `XCIND_PROXY_EXPORTS` entries produce the same `XCIND_{APP}_{EXPORT}` prefix — one name declared with two definitions, `a-b` next to `a_b`, or an export named `apex` while apex variables are active — generation fails and names both entries. Byte-identical repeated entries are allowed (the port is normalized, so `80` equals `80/tcp`). Give each port of a multi-port service its own export name. Generation also fails when one variable name is produced twice with different values — for example by an export named `api-internal` next to an export named `api`, whose `_INTERNAL_HOST` has the same name.
+
+**Internal and external pairs.** Every export also carries explicit address pairs, so a consumer never has to know which view the base `_HOST`/`_PORT` follow:
+
+| Pair | Meaning | Views |
+|------|---------|-------|
+| `_INTERNAL_HOST` / `_INTERNAL_PORT` | Address inside Docker: the in-network host (the `{app}-{service}` alias in workspace mode, else the compose service name) and the container port | Container view only |
+| `_EXTERNAL_HOST` / `_EXTERNAL_PORT` | Address outside Docker: what a host or LAN client uses | Both views, same value (view-invariant) |
+
+Inside a container, `_EXTERNAL_*` answers "what do I tell an outside client?", not "what do I dial from here?".
+
 ### Proxied exports
 
 | Variable | Value |
@@ -32,7 +43,12 @@ For each export the `xcind-discovery-hook` generates `environment:` variables an
 | `XCIND_{APP}_{E}_SCHEME` | `http` or `https` |
 | `XCIND_{APP}_{E}_URL` | `{scheme}://{hostname}` with `:port` appended when the proxy entrypoint uses a non-default port |
 
-When an export serves **both** schemes, base variables default to HTTPS, and protocol-specific variables are also emitted: `XCIND_{APP}_{E}_HTTPS_HOST/_PORT/_URL` and `XCIND_{APP}_{E}_HTTP_HOST/_PORT/_URL`. Prefer HTTPS for service-to-service traffic; use the `_HTTP_*` variants only when HTTP is explicitly required.
+| `XCIND_{APP}_{E}_INTERNAL_HOST` | In-network host (container view only) |
+| `XCIND_{APP}_{E}_INTERNAL_PORT` | Container port: the entry's explicit port, else the single port mapping inferred from the resolved compose config (container view only) |
+| `XCIND_{APP}_{E}_EXTERNAL_HOST` | Same as `_HOST` |
+| `XCIND_{APP}_{E}_EXTERNAL_PORT` | Same as `_PORT` |
+
+When an export serves **both** schemes, base variables default to HTTPS, and protocol-specific variables are also emitted: `XCIND_{APP}_{E}_HTTPS_HOST/_PORT/_URL` and `XCIND_{APP}_{E}_HTTP_HOST/_PORT/_URL`. Prefer HTTPS for traffic that goes through the proxy; use the `_HTTP_*` variants only when HTTP is explicitly required. For direct container-to-container traffic, use `_INTERNAL_HOST`/`_INTERNAL_PORT`.
 
 ### Apex variables
 
@@ -56,8 +72,23 @@ Assigned exports have no proxy URL; they expose an in-network host plus ports:
 | `XCIND_{APP}_{E}_HOST` | In-network host — the `{app}-{service}` network alias in workspace mode, otherwise the compose service name |
 | `XCIND_{APP}_{E}_PORT` | Container port (use with `_HOST` for in-network, container-to-container access) |
 | `XCIND_{APP}_{E}_HOST_PORT` | Allocated host-published port (use from the host machine) |
+| `XCIND_{APP}_{E}_INTERNAL_HOST` / `_INTERNAL_PORT` | Same as `_HOST` / `_PORT` (container view only) |
+| `XCIND_{APP}_{E}_EXTERNAL_HOST` | Host-reachable host: `127.0.0.1`, or the export's URL-template hostname when `XCIND_HOST_ENV_ASSIGNED_HOST=hostname` |
+| `XCIND_{APP}_{E}_EXTERNAL_PORT` | Allocated host-published port |
 
 > Xcind divergence from Scind: assigned exports additionally expose `_HOST_PORT` so applications can reach the service from the host, while `_HOST`/`_PORT` describe the in-network pair.
+
+### Unpublished exports
+
+A `type=unpublished` export declares a port for discovery only: no Traefik router, no host port, and no assigned-port state. Use it for a port that only other containers need, such as the SMTP side of a mail catcher. Its variables exist in the **container view only**; the host-view env file never contains them.
+
+| Variable | Value |
+|----------|-------|
+| `XCIND_{APP}_{E}_HOST` | In-network host — the `{app}-{service}` network alias in workspace mode, otherwise the compose service name |
+| `XCIND_{APP}_{E}_PORT` | Container port: explicit, else inferred from a single port mapping |
+| `XCIND_{APP}_{E}_INTERNAL_HOST` / `_INTERNAL_PORT` | Same as `_HOST` / `_PORT` |
+
+The port must resolve and the compose service must exist; otherwise generation fails with an export-named error.
 
 ### Workspace variable
 
@@ -67,13 +98,18 @@ Assigned exports have no proxy URL; they expose an in-network host plus ports:
 
 ### Generation rules
 
-| Type | `_HOST` | `_PORT` | `_HOST_PORT` | `_SCHEME` / `_URL` | Protocol vars |
-|------|---------|---------|--------------|--------------------|---------------|
-| `proxied` (https) | Proxied hostname | 443 | — | ✓ | — |
-| `proxied` (http) | Proxied hostname | 80 | — | ✓ | — |
-| `proxied` (both) | Proxied hostname | 443 (HTTPS default) | — | ✓ | `_HTTPS_*` + `_HTTP_*` |
-| `assigned` | In-network host | Container port | Allocated host port | — | — |
-| `proxied` (apex) | Apex hostname | apex entrypoint port | — | ✓ | — |
+Container view:
+
+| Type | `_HOST` | `_PORT` | `_HOST_PORT` | `_SCHEME` / `_URL` | Protocol vars | `_INTERNAL_*` | `_EXTERNAL_*` |
+|------|---------|---------|--------------|--------------------|---------------|---------------|---------------|
+| `proxied` (https) | Proxied hostname | 443 | — | ✓ | — | ✓ | ✓ |
+| `proxied` (http) | Proxied hostname | 80 | — | ✓ | — | ✓ | ✓ |
+| `proxied` (both) | Proxied hostname | 443 (HTTPS default) | — | ✓ | `_HTTPS_*` + `_HTTP_*` | ✓ | ✓ |
+| `assigned` | In-network host | Container port | Allocated host port | — | — | ✓ | ✓ |
+| `unpublished` | In-network host | Container port | — | — | — | ✓ | — |
+| `proxied` (apex) | Apex hostname | apex entrypoint port | — | ✓ | — | — | — |
+
+Host view (`XCIND_HOST_ENV_FILE`): proxied and apex rows are unchanged; `assigned` `_HOST`/`_PORT` become the external host and the host port; no row has `_INTERNAL_*`; `unpublished` exports are absent.
 
 ### Usage in applications
 
@@ -86,6 +122,12 @@ psql "host=${XCIND_MYAPP_DB_HOST} port=${XCIND_MYAPP_DB_PORT} dbname=app"
 
 # Same assigned service from the host machine
 psql "host=localhost port=${XCIND_MYAPP_DB_HOST_PORT} dbname=app"
+
+# Unpublished SMTP port of a mail catcher (containers only)
+MAILER_DSN="smtp://${XCIND_MYAPP_SMTP_HOST}:${XCIND_MYAPP_SMTP_PORT}"
+
+# A proxied web service reached directly on the Docker network
+curl "http://${XCIND_MYAPP_WEB_INTERNAL_HOST}:${XCIND_MYAPP_WEB_INTERNAL_PORT}/health"
 ```
 
 > **Precedence**: `compose.discovery.yaml` is merged last, so these variables win over an `environment:` value of the same key declared in your base compose file.
@@ -157,7 +199,18 @@ mirror the same information for processes running on the **host**, set
 each `xcind-compose` run an EXECUTE-phase hook (`__xcind-hostenv-execute-hook`)
 writes a host-view dotenv there, reusing the same discovery seam — assigned
 exports use their published `_HOST_PORT`, and `_HOST` reflects the host-reachable
-value. `jq` is required when the app declares any `type=assigned` exports.
+value. `_INTERNAL_*` variables and `type=unpublished` exports are never written.
+`jq` is required when the app declares any `type=assigned` exports.
+
+`XCIND_HOST_ENV_ASSIGNED_HOST` selects the host-reachable value for assigned
+exports. It also sets `_EXTERNAL_HOST` in the container view, so both views agree:
+
+| Value | Assigned `_HOST` (host view) and `_EXTERNAL_HOST` |
+|-------|----------------------------------------------------|
+| `loopback` (default) | `127.0.0.1` |
+| `hostname` | The export's URL-template hostname (e.g. `dev-shop-db.example.test`). Use it when the proxy domain resolves to the Docker host, for example through wildcard DNS. |
+
+Any other value fails the hook.
 
 `XCIND_HOST_ENV_MODE` selects how the file is written:
 

@@ -44,7 +44,7 @@ xcind-application status [DIR] [--json]       # status of one app
 xcind-application list [DIR] [--json]         # list apps in the enclosing workspace
 xcind-application ports [DIR] [--json]        # port bindings for one app
 xcind-application urls [DIR] [--json]         # proxy URLs for one app
-xcind-application exports [DIR]               # shell exports for assigned ports
+xcind-application exports [SERVICE] [DIR] [--json]  # every export: proxied, assigned, unpublished
 ```
 
 ## `xcind-config`

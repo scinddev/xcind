@@ -707,6 +707,13 @@ assert_eq "parse type=assigned service" "worker" "$_compose_service"
 assert_eq "parse type=assigned port" "9000" "$_port"
 assert_eq "parse type=assigned type" "assigned" "$_type"
 
+# Metadata: type=unpublished
+__xcind-proxy-parse-entry "smtp=mailpit:1025;type=unpublished"
+assert_eq "parse type=unpublished export" "smtp" "$_export_name"
+assert_eq "parse type=unpublished service" "mailpit" "$_compose_service"
+assert_eq "parse type=unpublished port" "1025" "$_port"
+assert_eq "parse type=unpublished type" "unpublished" "$_type"
+
 # Metadata with explicit type=proxied
 __xcind-proxy-parse-entry "web;type=proxied"
 assert_eq "parse explicit type=proxied" "proxied" "$_type"
@@ -733,6 +740,7 @@ assert_contains "parse unknown attribute error text" "unknown XCIND_PROXY_EXPORT
 invalid_err=$(__xcind-proxy-parse-entry "web;type=bogus" 2>&1) && invalid_rc=0 || invalid_rc=$?
 assert_eq "parse invalid type returns non-zero" "1" "$invalid_rc"
 assert_contains "parse invalid type error text" "invalid XCIND_PROXY_EXPORTS type 'bogus'" "$invalid_err"
+assert_contains "parse invalid type error lists unpublished" "'unpublished'" "$invalid_err"
 
 # tls= metadata — defaults to "auto"
 __xcind-proxy-parse-entry "web"
@@ -913,6 +921,15 @@ XCIND_PROXY_EXPORTS=("worker:9000;type=assigned" "db=postgres:5432;type=assigned
 noprox_output=$(xcind-proxy-hook "$HOOK_APP")
 assert_eq "no proxied entries = no output" "" "$noprox_output"
 assert_eq "no proxied entries = no file" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.proxy.yaml" ] && echo true || echo false)"
+
+# Test: unpublished-only entries → no router, no output, no file.
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+XCIND_PROXY_EXPORTS=("smtp=web:1025;type=unpublished")
+unpub_proxy_output=$(xcind-proxy-hook "$HOOK_APP")
+assert_eq "unpublished-only entries = no proxy output" "" "$unpub_proxy_output"
+assert_eq "unpublished-only entries = no proxy file" "false" \
   "$([ -f "$XCIND_GENERATED_DIR/compose.proxy.yaml" ] && echo true || echo false)"
 
 # Test: mixed array — proxy hook sees only the proxied entries.
@@ -3242,6 +3259,16 @@ noassigned_out=$(xcind-assigned-hook "$AHOOK_APP")
 assert_eq "no assigned entries → no output" "" "$noassigned_out"
 assert_eq "no assigned entries → no file" "false" \
   "$([ -f "$XCIND_GENERATED_DIR/compose.assigned.yaml" ] && echo true || echo false)"
+
+# Unpublished entries never allocate a host port.
+XCIND_PROXY_EXPORTS=("smtp=mysql:1025;type=unpublished")
+rm -f "$XCIND_GENERATED_DIR/compose.assigned.yaml"
+unpub_assigned_out=$(xcind-assigned-hook "$AHOOK_APP")
+assert_eq "unpublished entries → no assigned output" "" "$unpub_assigned_out"
+assert_eq "unpublished entries → no assigned file" "false" \
+  "$([ -f "$XCIND_GENERATED_DIR/compose.assigned.yaml" ] && echo true || echo false)"
+assert_not_contains "unpublished entries → no state row" \
+  "smtp" "$(cat "$XCIND_ASSIGNED_PORTS_FILE" 2>/dev/null || true)"
 
 # Mixed array: proxied entries are skipped by the assigned hook
 cat >"$XCIND_CACHE_DIR/resolved-config.yaml" <<'YAML'

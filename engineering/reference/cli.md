@@ -249,6 +249,12 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
       "apex_host": "my-workspace-my-app.example.test"
     }
   },
+  "unpublishedExports": {
+    "smtp": {
+      "compose_service": "mailpit",
+      "container_port": 1025
+    }
+  },
   "apex": {
     "enabled": true,
     "hostname": "my-workspace-my-app.example.test",
@@ -265,6 +271,8 @@ The `scripts` object is keyed by script name. Each entry includes `steps` (the r
 The `assignedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port`, `host_port`, and `declared_port`. It is `{}` when the app declares no `type=assigned` exports (or none have been assigned a host port yet).
 
 The `proxiedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port` (`null` when it cannot be inferred), `url` (the per-export hostname URL, computed from `XCIND_APP_URL_TEMPLATE`), and `tls` (the declared per-export mode). It is `{}` when the app declares no `type=proxied` exports. The **first** proxied export — the apex anchor — additionally carries `apex_url` and `apex_host`: the shorter canonical URL/host that actually serves the app's traffic (present only when an apex template is configured). Other proxied exports omit these keys. Consumers should prefer `apex_url` over `url` for the headlining export; `xcind-application urls`/`exports` do exactly this.
+
+The `unpublishedExports` object is keyed by export name. Each entry includes `compose_service` and `container_port` (`null` when it cannot be inferred). It is `{}` when the app declares no `type=unpublished` exports. These exports have no URL and no host port, so `xcind-application ports`/`urls` omit them; `xcind-application exports` lists them with `type: "unpublished"`.
 
 The `apex` object describes the app's apex host derived from the shared proxy backend. It is **always present**: when an apex is available (`XCIND_APP_APEX_URL_TEMPLATE` is set and the app has at least one `type=proxied` export), `enabled` is `true` and `hostname`/`url`/`scheme` are populated; otherwise `enabled` is `false` and `hostname`/`url`/`scheme` are `null` (present-but-null, never omitted, so consumers can read `.apex.enabled` and `.apex.hostname` without existence checks). `url` is `scheme://hostname`; `scheme` is `http` or `https`.
 
@@ -560,7 +568,7 @@ Manages individual xcind applications. Also available as `xcind-app`.
 | `list [DIR] [OPTIONS]` | List applications inside the enclosing workspace |
 | `ports [SERVICE] [DIR] [--json]` | Show the host port assigned to each `type=assigned` export |
 | `urls [SERVICE] [DIR] [--json]` | Show the URL for each `type=proxied` export (apex URL for the headlining export when an apex template is set) |
-| `exports [SERVICE] [DIR] [--json]` | Unified per-export view; proxied entries include `apexUrl`/`apexHost` for the headlining export |
+| `exports [SERVICE] [DIR] [--json]` | Unified per-export view of proxied, assigned, and unpublished exports; proxied entries include `apexUrl`/`apexHost` for the headlining export |
 
 ### Init Options
 

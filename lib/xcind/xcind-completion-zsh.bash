@@ -167,6 +167,7 @@ _xcind-config() {
         'scripts:Declared script step lists'
         'assignedExports:Ports assigned to this app'
         'proxiedExports:Proxied exports with computed URLs'
+        'unpublishedExports:Unpublished exports (discovery variables only)'
         'apex:Apex hostname, URL and scheme'
         'compose.:Resolved Compose values (needs the cache)'
         '--help:Show resolve paths and path syntax'

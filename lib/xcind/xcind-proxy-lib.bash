@@ -671,7 +671,9 @@ XCIND_PROXY_REDIRECT_MIDDLEWARE_LABELS='      - "traefik.http.middlewares.xcind-
 #       _tls  (defaults to "auto", only meaningful when _type=proxied)
 #
 # Recognized metadata keys:
-#   type = proxied | assigned
+#   type = proxied | assigned | unpublished
+#          (unpublished: discovery variables for containers only — no
+#          Traefik router, no host port, nothing in the host env file)
 #   tls  = auto | require | disable
 #
 # Unknown keys and invalid values produce an error and return 1.
@@ -733,10 +735,10 @@ __xcind-proxy-parse-entry() {
       case "$key" in
       type)
         case "$val" in
-        proxied | assigned) _type="$val" ;;
+        proxied | assigned | unpublished) _type="$val" ;;
         *)
           __xcind-debug "parse-entry: invalid type='$val' in '$orig'"
-          echo "Error: invalid XCIND_PROXY_EXPORTS type '$val' in '$orig' (expected 'proxied' or 'assigned')" >&2
+          echo "Error: invalid XCIND_PROXY_EXPORTS type '$val' in '$orig' (expected 'proxied', 'assigned', or 'unpublished')" >&2
           return 1
           ;;
         esac
@@ -800,6 +802,24 @@ __xcind-proxy-infer-port() {
   fi
 
   echo "$target"
+}
+
+# Normalize and validate a resolved container port for an export. Strips a
+# known Compose protocol suffix (e.g. 80/tcp), then requires an integer in
+# 1–65535. Prints the normalized port. Any other value is an export-named
+# error — callers should specify a numeric target port. Shared by the proxy
+# hook and the discovery pair builder so both report the same error.
+#
+# Usage:
+#   port=$(__xcind-proxy-normalize-port "web" "80/tcp") || return 1
+__xcind-proxy-normalize-port() {
+  local export_name="$1"
+  local port="${2%%/*}"
+  if ! [[ $port =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    echo "Error: XCIND_PROXY_EXPORTS port for '$export_name' is not a valid port number (got: '$port'). Specify a numeric container port explicitly." >&2
+    return 1
+  fi
+  printf '%s' "$port"
 }
 
 # --------------------------------------------------------------------------
@@ -979,6 +999,47 @@ __xcind-proxy-json-for-app() {
   printf '%s' "$result"
 }
 
+# Resolve the app's unpublished exports (type=unpublished) as a JSON object
+# keyed by export name: {compose_service, container_port}. container_port is
+# best-effort, as for proxied exports: the declared value, else inferred from
+# resolved-config.yaml, else null. Echoes "{}" when jq is missing or there are
+# none. Identical repeated entries collapse to one key.
+__xcind-proxy-unpublished-json-for-app() {
+  if ! command -v jq &>/dev/null; then
+    echo "{}"
+    return 0
+  fi
+  if [[ -z ${XCIND_PROXY_EXPORTS+set} || ${#XCIND_PROXY_EXPORTS[@]} -eq 0 ]]; then
+    echo "{}"
+    return 0
+  fi
+
+  local resolved_config="${XCIND_CACHE_DIR:-}/resolved-config.yaml"
+  local result="{}"
+  local entry
+  for entry in "${XCIND_PROXY_EXPORTS[@]}"; do
+    local _export_name _compose_service _port _type _tls
+    __xcind-proxy-parse-entry "$entry" 2>/dev/null || continue
+    [[ $_type == "unpublished" ]] || continue
+
+    local cport="$_port"
+    if [[ -z $cport && -f $resolved_config ]]; then
+      cport=$(__xcind-proxy-infer-port "$_compose_service" "$resolved_config" 2>/dev/null) || cport=""
+    fi
+    local cport_json="null"
+    if [[ -n $cport && $cport != "null" ]]; then
+      cport=$(__xcind-proxy-normalize-port "$_export_name" "$cport" 2>/dev/null) && cport_json="$cport"
+    fi
+
+    result=$(printf '%s' "$result" | jq \
+      --arg name "$_export_name" \
+      --arg svc "$_compose_service" \
+      --argjson cport "$cport_json" \
+      '. + {($name): {compose_service: $svc, container_port: $cport}}')
+  done
+  printf '%s' "$result"
+}
+
 # --------------------------------------------------------------------------
 # __xcind-proxy-apex-for-app — resolve the app's apex URL/hostname/scheme.
 #
@@ -1119,14 +1180,7 @@ xcind-proxy-hook() {
       _port=$(__xcind-proxy-infer-port "$_compose_service" "$resolved_config") || return 1
     fi
 
-    # Validate resolved port: strip a known Compose protocol suffix (e.g.
-    # 80/tcp) and then require a positive integer. Any other non-numeric
-    # value is an error — callers should specify a numeric target port.
-    _port="${_port%%/*}"
-    if ! [[ $_port =~ ^[0-9]+$ ]] || [ "$_port" -lt 1 ] || [ "$_port" -gt 65535 ]; then
-      echo "Error: XCIND_PROXY_EXPORTS port for '$_export_name' is not a valid port number (got: '$_port'). Specify a numeric container port explicitly." >&2
-      return 1
-    fi
+    _port=$(__xcind-proxy-normalize-port "$_export_name" "$_port") || return 1
 
     # Resolve effective TLS for this export
     __xcind-proxy-resolve-export-tls "$proxy_tls_mode"

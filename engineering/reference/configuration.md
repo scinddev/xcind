@@ -202,7 +202,8 @@ variables (see [Environment Variables](../specs/environment-variables.md)) for
 processes running on the host rather than inside containers. When set non-empty,
 an EXECUTE-phase hook (`__xcind-hostenv-execute-hook`) writes the host-view
 values (assigned exports use their published `_HOST_PORT`) to this file on every
-`xcind-compose` run. Relative paths resolve against the app root. `jq` is required
+`xcind-compose` run. `_INTERNAL_*` variables and `type=unpublished` exports are
+never written. Relative paths resolve against the app root. `jq` is required
 when the app declares any `type=assigned` exports.
 
 **Default:** *(unset — the host env file is not written)*
@@ -223,6 +224,25 @@ How [`XCIND_HOST_ENV_FILE`](#xcind_host_env_file) is written:
 
 ```bash
 XCIND_HOST_ENV_MODE="block"  # merge into a hand-maintained .env file
+```
+
+### `XCIND_HOST_ENV_ASSIGNED_HOST`
+
+The host-reachable host for `type=assigned` exports. It sets the assigned
+`_HOST` in the [host-view env file](#xcind_host_env_file) and `_EXTERNAL_HOST` in
+both views (see [Environment Variables](../specs/environment-variables.md)):
+
+- `loopback` (default) — `127.0.0.1`.
+- `hostname` — the export's URL-template hostname (`XCIND_APP_URL_TEMPLATE`).
+  Use it when the proxy domain resolves to the Docker host, for example through
+  wildcard DNS, so the address also works from other machines.
+
+Any other value fails generation.
+
+**Default:** `"loopback"`
+
+```bash
+XCIND_HOST_ENV_ASSIGNED_HOST="hostname"  # e.g. dev-shop-db.example.test
 ```
 
 ### `XCIND_HOST_GATEWAY_ENABLED`
@@ -325,7 +345,7 @@ XCIND_HOOKS_TTL=0  # always refresh on resolve
 
 ### `XCIND_PROXY_EXPORTS`
 
-Array of service export declarations. Each entry names an exported service and — via an optional `type` attribute — chooses between the two port-exposure mechanisms: routing through the shared Traefik proxy (`type=proxied`, default) or reserving a stable host port (`type=assigned`).
+Array of service export declarations. Each entry names an exported service and — via an optional `type` attribute — chooses how its port is exposed: routing through the shared Traefik proxy (`type=proxied`, default), reserving a stable host port (`type=assigned`), or not at all (`type=unpublished`: discovery variables for containers only).
 
 **Default:** `()` (empty)
 
@@ -333,10 +353,10 @@ Array of service export declarations. Each entry names an exported service and �
 
 | Metadata Key | Default | Description |
 |--------------|---------|-------------|
-| `type` | `"proxied"` | `proxied` routes traffic through Traefik on a generated hostname. `assigned` reserves a stable host port, persisted across restarts. |
+| `type` | `"proxied"` | `proxied` routes traffic through Traefik on a generated hostname. `assigned` reserves a stable host port, persisted across restarts. `unpublished` exposes nothing outside Docker; containers get discovery variables only. |
 | `tls` | `"auto"` | Per-export TLS behaviour (only meaningful for `type=proxied`). `auto` emits both HTTP and HTTPS routers. `require` emits HTTPS only and redirects HTTP → HTTPS. `disable` emits HTTP only, even when proxy TLS is enabled. |
 
-Unknown metadata keys, invalid `type` values, and invalid `tls` values cause the generation hooks to fail fast.
+Unknown metadata keys, invalid `type` values, and invalid `tls` values cause the generation hooks to fail fast. Two entries that produce the same discovery prefix `XCIND_{APP}_{EXPORT}` (for example one name declared twice with different definitions) also fail; byte-identical repeats are allowed.
 
 When `XCIND_PROXY_TLS_MODE=disabled` (global), every `type=proxied` export collapses to HTTP-only regardless of its `tls=` setting.
 
@@ -347,6 +367,7 @@ XCIND_PROXY_EXPORTS=(
     "legacy:8080;tls=disable"        # proxied, http only even when proxy TLS is on
     "worker:9000;type=assigned"      # assigned, name=worker, service=worker, port 9000
     "database=db:3306;type=assigned" # assigned, name=database, service=db, port 3306
+    "smtp=mailpit:1025;type=unpublished" # unpublished, discovery variables only
 )
 ```
 
