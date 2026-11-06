@@ -2488,6 +2488,36 @@ assert_eq "JSON unpublishedExports is {} when none are declared" \
 
 rm -rf "$UNPUB_JSON"
 
+# --- envMap in the JSON contract ---
+ENVMAP_JSON=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_BINS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+XCIND_APP_APEX_URL_TEMPLATE=""
+XCIND_PROXY_EXPORTS=("api=app:3000")
+XCIND_ENV_MAP=('DATABASE_HOST=${XCIND_ACMEAPPS_API_HOST}' 'DATABASE_HOST=${XCIND_ACMEAPPS_API_HOST}' 'URL=http://${XCIND_ACMEAPPS_API_HOST}:1/a=b')
+json_envmap=$(__xcind-resolve-json "$ENVMAP_JSON")
+assert_eq "JSON envMap holds raw templates, deduplicated" \
+  '{"DATABASE_HOST":"${XCIND_ACMEAPPS_API_HOST}","URL":"http://${XCIND_ACMEAPPS_API_HOST}:1/a=b"}' \
+  "$(echo "$json_envmap" | jq -c '.envMap')"
+unset XCIND_ENV_MAP
+json_envmap_none=$(__xcind-resolve-json "$ENVMAP_JSON")
+assert_eq "JSON envMap is {} when unset" "{}" "$(echo "$json_envmap_none" | jq -c '.envMap')"
+XCIND_ENV_MAP=()
+json_envmap_empty=$(__xcind-resolve-json "$ENVMAP_JSON")
+assert_eq "JSON envMap is {} when empty" "{}" "$(echo "$json_envmap_empty" | jq -c '.envMap')"
+XCIND_ENV_MAP=($'A=x\nB=y' 'K=first' 'K=second')
+json_envmap_nl=$(__xcind-resolve-json "$ENVMAP_JSON")
+assert_eq "JSON envMap keeps each array element whole and the last duplicate wins" \
+  '{"A":"x\nB=y","K":"second"}' "$(echo "$json_envmap_nl" | jq -c '.envMap')"
+unset XCIND_ENV_MAP
+
+rm -rf "$ENVMAP_JSON"
+
 # --- apex disabled: non-empty template, no proxied export (assigned only) ---
 APEX_OFF_EXP=$(mktemp_d)
 reset_xcind_state
@@ -5030,6 +5060,179 @@ quoted_disc_line=$(__xcind-discovery-yaml-quote "XCIND_WORKSPACE_NAME=dev's")
 assert_eq "discovery YAML quote escapes single quotes" \
   "'XCIND_WORKSPACE_NAME=dev''s'" "$quoted_disc_line"
 
+# --- XCIND_ENV_MAP (ADR-0025): app-defined names over discovery variables ---
+XCIND_WORKSPACELESS=1
+unset XCIND_WORKSPACE 2>/dev/null || true
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned" "smtp=mail:1025;type=unpublished")
+XCIND_ENV_MAP=(
+  'DATABASE_HOST=${XCIND_MYAPP_DB_HOST}'
+  'DATABASE_URL=mysql://root@${XCIND_MYAPP_DB_HOST}:${XCIND_MYAPP_DB_PORT}/shop'
+  'APP_URL=${XCIND_MYAPP_WEB_URL}'
+  'MAILER_DSN=smtp://${XCIND_MYAPP_SMTP_HOST}:${XCIND_MYAPP_SMTP_PORT}'
+  'APP_NAME=shop'
+)
+map_c=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+map_h=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" host)
+assert_contains "env map container: assigned host is the service" \
+  "DATABASE_HOST=db" "$map_c"
+assert_contains "env map host: assigned host is loopback" \
+  "DATABASE_HOST=127.0.0.1" "$map_h"
+assert_contains "env map container: multiple refs plus literal text" \
+  "DATABASE_URL=mysql://root@db:5432/shop" "$map_c"
+assert_contains "env map host: multiple refs plus literal text" \
+  "DATABASE_URL=mysql://root@127.0.0.1:54320/shop" "$map_h"
+assert_contains "env map container: proxied reference" \
+  "APP_URL=https://myapp-web.localhost.scind.io" "$map_c"
+assert_contains "env map host: proxied reference" \
+  "APP_URL=https://myapp-web.localhost.scind.io" "$map_h"
+assert_contains "env map container: unpublished reference present" \
+  "MAILER_DSN=smtp://mail:1025" "$map_c"
+assert_not_contains "env map host: unpublished reference dropped" \
+  "MAILER_DSN" "$map_h"
+assert_contains "env map container: literal-only template" \
+  "APP_NAME=shop" "$map_c"
+assert_contains "env map host: literal-only template" \
+  "APP_NAME=shop" "$map_h"
+
+# Container view of the discovery YAML carries the mapped keys on each service.
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+xcind-discovery-hook "$DISC_DIR" >/dev/null
+map_yaml=$(<"$XCIND_GENERATED_DIR/compose.discovery.yaml")
+assert_contains "discovery YAML carries mapped key" \
+  "'DATABASE_HOST=db'" "$map_yaml"
+map_yaml_count=$(printf '%s\n' "$map_yaml" | grep -c "'DATABASE_URL=mysql://root@db:5432/shop'" || true)
+assert_eq "discovery YAML carries the mapped key for each service" "4" "$map_yaml_count"
+map_yaml_order=$(printf '%s\n' "$map_yaml" | grep -n "XCIND_MYAPP_DB_HOST_PORT\|DATABASE_HOST" | head -2 | cut -d: -f2 | tr -d ' ')
+assert_contains "mapped keys come after the XCIND_* variables" \
+  "DATABASE_HOST" "$(printf '%s\n' "$map_yaml_order" | tail -1)"
+
+# Byte-identical repeats are emitted once; conflicting repeats fail.
+XCIND_ENV_MAP=('A=${XCIND_MYAPP_DB_HOST}' 'A=${XCIND_MYAPP_DB_HOST}')
+map_dup=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "identical repeated map entries emit once" "A=db" "$map_dup"
+XCIND_ENV_MAP=('A=${XCIND_MYAPP_DB_HOST}' 'A=${XCIND_MYAPP_DB_PORT}')
+map_conf_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "conflicting repeated map key fails" "1" "$map_conf_status"
+map_conf_err=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "conflicting repeat error is prefixed and names the key" \
+  "xcind: XCIND_ENV_MAP entries" "$map_conf_err"
+assert_contains "conflicting repeat error names the key value" "key 'A'" "$map_conf_err"
+
+# Missing from both views fails and names the entry and the reference.
+XCIND_ENV_MAP=('TYPO=${XCIND_MYAPP_NOSUCH_HOST}')
+map_miss_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" host)
+assert_eq "reference missing from both views fails" "1" "$map_miss_status"
+map_miss_err=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "missing reference error names the entry" "TYPO=" "$map_miss_err"
+assert_contains "missing reference error names the reference" \
+  "XCIND_MYAPP_NOSUCH_HOST" "$map_miss_err"
+map_miss_hook_status=$(capture_status xcind-discovery-hook "$DISC_DIR")
+assert_eq "discovery hook fails on a map error" "1" "$map_miss_hook_status"
+
+# Any $ that is not a well-formed ${XCIND_NAME} reference is an error.
+map_bad_templates=(
+  'B=$XCIND_MYAPP_DB_HOST'
+  'B=${OTHER}'
+  'B=${XCIND_MYAPP_DB_HOST:-d}'
+  'B=$(echo hi)'
+  'B=cost$'
+  'B=${XCIND_MYAPP_DB_HOST'
+  'B=${xcind_myapp_db_host}'
+)
+for map_bad in "${map_bad_templates[@]}"; do
+  XCIND_ENV_MAP=("$map_bad")
+  map_bad_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+  assert_eq "invalid \$ form fails: $map_bad" "1" "$map_bad_status"
+  map_bad_err=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+  assert_contains "invalid \$ error is prefixed: $map_bad" "xcind: XCIND_ENV_MAP entry" "$map_bad_err"
+done
+
+# Key validation.
+XCIND_ENV_MAP=('1BAD=x')
+map_key_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "invalid map key fails" "1" "$map_key_status"
+XCIND_ENV_MAP=('BAD-KEY=x')
+map_key_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "map key with a hyphen fails" "1" "$map_key_status"
+XCIND_ENV_MAP=('XCIND_MINE=x')
+map_xkey_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "XCIND_ key fails" "1" "$map_xkey_status"
+map_xkey_err=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "XCIND_ key error names the entry" "XCIND_MINE=x" "$map_xkey_err"
+
+# A map with no exports at all: only literal-only templates survive, and the
+# hook still renders them (an empty map renders nothing).
+XCIND_PROXY_EXPORTS=()
+XCIND_ENV_MAP=('ONLY=literal' 'REF=${XCIND_MYAPP_DB_HOST}')
+map_noexp_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "unresolvable reference with no exports fails" "1" "$map_noexp_status"
+XCIND_ENV_MAP=('ONLY=literal')
+map_noexp=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+assert_eq "map with no exports renders literal-only entry" "ONLY=literal" "$map_noexp"
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+map_only_out=$(xcind-discovery-hook "$DISC_DIR")
+assert_contains "map-only result still renders the overlay" \
+  "-f $XCIND_GENERATED_DIR/compose.discovery.yaml" "$map_only_out"
+assert_contains "map-only overlay carries the key" \
+  "'ONLY=literal'" "$(<"$XCIND_GENERATED_DIR/compose.discovery.yaml")"
+XCIND_ENV_MAP=()
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+map_none_out=$(xcind-discovery-hook "$DISC_DIR")
+assert_eq "empty map and no exports renders nothing" "" "$map_none_out"
+unset XCIND_ENV_MAP
+XCIND_PROXY_EXPORTS=()
+
+# --- XCIND_ENV_MAP: forbidden characters (control, backslash, backtick) ---
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned")
+map_chr_nl=$'A=x\nXCIND_MYAPP_DB_HOST=evil'
+map_chr_cr=$'A=x\ry'
+map_chr_bs='A=x\ny'
+map_chr_bt='A=`id`'
+map_chr_tab=$'A=x\ty'
+for map_chr in "$map_chr_nl" "$map_chr_cr" "$map_chr_bs" "$map_chr_bt" "$map_chr_tab"; do
+  XCIND_ENV_MAP=("$map_chr")
+  map_chr_status=$(capture_status __xcind-discovery-build-mapped-pairs "$DISC_DIR" container)
+  assert_eq "forbidden character fails: $(printf '%q' "$map_chr")" "1" "$map_chr_status"
+done
+XCIND_ENV_MAP=("$map_chr_nl" $'B=x\nPATH')
+map_chr_err=$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "forbidden-character error is prefixed" "xcind: XCIND_ENV_MAP entry" "$map_chr_err"
+assert_eq "forbidden-character error is one safe line" "1" \
+  "$(printf '%s\n' "$map_chr_err" | wc -l | tr -d ' ')"
+assert_contains "forbidden-character error shows the entry escaped" "evil" "$map_chr_err"
+
+# Syntax validation needs no pairs, no yq and no resolved config: a bad
+# template fails the discovery hook even when yq is missing.
+XCIND_ENV_MAP=('B=$(echo hi)')
+map_noyq_empty="$DISC_ASSIGNED_DIR/no-yq-path"
+mkdir -p "$map_noyq_empty"
+map_noyq_saved="$PATH"
+PATH="$map_noyq_empty"
+map_noyq_status=$(capture_status xcind-discovery-hook "$DISC_DIR")
+PATH="$map_noyq_saved"
+assert_eq "bad template fails the discovery hook without yq" "1" "$map_noyq_status"
+XCIND_ENV_MAP=('B=ok')
+PATH="$map_noyq_empty"
+map_noyq_ok_status=$(capture_status xcind-discovery-hook "$DISC_DIR")
+PATH="$map_noyq_saved"
+assert_eq "valid template without yq still soft-skips the hook" "0" "$map_noyq_ok_status"
+
+# Quotes in literal text survive both renderers.
+XCIND_ENV_MAP=("MSG=it's \"fine\"")
+rm -rf "$XCIND_GENERATED_DIR"
+mkdir -p "$XCIND_GENERATED_DIR"
+xcind-discovery-hook "$DISC_DIR" >/dev/null
+assert_contains "YAML quoting escapes a single quote and keeps double quotes" \
+  "'MSG=it''s \"fine\"'" "$(<"$XCIND_GENERATED_DIR/compose.discovery.yaml")"
+map_q_host=$(__xcind-hostenv-render "$(__xcind-discovery-build-mapped-pairs "$DISC_DIR" host)")
+assert_contains "dotenv quoting escapes double quotes and keeps the single quote" \
+  "MSG=\"it's \\\"fine\\\"\"" "$map_q_host"
+unset XCIND_ENV_MAP
+XCIND_PROXY_EXPORTS=()
+
 # --- Nothing to inject: no current exports, even with stale assigned state ---
 rm -rf "$XCIND_GENERATED_DIR"
 mkdir -p "$XCIND_GENERATED_DIR"
@@ -5247,6 +5450,60 @@ he_unpub_body=$(<"$HE_DIR/.env.unpub")
 assert_not_contains "host env file omits unpublished exports" \
   "XCIND_MYAPP_SMTP_" "$he_unpub_body"
 XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned")
+
+# --- XCIND_ENV_MAP (ADR-0025): mapped keys in the host env file ---
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned" "smtp=web:1025;type=unpublished")
+XCIND_ENV_MAP=(
+  'DATABASE_URL=mysql://root@${XCIND_MYAPP_DB_HOST}:${XCIND_MYAPP_DB_PORT}/shop'
+  'MAILER_DSN=smtp://${XCIND_MYAPP_SMTP_HOST}:${XCIND_MYAPP_SMTP_PORT}'
+)
+unset XCIND_HOST_ENV_MODE 2>/dev/null || true
+XCIND_HOST_ENV_FILE=".env.map"
+__xcind-hostenv-execute-hook "$HE_DIR"
+he_map_body=$(<"$HE_DIR/.env.map")
+assert_contains "host env file carries the mapped key with host values" \
+  "DATABASE_URL=mysql://root@127.0.0.1:54320/shop" "$he_map_body"
+assert_not_contains "host env file drops a mapping that uses an unpublished export" \
+  "MAILER_DSN" "$he_map_body"
+
+# shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook
+XCIND_HOST_ENV_MODE=block
+XCIND_HOST_ENV_FILE=".env.mapblock"
+printf 'KEEP=1\n' >"$HE_DIR/.env.mapblock"
+__xcind-hostenv-execute-hook "$HE_DIR"
+he_mapblock_body=$(<"$HE_DIR/.env.mapblock")
+assert_contains "block mode keeps user content" "KEEP=1" "$he_mapblock_body"
+assert_contains "block mode carries the mapped key" \
+  "DATABASE_URL=mysql://root@127.0.0.1:54320/shop" "$he_mapblock_body"
+unset XCIND_HOST_ENV_MODE
+
+XCIND_ENV_MAP=('TYPO=${XCIND_MYAPP_NOSUCH_HOST}')
+XCIND_HOST_ENV_FILE=".env.mapbad"
+he_mapbad_status=$(capture_status __xcind-hostenv-execute-hook "$HE_DIR")
+assert_eq "host env hook fails on a map error" "1" "$he_mapbad_status"
+assert_file_missing "map error writes no host env file" "$HE_DIR/.env.mapbad"
+unset XCIND_ENV_MAP
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned")
+
+# A map error in block mode leaves an existing host file byte-identical.
+# shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook
+XCIND_HOST_ENV_MODE=block
+XCIND_HOST_ENV_FILE=".env.mapkeep"
+printf 'KEEP=1\n# >>> xcind >>>\nOLD=1\n# <<< xcind <<<\n' >"$HE_DIR/.env.mapkeep"
+he_keep_before=$(cksum <"$HE_DIR/.env.mapkeep")
+XCIND_ENV_MAP=('TYPO=${XCIND_MYAPP_NOSUCH_HOST}')
+he_keep_status=$(capture_status __xcind-hostenv-execute-hook "$HE_DIR")
+assert_eq "block mode map error fails the hook" "1" "$he_keep_status"
+assert_eq "block mode map error leaves the host file byte-identical" \
+  "$he_keep_before" "$(cksum <"$HE_DIR/.env.mapkeep")"
+unset XCIND_HOST_ENV_MODE
+# shellcheck disable=SC2034 # read by the hook below
+XCIND_ENV_MAP=("MSG=it's \"fine\"")
+XCIND_HOST_ENV_FILE=".env.mapq"
+__xcind-hostenv-execute-hook "$HE_DIR"
+assert_contains "host env file quotes a value with both quote kinds" \
+  "MSG=\"it's \\\"fine\\\"\"" "$(<"$HE_DIR/.env.mapq")"
+unset XCIND_ENV_MAP
 
 # --- missing jq: assigned host-view files fail rather than silently omitting pairs ---
 # shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook

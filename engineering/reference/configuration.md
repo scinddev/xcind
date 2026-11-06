@@ -245,6 +245,36 @@ Any other value fails generation.
 XCIND_HOST_ENV_ASSIGNED_HOST="hostname"  # e.g. dev-shop-db.example.test
 ```
 
+### `XCIND_ENV_MAP`
+
+Array of `KEY=template` entries that give discovery values app-defined names
+([ADR-0025](../decisions/0025-discovery-env-map.md)). A template is literal text
+plus `${XCIND_NAME}` references (`NAME` matches `[A-Z0-9_]+`). Xcind expands it
+for each view and appends the result after the `XCIND_*` variables: in the
+`environment:` block of every service in `compose.discovery.yaml` (container
+view), and in the [host env file](#xcind_host_env_file) (host view).
+
+Rules:
+
+- Any other `$` (`$NAME`, `${OTHER}`, `${XCIND_X:-d}`, `$(...)`, a lone `$`) is an error. Xcind does no shell evaluation.
+- A backslash, a backtick, or any control character (including a newline) in an entry is an error.
+- A key matches `[A-Za-z_][A-Za-z0-9_]*`; a key that starts with `XCIND_` is an error.
+- Byte-identical repeated entries are emitted once; the same key with two templates is an error.
+- A reference that is missing from one view drops the entry from that view only. A reference that is missing from both views fails with an error that names the entry and the reference.
+- Mapped keys override the same key in the app's own `environment:` or `env_file:`.
+
+**Default:** `()`
+
+```bash
+XCIND_ENV_MAP+=(
+  'DATABASE_HOST=${XCIND_SHOP_DATABASE_HOST}'
+  'DATABASE_URL=mysql://root@${XCIND_SHOP_DATABASE_HOST}:${XCIND_SHOP_DATABASE_PORT}/shop'
+)
+```
+
+Use single quotes, so the shell that sources the config file does not expand the
+references. `xcind-config --json` reports the raw templates in `envMap`.
+
 ### `XCIND_HOST_GATEWAY_ENABLED`
 
 Controls whether the host gateway hook runs. Set to `0` to disable automatic `host.docker.internal` normalization.

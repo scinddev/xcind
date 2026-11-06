@@ -879,6 +879,19 @@ __xcind-resolve-json() {
   local unpublished_json
   unpublished_json=$(__xcind-proxy-unpublished-json-for-app)
 
+  # Declared XCIND_ENV_MAP templates, unexpanded ({} when unset; identical
+  # repeats collapse because the object is keyed by name).
+  local env_map_json='{}'
+  if [[ -n ${XCIND_ENV_MAP+set} && ${#XCIND_ENV_MAP[@]} -gt 0 ]]; then
+    # Each array element stays whole (no line splitting); the last duplicate
+    # key wins. Built one entry at a time so it needs only basic jq.
+    local _em_entry
+    for _em_entry in "${XCIND_ENV_MAP[@]}"; do
+      [[ $_em_entry == *=* ]] || continue
+      env_map_json=$(jq -c --arg k "${_em_entry%%=*}" --arg v "${_em_entry#*=}" '.[$k] = $v' <<<"$env_map_json")
+    done
+  fi
+
   # Resolve apex (present-but-null when disabled or no proxied export).
   # Subshell command-subst mirrors assigned_json above; helper side effects
   # (optional config.sh source) stay confined here.
@@ -907,6 +920,7 @@ __xcind-resolve-json() {
     --argjson proxied_exports "$proxied_json" \
     --argjson unpublished_exports "$unpublished_json" \
     --argjson apex "$apex_json" \
+    --argjson env_map "$env_map_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
     --argjson workspaceless "$([ "$_workspaceless" = "0" ] && echo false || echo true)" \
@@ -927,7 +941,8 @@ __xcind-resolve-json() {
             assignedExports: $assigned_exports,
             proxiedExports: $proxied_exports,
             unpublishedExports: $unpublished_exports,
-            apex: $apex
+            apex: $apex,
+            envMap: $env_map
         }'
 }
 

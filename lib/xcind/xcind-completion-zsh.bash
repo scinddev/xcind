@@ -169,6 +169,7 @@ _xcind-config() {
         'proxiedExports:Proxied exports with computed URLs'
         'unpublishedExports:Unpublished exports (discovery variables only)'
         'apex:Apex hostname, URL and scheme'
+        'envMap:Declared XCIND_ENV_MAP templates'
         'compose.:Resolved Compose values (needs the cache)'
         '--help:Show resolve paths and path syntax'
       )

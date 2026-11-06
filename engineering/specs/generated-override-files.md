@@ -278,6 +278,11 @@ services:
       # …same block…
 ```
 
+When `XCIND_ENV_MAP` is set, the mapped `KEY=value` entries (container view) are
+appended to the same block after the `XCIND_*` variables, for example
+`- "DATABASE_HOST=myapp-db"`. A map-only result (no exports) still produces the
+file. See [ADR-0025](../decisions/0025-discovery-env-map.md).
+
 See [Environment Variables](./environment-variables.md) for the full schema,
 [ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the design, and
 [ADR-0024](../decisions/0024-internal-external-discovery-and-unpublished-exports.md)

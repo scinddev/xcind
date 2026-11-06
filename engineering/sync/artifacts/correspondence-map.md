@@ -74,7 +74,7 @@ tags the downstream plan each non-`MATCH` row hands to.
 | Scind path | Xcind path | Rel | Feeds | Notes |
 |-----------|-----------|-----|-------|-------|
 | `docs/decisions/0000-template.md` | `engineering/decisions/0000-template.md` | MATCH | — | Identical body; Scind keeps a trailing HTML comment. |
-| `docs/decisions/README.md` | `engineering/decisions/README.md` | PARTIAL | — | Structural index; Xcind lists 0001–0024 + Scind-origin note. *(R2; 0024 added post-R2)* |
+| `docs/decisions/README.md` | `engineering/decisions/README.md` | PARTIAL | — | Structural index; Xcind lists 0001–0025 + Scind-origin note. *(R2; 0024 and 0025 added post-R2)* |
 | `docs/decisions/0001-docker-compose-project-name-isolation.md` | `engineering/decisions/0001-…` | MATCH | — | Same decision; Xcind adds a worktree-instance note (subject of 0019). |
 | `docs/decisions/0002-two-layer-networking.md` | `engineering/decisions/0002-…` | MATCH | — | Identical but proxy-net prefix. |
 | `docs/decisions/0003-pure-overlay-design.md` | `engineering/decisions/0003-…` | MATCH | — | Identical. |
@@ -99,6 +99,7 @@ tags the downstream plan each non-`MATCH` row hands to.
 | — | `engineering/decisions/0021-cross-repo-adr-cross-referencing.md` | XCIND-ONLY | P6 | *(R2)* Meta-ADR owning the topic-keyed cross-reference policy (this table). |
 | — | `engineering/decisions/0022-external-proxy-mode.md` | XCIND-ONLY | P4 | *(R2)* managed\|external proxy mode (host Traefik, e.g. Coolify). Promoted to Scind ADR-0017 (RL-116). |
 | — | `engineering/decisions/0024-internal-external-discovery-and-unpublished-exports.md` | XCIND-ONLY | P4 | `_INTERNAL_*`/`_EXTERNAL_*` discovery pairs, `type=unpublished`, opt-in assigned external hostname, prefix-collision error; self-flagged PROMOTE candidate (XA-0045). |
+| — | `engineering/decisions/0025-discovery-env-map.md` | XCIND-ONLY | P4 | `XCIND_ENV_MAP`: app-defined names for discovery variables, expanded per view into `compose.discovery.yaml` and the host env file; self-flagged PROMOTE candidate (XA-0046). |
 
 ### specs/  (+ appendices)
 

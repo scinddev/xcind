@@ -5,7 +5,7 @@
     "date": "2026-07-15",
     "method": "Five parallel subsystem subagents (CLI-surface, proxy/export, identity/isolation, hooks/generation, config/env) each enumerated Xcind's real as-built capability from bin/ + lib/xcind/*.bash and diffed it against Scind canon (/Users/beausimensen/Code/scind/docs) by topic. A synthesis pass de-duplicated cross-agent overlaps and applied the PROMOTE/DIVERGENCE/ESCALATE rule from global-context.md §2/§2a.",
     "operating_model": "Scind is canon; Xcind's lessons upgrade the canon. DIVERGENCE must be EARNED (a one-sentence 'why Scind should NOT adopt'); when unsure, ESCALATE or PROMOTE, never silently diverge. Go/Bash language & build artifacts excluded (global-context §5).",
-    "counts": {"total": 45, "PROMOTE": 21, "DIVERGENCE": 13, "ESCALATE": 11},
+    "counts": {"total": 46, "PROMOTE": 22, "DIVERGENCE": 13, "ESCALATE": 11},
     "scope_notes": "P4 covers Xcind-AHEAD capabilities only. Two reverse gaps (Xcind BEHIND Scind) surfaced by the proxy/export agent are recorded under reverse_gaps[] (hand to P5/P3), not as capability rows. The core XCIND_INSTANCE worktree-isolation token is NOT filed here: global-context §2a Example B already rules it a CANON-CHANGE against Scind ADR-0001, owned by P6/P3 (ADR-0019).",
     "supplement_2026_07_15": "Human product-calls received after the initial synthesis, folded in (they OVERRIDE independent classification where they conflict; each affected row is tagged source='human product-call'): (1) Two-track docs / ADR-0014 -> PROMOTE (new row XA-0043). (2) XDG Base Directory split -> PROMOTE (new row XA-0044). (3) behaviors/ .feature files VERIFIED not test-exercised — see behaviors_verification below.",
     "behaviors_verification": {
@@ -630,6 +630,20 @@
       "recommendation": "PROMOTE",
       "rationale": "Additive: the base variable table is unchanged, so nothing in Scind narrows. Scind's 'private = not exported' and advisory 'visibility' do not cover a declared-but-unexposed port. Self-flagged PROMOTE in Xcind ADR-0024.",
       "target_scind_change": "Add _INTERNAL_*/_EXTERNAL_* to environment-variables.md; add type: unpublished to port-types.md and configuration-schemas.md; add an external-host mode to the host-view env file (Scind ADR-0015); specify the prefix-collision error; reconcile Scind ADR-0002's 'protected services remain internal' with advisory visibility.",
+      "confidence": "medium"
+    },
+    {
+      "id": "XA-0046",
+      "subsystem": "proxy/export",
+      "source": "post-sync addition (ADR-0025)",
+      "capability": "XCIND_ENV_MAP: app-defined names for discovery variables. Each KEY=template entry (literal text plus ${XCIND_NAME} references) is expanded separately against the container-view and host-view pair sets and rendered in compose.discovery.yaml (every service) and the host-view env file. Any other '$' is an error, keys cannot start with XCIND_, a reference missing from one view drops the entry from that view only, and a reference missing from both views fails generation.",
+      "xcind_evidence": ["lib/xcind/xcind-discovery-lib.bash", "lib/xcind/xcind-hostenv-lib.bash", "engineering/decisions/0025-discovery-env-map.md"],
+      "scind_coverage": "absent",
+      "scind_checked": ["engineering/specs/environment-variables.md", "engineering/specs/configuration-schemas.md", "engineering/decisions/0015-host-view-environment-symmetry.md"],
+      "why_it_exists": "Applications want their own variable names (DATABASE_HOST, DATABASE_URL). A dotenv mapping such as DATABASE_HOST=${XCIND_SHOP_DATABASE_HOST} works only in a process that loads the dotenv file with expansion, and Compose cannot expand container-injected variables.",
+      "recommendation": "PROMOTE",
+      "rationale": "Additive: nothing in Scind narrows. Scind has no way for an application to name discovery values. Self-flagged PROMOTE in Xcind ADR-0025.",
+      "target_scind_change": "Add an env_map: block to application.yaml with ${SCIND_*} references and the same rules (strict syntax, reserved prefix, per-view drop, error when missing from both views); render it in the generated environment block and the host-view env file. The name env_map avoids confusion with the generated environment: block in Scind state.",
       "confidence": "medium"
     }
   ],
