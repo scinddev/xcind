@@ -52,7 +52,7 @@ xcind-application exports [SERVICE] [DIR] [--json]  # every export: proxied, ass
 Inspect what Xcind resolved.
 
 ```bash
-xcind-config --json                     # machine-readable resolved config (used by JetBrains plugin)
+xcind-config --json                     # machine-readable resolved config (used by JetBrains plugin); envMap holds XCIND_ENV_MAP templates
 xcind-config resolve metadata.app       # read one resolved xcind value
 xcind-config resolve compose.project.name  # read one resolved Compose value
 xcind-config resolve --help             # list the resolvable keys and path syntax

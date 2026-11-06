@@ -92,6 +92,7 @@ Xcind keys (top level):
   scripts
   assignedExports     proxiedExports  unpublishedExports
   apex                .enabled .hostname .url .scheme
+  envMap
 
 Compose keys (need the resolved cache):
   compose.project.name

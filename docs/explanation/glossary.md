@@ -15,6 +15,7 @@ User-facing glossary. For maintainer-level terminology, see [`engineering/produc
 | **Assigned export** | An export pinned to a stable host port via `type=assigned`. Bypasses Traefik. |
 | **Unpublished export** | An export declared with `type=unpublished`: containers get its discovery variables (`{service}` host + container port), but it gets no hostname, no host port, and no entry in the host-view env file. |
 | **Internal / external address** | The `_INTERNAL_HOST`/`_INTERNAL_PORT` pair is where a service is reached inside Docker (containers only). The `_EXTERNAL_HOST`/`_EXTERNAL_PORT` pair is where it is reached from outside Docker (the same value everywhere). |
+| **Env map** | `XCIND_ENV_MAP`: `KEY=template` entries that give discovery variables app-defined names (`DATABASE_HOST=${XCIND_SHOP_DATABASE_HOST}`). Xcind expands each template for the container view and the host view and injects plain values. |
 | **Hook** | A bash function that emits a generated compose overlay (`XCIND_HOOKS_GENERATE`) or runs a precondition (`XCIND_HOOKS_EXECUTE`). |
 | **Generated overlay** | A compose file produced by a hook, written to `.xcind/generated/` and passed to `docker compose -f`. Re-derived on input changes; never hand-edited. |
 | **Override file** | A sibling file with `.override` in the name (e.g. `compose.override.yaml`, `.env.override`). Picked up automatically if present. |

@@ -12,6 +12,9 @@
 # `environment:` beats `env_file:`, so one committed expression resolves to the
 # container endpoint inside a container and the host endpoint on the host.
 #
+# App-defined names (XCIND_ENV_MAP, ADR-0025) are expanded for the host view by
+# __xcind-discovery-build-mapped-pairs and appended after the XCIND_* variables.
+#
 # The variable set comes from the shared __xcind-discovery-build-pairs seam
 # (xcind-discovery-lib.bash) so the host and container views never drift.
 #
@@ -247,6 +250,13 @@ __xcind-hostenv-execute-hook() {
   while IFS= read -r _pair; do
     [[ -n $_pair ]] && env_lines+=("$_pair")
   done <<<"$pairs"
+
+  # Append app-defined names (XCIND_ENV_MAP, ADR-0025) after the XCIND_* pairs.
+  local mapped
+  mapped=$(__xcind-discovery-build-mapped-pairs "$app_root" host "$pairs") || return 1
+  while IFS= read -r _pair; do
+    [[ -n $_pair ]] && env_lines+=("$_pair")
+  done <<<"$mapped"
 
   # Render the dotenv body once (shared by both modes). The +"" guard keeps the
   # empty-array expansion safe under set -u on Bash 3.2.

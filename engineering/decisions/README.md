@@ -32,6 +32,7 @@ Many of these decisions originate from the [Scind specification](https://github.
 | [0022](./0022-external-proxy-mode.md) | External Proxy Mode | Accepted |
 | [0023](./0023-location-based-targeting.md) | Location-Based Targeting (No `--workspace` / `--app` Flags) | Accepted |
 | [0024](./0024-internal-external-discovery-and-unpublished-exports.md) | Internal/External Discovery Variables and Unpublished Exports | Accepted |
+| [0025](./0025-discovery-env-map.md) | App-Defined Names for Discovery Variables (`XCIND_ENV_MAP`) | Accepted |
 
 ## ADR Format
 

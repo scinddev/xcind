@@ -125,7 +125,7 @@ _xcind_config_completions() {
   if [[ $prev == "resolve" ]]; then
     local resolve_keys="metadata appRoot configFiles composeFiles
       composeEnvFiles appEnvFiles bakeFiles bins scripts assignedExports
-      proxiedExports unpublishedExports apex compose. --help"
+      proxiedExports unpublishedExports apex envMap compose. --help"
     COMPREPLY=($(compgen -W "$resolve_keys" -- "$cur"))
     return
   fi
