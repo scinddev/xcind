@@ -78,6 +78,25 @@ This works because of two precedence rules that point the same way: Compose `env
 
 Only **assigned** exports change by view — their `_HOST` becomes `127.0.0.1` and `_PORT` becomes the assigned host port. **Proxied** and **apex** exports keep their routable hostname (e.g. `myapp-web.localhost.scind.io`) in both views: Traefik routes by hostname/SNI, so an IP would break TLS and routing, and the hostname already resolves to `127.0.0.1` on the host.
 
+The host file never contains `_INTERNAL_*` variables (a host process cannot use an in-network address), and it never contains **unpublished** exports (`type=unpublished`), which exist only for containers.
+
+### Explicit internal and external variables
+
+When you need a specific side regardless of where the code runs, use the explicit pairs instead of the base `_HOST`/`_PORT`:
+
+- `XCIND_{APP}_{EXPORT}_INTERNAL_HOST` / `_INTERNAL_PORT` — the address inside Docker (the `{app}-{service}` alias in a workspace, else the compose service name, + the container port). Containers only.
+- `XCIND_{APP}_{EXPORT}_EXTERNAL_HOST` / `_EXTERNAL_PORT` — the address outside Docker. The same value in containers and in the host file, so a container can tell a browser or a developer how to reach a service.
+
+### Use a hostname instead of 127.0.0.1
+
+If your proxy domain resolves to the Docker host — for example a wildcard DNS record that points at the machine running Docker — you can write hostnames for assigned exports instead of `127.0.0.1`:
+
+```bash
+XCIND_HOST_ENV_ASSIGNED_HOST="hostname"   # loopback (default) | hostname
+```
+
+The assigned `_HOST` in the host file then becomes the export's proxy-domain hostname (e.g. `dev-shop-db.example.test`), and `_PORT` stays the assigned host port. Assigned ports listen on all interfaces, so the same address also works from other machines that resolve the domain. `_EXTERNAL_HOST` inside containers follows the same setting.
+
 ### Enabling it
 
 Set the path in `.xcind.sh` (unset means the file is never written — no change for existing projects):

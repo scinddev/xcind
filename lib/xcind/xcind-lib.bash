@@ -875,6 +875,10 @@ __xcind-resolve-json() {
   local proxied_json
   proxied_json=$(__xcind-proxy-json-for-app "$app_root")
 
+  # Resolve unpublished exports (empty object when none)
+  local unpublished_json
+  unpublished_json=$(__xcind-proxy-unpublished-json-for-app)
+
   # Resolve apex (present-but-null when disabled or no proxied export).
   # Subshell command-subst mirrors assigned_json above; helper side effects
   # (optional config.sh source) stay confined here.
@@ -901,6 +905,7 @@ __xcind-resolve-json() {
     --argjson scripts "$scripts_json" \
     --argjson assigned_exports "$assigned_json" \
     --argjson proxied_exports "$proxied_json" \
+    --argjson unpublished_exports "$unpublished_json" \
     --argjson apex "$apex_json" \
     --arg ws_name "$_ws_name" \
     --arg app_name "$_app_name" \
@@ -921,6 +926,7 @@ __xcind-resolve-json() {
             scripts: $scripts,
             assignedExports: $assigned_exports,
             proxiedExports: $proxied_exports,
+            unpublishedExports: $unpublished_exports,
             apex: $apex
         }'
 }

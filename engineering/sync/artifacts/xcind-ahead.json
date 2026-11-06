@@ -5,7 +5,7 @@
     "date": "2026-07-15",
     "method": "Five parallel subsystem subagents (CLI-surface, proxy/export, identity/isolation, hooks/generation, config/env) each enumerated Xcind's real as-built capability from bin/ + lib/xcind/*.bash and diffed it against Scind canon (/Users/beausimensen/Code/scind/docs) by topic. A synthesis pass de-duplicated cross-agent overlaps and applied the PROMOTE/DIVERGENCE/ESCALATE rule from global-context.md §2/§2a.",
     "operating_model": "Scind is canon; Xcind's lessons upgrade the canon. DIVERGENCE must be EARNED (a one-sentence 'why Scind should NOT adopt'); when unsure, ESCALATE or PROMOTE, never silently diverge. Go/Bash language & build artifacts excluded (global-context §5).",
-    "counts": {"total": 44, "PROMOTE": 20, "DIVERGENCE": 13, "ESCALATE": 11},
+    "counts": {"total": 45, "PROMOTE": 21, "DIVERGENCE": 13, "ESCALATE": 11},
     "scope_notes": "P4 covers Xcind-AHEAD capabilities only. Two reverse gaps (Xcind BEHIND Scind) surfaced by the proxy/export agent are recorded under reverse_gaps[] (hand to P5/P3), not as capability rows. The core XCIND_INSTANCE worktree-isolation token is NOT filed here: global-context §2a Example B already rules it a CANON-CHANGE against Scind ADR-0001, owned by P6/P3 (ADR-0019).",
     "supplement_2026_07_15": "Human product-calls received after the initial synthesis, folded in (they OVERRIDE independent classification where they conflict; each affected row is tagged source='human product-call'): (1) Two-track docs / ADR-0014 -> PROMOTE (new row XA-0043). (2) XDG Base Directory split -> PROMOTE (new row XA-0044). (3) behaviors/ .feature files VERIFIED not test-exercised — see behaviors_verification below.",
     "behaviors_verification": {
@@ -617,6 +617,20 @@
       "rationale": "Human product-call: PROMOTE. Scind's structure-vs-state separation (ADR-0005) is exactly what XDG encodes at the filesystem level — declarative config is version-controllable/backup-worthy, ephemeral state is not. Collapsing both under $XDG_CONFIG_HOME contradicts that principle and is a portable design fix, not a Bash-ism.",
       "target_scind_change": "In docs/specs/environment-variables.md / state-management.md, default SCIND_STATE_DIR to $XDG_STATE_HOME/scind (falling back to ~/.local/state/scind) and keep SCIND_CONFIG_DIR under $XDG_CONFIG_HOME/scind; align global state placement with the XDG Base Directory Spec (config vs state vs data).",
       "confidence": "high"
+    },
+    {
+      "id": "XA-0045",
+      "subsystem": "proxy/export",
+      "source": "post-sync addition (ADR-0024)",
+      "capability": "Internal/external discovery variable pairs for every export (_INTERNAL_HOST/_PORT in the container view only; view-invariant _EXTERNAL_HOST/_PORT), a third port type 'unpublished' (container discovery variables only: no proxy route, no host port, absent from the host-view env file), an opt-in hostname mode (XCIND_HOST_ENV_ASSIGNED_HOST) for the assigned external host, and discovery prefix collisions as a generation error.",
+      "xcind_evidence": ["lib/xcind/xcind-discovery-lib.bash", "lib/xcind/xcind-proxy-lib.bash", "engineering/decisions/0024-internal-external-discovery-and-unpublished-exports.md"],
+      "scind_coverage": "absent",
+      "scind_checked": ["engineering/specs/port-types.md", "engineering/specs/environment-variables.md", "engineering/decisions/0002-two-layer-networking.md", "engineering/decisions/0015-host-view-environment-symmetry.md"],
+      "why_it_exists": "Proxied exports had no in-network address, so containers could not reach them directly by alias and port; every export was either proxied or host-published, so a container-only port (e.g. an SMTP side port) could not get discovery variables without being exposed and port-managed; and the host-view env file hard-coded 127.0.0.1 even where a wildcard-DNS proxy domain resolves to the Docker host.",
+      "recommendation": "PROMOTE",
+      "rationale": "Additive: the base variable table is unchanged, so nothing in Scind narrows. Scind's 'private = not exported' and advisory 'visibility' do not cover a declared-but-unexposed port. Self-flagged PROMOTE in Xcind ADR-0024.",
+      "target_scind_change": "Add _INTERNAL_*/_EXTERNAL_* to environment-variables.md; add type: unpublished to port-types.md and configuration-schemas.md; add an external-host mode to the host-view env file (Scind ADR-0015); specify the prefix-collision error; reconcile Scind ADR-0002's 'protected services remain internal' with advisory visibility.",
+      "confidence": "medium"
     }
   ],
   "reverse_gaps": [

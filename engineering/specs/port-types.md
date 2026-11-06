@@ -6,12 +6,13 @@
 
 ## Overview
 
-Xcind exposes application ports through two mechanisms, both declared in a single `XCIND_PROXY_EXPORTS` array and dispatched by `type`:
+Xcind declares application ports in a single `XCIND_PROXY_EXPORTS` array, dispatched by `type`. Two types expose the port outside Docker; the third declares it for discovery only:
 
 | Type | Behavior | Hook | Output |
 |------|----------|------|--------|
 | `proxied` *(default)* | Routed through the shared Traefik proxy on a generated hostname | `xcind-proxy-hook` | `compose.proxy.yaml` (Traefik labels) |
 | `assigned` | Direct host-port binding, auto-assigned when the declared port is unavailable, sticky across restarts | `xcind-assigned-hook` | `compose.assigned.yaml` (`ports:` mapping) |
+| `unpublished` | Not exposed outside Docker; declared only so containers get discovery variables | `xcind-discovery-hook` | `compose.discovery.yaml` (variables only) |
 
 Services not listed in `XCIND_PROXY_EXPORTS` remain private — accessible only within the application's own Docker Compose network.
 
@@ -29,12 +30,13 @@ export_name[=compose_service][:port][;key=value[;key=value…]]
 | `"api=uvicorn:8080"` | `api` | `uvicorn` | `8080` | `proxied` |
 | `"worker:9000;type=assigned"` | `worker` | `worker` | `9000` | `assigned` |
 | `"database=db:3306;type=assigned"` | `database` | `db` | `3306` | `assigned` |
+| `"smtp=mailpit:1025;type=unpublished"` | `smtp` | `mailpit` | `1025` | `unpublished` |
 
 The following keys are accepted in the metadata section today; unknown keys and invalid values cause the hooks to fail fast.
 
 | Key | Accepted Values | Default | Description |
 |-----|----------------|---------|-------------|
-| `type` | `proxied`, `assigned` | `proxied` | Export mechanism |
+| `type` | `proxied`, `assigned`, `unpublished` | `proxied` | Export mechanism |
 | `tls` | `auto`, `require`, `disable` | `auto` | Per-export TLS override (only meaningful when `type=proxied`) |
 
 The effective TLS behavior for each export is resolved from the global `XCIND_PROXY_TLS_MODE` and the per-export `tls` key. When the global mode is `disabled`, all exports are HTTP-only regardless of per-export `tls`.
@@ -76,9 +78,22 @@ Assignments persist in the state file across restarts. To manage them:
 - `xcind-proxy prune` removes entries whose app path no longer exists. Run this
   command explicitly to prune entries.
 
+## Unpublished Ports
+
+An `unpublished` export gets discovery variables in the container view (`_HOST`, `_PORT`, `_INTERNAL_HOST`, `_INTERNAL_PORT`) and nothing else: no Traefik router, no host port, no assigned-port state, and no lines in the host-view env file. Use it for a port that only other containers need, such as the SMTP side of a mail catcher whose web UI is proxied:
+
+```bash
+XCIND_PROXY_EXPORTS=(
+  "mailpit:8025"                          # web UI, proxied
+  "smtp=mailpit:1025;type=unpublished"    # SMTP, containers only
+)
+```
+
+The two ports need two export names: two entries that produce the same `XCIND_{APP}_{EXPORT}` prefix fail generation. See [Environment Variables — Unpublished exports](./environment-variables.md#unpublished-exports) and [ADR-0024](../decisions/0024-internal-external-discovery-and-unpublished-exports.md).
+
 ### Port Inference
 
-When the port is omitted from an entry, the owning hook infers it from the compose service's port mapping:
+When the port is omitted from an entry, the owning hook infers it from the compose service's port mapping (the discovery hook does this for `unpublished` exports and for the `_INTERNAL_PORT` of `proxied` exports):
 
 - If the service has **exactly one** port mapping, that port's target is used
 - If the service has **zero** or **multiple** port mappings, an error is reported asking for explicit port specification

@@ -55,6 +55,19 @@ XCIND_PROXY_EXPORTS=(
 
 Bindings persist across restarts under `~/.local/state/xcind/proxy/assigned-ports.tsv`.
 
+## Container-only ports (unpublished)
+
+Some ports only matter to other containers — for example the SMTP port of a mail catcher whose web UI you proxy. Use `type=unpublished` to give containers discovery variables for the port without a hostname or a host port:
+
+```bash
+XCIND_PROXY_EXPORTS=(
+    "mailpit:8025"                         # web UI through the proxy
+    "smtp=mailpit:1025;type=unpublished"   # SMTP for other containers only
+)
+```
+
+Containers then get `XCIND_{APP}_SMTP_HOST` (the `{app}-{service}` alias in a workspace, else the compose service name) and `XCIND_{APP}_SMTP_PORT=1025`. Each port needs its own export name. See [Environment Variables](../../engineering/specs/environment-variables.md#unpublished-exports).
+
 ## Customize the proxy
 
 `xcind-proxy init` creates `~/.config/xcind/proxy/config.sh` with the current values. The file is yours to edit:

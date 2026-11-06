@@ -2382,7 +2382,7 @@ __XCIND_SOURCED_CONFIG_FILES=()
 XCIND_BINS=()
 XCIND_WORKSPACELESS=0
 XCIND_WORKSPACE="dev"
-XCIND_APP="xesapps"
+XCIND_APP="shop"
 XCIND_PROXY_DOMAIN="example.test"
 unset XCIND_PROXY_CONFIG_DIR
 XCIND_APP_APEX_URL_TEMPLATE='{workspace}-{app}.{domain}'
@@ -2393,7 +2393,7 @@ json_apex=$(__xcind-resolve-json "$APEX_WS")
 assert_eq "JSON apex.enabled (workspace)" \
   "true" "$(echo "$json_apex" | jq -r '.apex.enabled')"
 assert_eq "JSON apex.hostname (workspace)" \
-  "dev-xesapps.example.test" "$(echo "$json_apex" | jq -r '.apex.hostname')"
+  "dev-shop.example.test" "$(echo "$json_apex" | jq -r '.apex.hostname')"
 # scheme derives from __xcind-proxy-resolve-export-tls — assert membership,
 # not a hardcoded value, so the test doesn't couple to the TLS-mode default.
 assert_eq "JSON apex.scheme in {http,https} (workspace)" \
@@ -2461,6 +2461,32 @@ assert_eq "JSON proxiedExports.api omits apex_host (empty template)" \
   "false" "$(echo "$json_apex_off" | jq -r '.proxiedExports.api | has("apex_host")')"
 
 rm -rf "$APEX_OFF_TMPL"
+
+# --- unpublishedExports map in the JSON contract ---
+UNPUB_JSON=$(mktemp_d)
+reset_xcind_state
+__XCIND_SOURCED_CONFIG_FILES=()
+XCIND_BINS=()
+XCIND_WORKSPACELESS=1
+XCIND_WORKSPACE=""
+XCIND_APP="acmeapps"
+XCIND_PROXY_DOMAIN="example.test"
+XCIND_APP_APEX_URL_TEMPLATE=""
+XCIND_PROXY_EXPORTS=("api=app:3000" "smtp=mail:1025/tcp;type=unpublished")
+
+json_unpub=$(__xcind-resolve-json "$UNPUB_JSON")
+assert_eq "JSON unpublishedExports.smtp.compose_service" \
+  "mail" "$(echo "$json_unpub" | jq -r '.unpublishedExports.smtp.compose_service')"
+assert_eq "JSON unpublishedExports.smtp.container_port is normalized" \
+  "1025" "$(echo "$json_unpub" | jq -r '.unpublishedExports.smtp.container_port')"
+assert_eq "JSON proxiedExports excludes unpublished exports" \
+  "false" "$(echo "$json_unpub" | jq -r '.proxiedExports | has("smtp")')"
+XCIND_PROXY_EXPORTS=("api=app:3000")
+json_unpub_none=$(__xcind-resolve-json "$UNPUB_JSON")
+assert_eq "JSON unpublishedExports is {} when none are declared" \
+  "{}" "$(echo "$json_unpub_none" | jq -c '.unpublishedExports')"
+
+rm -rf "$UNPUB_JSON"
 
 # --- apex disabled: non-empty template, no proxied export (assigned only) ---
 APEX_OFF_EXP=$(mktemp_d)
@@ -4740,6 +4766,15 @@ services:
     image: nginx
   db:
     image: postgres
+  api:
+    image: node
+    ports:
+      - target: 3000
+  mail:
+    image: mailpit
+    ports:
+      - target: 8025
+      - target: 1025
 YAML
 
 # Assigned-ports state backing the assigned export.
@@ -4791,10 +4826,10 @@ assert_contains "assigned host port is allocated port" \
 assert_not_contains "no workspace name when standalone" \
   "XCIND_WORKSPACE_NAME=" "$disc_yaml"
 
-# Byte-identical regression (step-01): __xcind-discovery-build-pairs is the
-# single producer of the discovery pair set, shared by this GENERATE overlay
-# (container view) and the host-view emitter. Pin the full ordered container
-# output for the standalone fixture so the extraction cannot silently drift.
+# Golden output: __xcind-discovery-build-pairs is the single producer of the
+# discovery pair set, shared by this GENERATE overlay (container view) and the
+# host-view emitter. Pin the full ordered container output for the standalone
+# fixture so the variable contract (ADR-0024) cannot silently drift.
 disc_golden=$(
   cat <<'PAIRS'
 XCIND_MYAPP_WEB_HOST=myapp-web.localhost.scind.io
@@ -4807,6 +4842,10 @@ XCIND_MYAPP_WEB_HTTPS_URL=https://myapp-web.localhost.scind.io
 XCIND_MYAPP_WEB_HTTP_HOST=myapp-web.localhost.scind.io
 XCIND_MYAPP_WEB_HTTP_PORT=80
 XCIND_MYAPP_WEB_HTTP_URL=http://myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_INTERNAL_HOST=web
+XCIND_MYAPP_WEB_INTERNAL_PORT=8080
+XCIND_MYAPP_WEB_EXTERNAL_HOST=myapp-web.localhost.scind.io
+XCIND_MYAPP_WEB_EXTERNAL_PORT=443
 XCIND_MYAPP_APEX_HOST=myapp.localhost.scind.io
 XCIND_MYAPP_APEX_PORT=443
 XCIND_MYAPP_APEX_SCHEME=https
@@ -4814,6 +4853,10 @@ XCIND_MYAPP_APEX_URL=https://myapp.localhost.scind.io
 XCIND_MYAPP_DB_HOST=db
 XCIND_MYAPP_DB_PORT=5432
 XCIND_MYAPP_DB_HOST_PORT=54320
+XCIND_MYAPP_DB_INTERNAL_HOST=db
+XCIND_MYAPP_DB_INTERNAL_PORT=5432
+XCIND_MYAPP_DB_EXTERNAL_HOST=127.0.0.1
+XCIND_MYAPP_DB_EXTERNAL_PORT=54320
 PAIRS
 )
 disc_pairs=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
@@ -4821,6 +4864,134 @@ assert_eq "discovery build-pairs container view byte-identical (standalone)" \
   "$disc_golden" "$disc_pairs"
 disc_bad_view_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" badview)
 assert_eq "discovery build-pairs rejects an unknown view" "2" "$disc_bad_view_status"
+
+# --- Proxied _INTERNAL_PORT is inferred when the entry states no port ---
+XCIND_PROXY_EXPORTS=("api")
+disc_api_pairs=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_contains "proxied internal host is the compose service" \
+  "XCIND_MYAPP_API_INTERNAL_HOST=api" "$disc_api_pairs"
+assert_contains "proxied internal port is inferred from the single mapping" \
+  "XCIND_MYAPP_API_INTERNAL_PORT=3000" "$disc_api_pairs"
+disc_api_host=$(__xcind-discovery-build-pairs "$DISC_DIR" host)
+assert_not_contains "host view has no _INTERNAL_ variables" "_INTERNAL_" "$disc_api_host"
+assert_contains "host view keeps the proxied _EXTERNAL_HOST" \
+  "XCIND_MYAPP_API_EXTERNAL_HOST=myapp-api.localhost.scind.io" "$disc_api_host"
+
+# --- Unpublished exports: container view only, no host port, no external ---
+XCIND_PROXY_EXPORTS=("mail:8025" "mail-smtp=mail:1025;type=unpublished")
+disc_unpub=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_contains "unpublished host is the compose service" \
+  "XCIND_MYAPP_MAIL_SMTP_HOST=mail" "$disc_unpub"
+assert_contains "unpublished port is the container port" \
+  "XCIND_MYAPP_MAIL_SMTP_PORT=1025" "$disc_unpub"
+assert_contains "unpublished internal host" \
+  "XCIND_MYAPP_MAIL_SMTP_INTERNAL_HOST=mail" "$disc_unpub"
+assert_contains "unpublished internal port" \
+  "XCIND_MYAPP_MAIL_SMTP_INTERNAL_PORT=1025" "$disc_unpub"
+assert_not_contains "unpublished has no host port" \
+  "XCIND_MYAPP_MAIL_SMTP_HOST_PORT=" "$disc_unpub"
+assert_not_contains "unpublished has no external address" \
+  "XCIND_MYAPP_MAIL_SMTP_EXTERNAL_" "$disc_unpub"
+assert_contains "proxied sibling on the same service keeps its own variables" \
+  "XCIND_MYAPP_MAIL_INTERNAL_PORT=8025" "$disc_unpub"
+disc_unpub_host=$(__xcind-discovery-build-pairs "$DISC_DIR" host)
+assert_not_contains "unpublished never appears in the host view" \
+  "XCIND_MYAPP_MAIL_SMTP_" "$disc_unpub_host"
+
+# Identical repeated entries collapse to one set of variables.
+XCIND_PROXY_EXPORTS=("smtp=mail:1025;type=unpublished" "smtp=mail:1025;type=unpublished")
+disc_dup=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+disc_dup_count=$(printf '%s\n' "$disc_dup" | grep -c '^XCIND_MYAPP_SMTP_HOST=' || true)
+assert_eq "identical repeated unpublished entries emit once" "1" "$disc_dup_count"
+
+# Workspace mode: unpublished host is the network alias.
+XCIND_WORKSPACELESS=0
+XCIND_WORKSPACE="dev"
+XCIND_WORKSPACE_SERVICE_TEMPLATE='{app}-{service}'
+disc_unpub_ws=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_contains "workspace unpublished host uses the alias" \
+  "XCIND_MYAPP_SMTP_HOST=myapp-mail" "$disc_unpub_ws"
+XCIND_WORKSPACELESS=1
+unset XCIND_WORKSPACE XCIND_WORKSPACE_SERVICE_TEMPLATE 2>/dev/null || true
+
+# Unpublished port must resolve: a multi-port service needs an explicit port.
+XCIND_PROXY_EXPORTS=("smtp=mail;type=unpublished")
+disc_noport_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "unpublished with an ambiguous port fails" "1" "$disc_noport_status"
+disc_noport_err=$(__xcind-discovery-build-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "ambiguous-port error asks for an explicit port" \
+  "Specify port explicitly" "$disc_noport_err"
+XCIND_PROXY_EXPORTS=("smtp=nosuch:1025;type=unpublished")
+disc_nosvc_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "unpublished with an unknown service fails" "1" "$disc_nosvc_status"
+XCIND_PROXY_EXPORTS=("smtp=mail:notaport;type=unpublished")
+disc_badport_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "unpublished with a non-numeric port fails" "1" "$disc_badport_status"
+
+# --- Prefix collisions fail generation ---
+XCIND_PROXY_EXPORTS=("mail:8025" "mail:1025;type=unpublished")
+disc_coll_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "same export name with different definitions fails" "1" "$disc_coll_status"
+disc_coll_err=$(__xcind-discovery-build-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "collision error names the shared prefix" \
+  "both produce discovery variables XCIND_MYAPP_MAIL_*" "$disc_coll_err"
+disc_coll_host_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" host)
+assert_eq "collision also fails the host view" "1" "$disc_coll_host_status"
+disc_coll_hook_status=$(capture_status xcind-discovery-hook "$DISC_DIR")
+assert_eq "collision fails the discovery hook" "1" "$disc_coll_hook_status"
+XCIND_PROXY_EXPORTS=("a-b=mail:1025;type=unpublished" "a_b=mail:1025;type=unpublished")
+disc_coll2_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "hyphen/underscore names that envify alike fail" "1" "$disc_coll2_status"
+XCIND_PROXY_EXPORTS=("web:8080" "apex=mail:1025;type=unpublished")
+disc_coll3_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "an export named apex fails while apex is active" "1" "$disc_coll3_status"
+XCIND_PROXY_EXPORTS=("db:5432;type=assigned" "db:5432;type=assigned")
+disc_samedup_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "byte-identical repeated entries are not a collision" "0" "$disc_samedup_status"
+XCIND_PROXY_EXPORTS=("web:8080" "web:8080/tcp")
+disc_tcpdup_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "entries differing only by a /tcp port suffix are not a collision" "0" "$disc_tcpdup_status"
+XCIND_PROXY_EXPORTS=("smtp=mail:1025;type=unpublished" "smtp=mail:1025;type=unpublished;tls=require")
+disc_tlsdup_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "tls= is ignored when comparing unpublished entries" "0" "$disc_tlsdup_status"
+XCIND_PROXY_EXPORTS=("web:8080" "web:8080")
+disc_webdup=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+disc_webdup_count=$(printf '%s\n' "$disc_webdup" | grep -c '^XCIND_MYAPP_WEB_HOST=' || true)
+assert_eq "identical repeated proxied entries emit each variable once" "1" "$disc_webdup_count"
+
+# Suffix overlaps: an export named api-internal produces the same variable
+# names as api's _INTERNAL_ pair, so generation fails instead of shadowing.
+XCIND_PROXY_EXPORTS=("api-internal=web:9000" "api")
+disc_sfx_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "suffix overlap (api-internal vs api) fails" "1" "$disc_sfx_status"
+disc_sfx_err=$(__xcind-discovery-build-pairs "$DISC_DIR" container 2>&1 >/dev/null || true)
+assert_contains "suffix overlap error names the variable" \
+  "XCIND_MYAPP_API_INTERNAL_HOST is produced twice" "$disc_sfx_err"
+XCIND_PROXY_EXPORTS=("db:5432;type=assigned" "db-host=web:8080")
+disc_sfx2_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "suffix overlap (db-host vs assigned db _HOST_PORT) fails" "1" "$disc_sfx2_status"
+
+# --- XCIND_HOST_ENV_ASSIGNED_HOST=hostname: external host is the hostname ---
+XCIND_PROXY_EXPORTS=("db:5432;type=assigned")
+XCIND_HOST_ENV_ASSIGNED_HOST=hostname
+disc_hn_ctr=$(__xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_contains "hostname mode: container base host stays internal" \
+  "XCIND_MYAPP_DB_HOST=db" "$disc_hn_ctr"
+assert_contains "hostname mode: container external host is the hostname" \
+  "XCIND_MYAPP_DB_EXTERNAL_HOST=myapp-db.localhost.scind.io" "$disc_hn_ctr"
+disc_hn_host=$(__xcind-discovery-build-pairs "$DISC_DIR" host)
+assert_contains "hostname mode: host view base host is the hostname" \
+  "XCIND_MYAPP_DB_HOST=myapp-db.localhost.scind.io" "$disc_hn_host"
+assert_contains "hostname mode: host view base port is the host port" \
+  "XCIND_MYAPP_DB_PORT=54320" "$disc_hn_host"
+XCIND_HOST_ENV_ASSIGNED_HOST=bogus
+disc_hn_bad_status=$(capture_status __xcind-discovery-build-pairs "$DISC_DIR" container)
+assert_eq "invalid XCIND_HOST_ENV_ASSIGNED_HOST is rejected" "2" "$disc_hn_bad_status"
+disc_hn_bad_err=$(__xcind-discovery-build-pairs "$DISC_DIR" host 2>&1 >/dev/null || true)
+assert_contains "invalid assigned-host error names the valid values" \
+  "loopback|hostname" "$disc_hn_bad_err"
+unset XCIND_HOST_ENV_ASSIGNED_HOST
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned")
 
 # Custom proxy entrypoint ports are included in URLs so *_URL remains usable.
 rm -rf "$XCIND_GENERATED_DIR"
@@ -4926,6 +5097,12 @@ assert_contains "host view proxied host stays the routable hostname (not an IP)"
   "XCIND_MYAPP_WEB_HOST=myapp-web.localhost.scind.io" "$he_host_pairs"
 assert_contains "host view apex host stays the routable hostname" \
   "XCIND_MYAPP_APEX_HOST=myapp.localhost.scind.io" "$he_host_pairs"
+assert_contains "host view assigned external host is loopback by default" \
+  "XCIND_MYAPP_DB_EXTERNAL_HOST=127.0.0.1" "$he_host_pairs"
+assert_contains "host view proxied external host is the routable hostname" \
+  "XCIND_MYAPP_WEB_EXTERNAL_HOST=myapp-web.localhost.scind.io" "$he_host_pairs"
+assert_not_contains "host view never carries _INTERNAL_ variables" \
+  "_INTERNAL_" "$he_host_pairs"
 
 # --- Workspace mode: XCIND_WORKSPACE_NAME present in host view ---
 XCIND_WORKSPACELESS=0
@@ -5040,6 +5217,36 @@ assert_eq "bad mode: hook exits non-zero" "1" "$he_bad_status"
 he_bad_err=$(__xcind-hostenv-execute-hook "$HE_DIR" 2>&1 >/dev/null || true)
 assert_contains "bad mode: error names the valid modes" "own|block" "$he_bad_err"
 assert_file_missing "bad mode writes nothing" "$HE_DIR/.env.bad"
+
+# --- hostname mode: assigned host is the URL-template hostname in the file ---
+# shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook
+XCIND_HOST_ENV_FILE=".env.hostname"
+unset XCIND_HOST_ENV_MODE 2>/dev/null || true
+XCIND_HOST_ENV_ASSIGNED_HOST=hostname
+__xcind-hostenv-execute-hook "$HE_DIR"
+he_hn_body=$(<"$HE_DIR/.env.hostname")
+assert_contains "hostname mode writes the assigned hostname" \
+  "XCIND_MYAPP_DB_HOST=myapp-db.localhost.scind.io" "$he_hn_body"
+assert_contains "hostname mode keeps the host port" \
+  "XCIND_MYAPP_DB_PORT=54320" "$he_hn_body"
+
+# --- invalid assigned-host mode fails the hook and writes nothing ---
+XCIND_HOST_ENV_FILE=".env.badhost"
+# shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook
+XCIND_HOST_ENV_ASSIGNED_HOST=bogus
+he_badhost_status=$(capture_status __xcind-hostenv-execute-hook "$HE_DIR")
+assert_eq "invalid XCIND_HOST_ENV_ASSIGNED_HOST fails the hook" "1" "$he_badhost_status"
+assert_file_missing "invalid assigned-host mode writes nothing" "$HE_DIR/.env.badhost"
+unset XCIND_HOST_ENV_ASSIGNED_HOST
+
+# --- unpublished exports never reach the host env file ---
+XCIND_HOST_ENV_FILE=".env.unpub"
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned" "smtp=web:1025;type=unpublished")
+__xcind-hostenv-execute-hook "$HE_DIR"
+he_unpub_body=$(<"$HE_DIR/.env.unpub")
+assert_not_contains "host env file omits unpublished exports" \
+  "XCIND_MYAPP_SMTP_" "$he_unpub_body"
+XCIND_PROXY_EXPORTS=("web:8080" "db:5432;type=assigned")
 
 # --- missing jq: assigned host-view files fail rather than silently omitting pairs ---
 # shellcheck disable=SC2034 # read at runtime by __xcind-hostenv-execute-hook
@@ -6100,6 +6307,7 @@ XCIND_COMPOSE_FILES=("compose.yaml")
 XCIND_PROXY_EXPORTS=(
   "web=nginx:80"
   "db=postgres:5432;type=assigned"
+  "metrics=nginx:9113;type=unpublished"
 )
 CFGEOF
 cat >"$APP_PUE_WS/webapp/compose.yaml" <<'COMPOSEEOF'
@@ -6156,6 +6364,17 @@ pue_web_type=$(printf '%s' "$pue_exports_json" | jq -r '.web.type')
 assert_eq "exports --json: web is proxied" "proxied" "$pue_web_type"
 pue_db_hostport=$(printf '%s' "$pue_exports_json" | jq -r '.db.hostPort')
 assert_eq "exports --json: db hostPort matches ports" "$pue_db_port" "$pue_db_hostport"
+assert_eq "exports --json: metrics is unpublished" "unpublished" \
+  "$(printf '%s' "$pue_exports_json" | jq -r '.metrics.type')"
+assert_eq "exports --json: metrics containerPort" "9113" \
+  "$(printf '%s' "$pue_exports_json" | jq -r '.metrics.containerPort')"
+assert_eq "ports --json: unpublished 'metrics' excluded" "false" \
+  "$(printf '%s' "$pue_ports_json" | jq -r 'has("metrics")')"
+assert_eq "urls --json: unpublished 'metrics' excluded" "false" \
+  "$(printf '%s' "$pue_urls_json" | jq -r 'has("metrics")')"
+pue_exports_text=$(cd "$PUE_APP" && "$XCIND_ROOT/bin/xcind-application" exports 2>&1)
+assert_contains "exports (text): unpublished row shows service:port" \
+  "metrics           unpublished  nginx:9113" "$pue_exports_text"
 
 # Apex reporting: this app is in a workspace, so the default apex template is
 # active and `web` is the headlining (only) proxied export.

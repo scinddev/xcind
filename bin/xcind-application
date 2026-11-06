@@ -747,7 +747,7 @@ __xcind-application-introspect() {
   trap "rm -rf '$tmpdir'" EXIT
 
   # Query config WITHOUT requesting a generated docker compose configuration.
-  # ports/urls/exports only read the assignedExports/proxiedExports maps (both
+  # ports/urls/exports only read the assigned/proxied/unpublishedExports maps (all
   # present in plain `xcind-config --json`); skipping generation keeps this a
   # read-only query that does not start the proxy or provision TLS certs as a
   # side effect — important in constrained environments (CI containers).
@@ -860,8 +860,8 @@ __xcind-application-render-scalar() {
   fi
 }
 
-# Render exports: a unified rich descriptor per export, merging assigned and
-# proxied entries keyed by export name.
+# Render exports: a unified rich descriptor per export, merging assigned,
+# proxied, and unpublished entries keyed by export name.
 __xcind-application-render-exports() {
   local xcind_json="$1" json_mode="$2" service="$3"
 
@@ -889,6 +889,14 @@ __xcind-application-render-exports() {
          then {apexUrl: .value.apex_url, apexHost: .value.apex_host}
          else {} end))
     }))
+    + ((.unpublishedExports // {}) | to_entries | map({
+      key: .key,
+      value: {
+        type: "unpublished",
+        composeService: .value.compose_service,
+        containerPort: .value.container_port
+      }
+    }))
     | from_entries')
 
   # No SERVICE: show everything.
@@ -898,12 +906,20 @@ __xcind-application-render-exports() {
       echo ""
       return 0
     fi
-    local name type target
+    # The type column is 10 wide (byte-identical with earlier releases) and
+    # widens only when an "unpublished" row needs the room.
+    local name type target type_width=10
+    if [[ $(printf '%s' "$merged" | jq -r 'any(.[]; .type == "unpublished")') == "true" ]]; then
+      type_width=13
+    fi
     while IFS=$'\t' read -r name type target; do
       [[ -z $name ]] && continue
-      printf '%-18s%-10s%s\n' "$name" "$type" "$target"
+      printf "%-18s%-${type_width}s%s\n" "$name" "$type" "$target"
     done < <(printf '%s' "$merged" | jq -r \
-      'to_entries | sort_by(.key)[] | "\(.key)\t\(.value.type)\t\(.value.hostPort // .value.apexUrl // .value.url)"')
+      'to_entries | sort_by(.key)[]
+       | "\(.key)\t\(.value.type)\t\(.value.hostPort // .value.apexUrl // .value.url
+           // (if .value.containerPort then "\(.value.composeService):\(.value.containerPort)"
+               else .value.composeService end))"')
     return 0
   fi
 

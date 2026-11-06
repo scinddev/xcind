@@ -10,15 +10,17 @@ User-facing glossary. For maintainer-level terminology, see [`engineering/produc
 | **Workspace** | A directory containing apps, marked with `XCIND_IS_WORKSPACE=1` in its own `.xcind.sh`. Apps in a workspace share a domain and an internal network. |
 | **Workspaceless** | Single-app mode (no parent workspace). |
 | **Instance** | A per-worktree isolation token (`XCIND_INSTANCE`) that disambiguates the compose project name and the workspace network — never the app name or in-network aliases. Empty on the main checkout (names unchanged); auto-derived from a linked git worktree's directory name, overridable, and disableable with `XCIND_INSTANCE_AUTO=0`. |
-| **Export** | A service:port pair that gets a hostname or stable host port. Declared in `XCIND_PROXY_EXPORTS`. |
+| **Export** | A service:port pair that Xcind publishes discovery variables for, and usually exposes (by hostname or stable host port). Declared in `XCIND_PROXY_EXPORTS`. |
 | **Proxied export** | An export whose traffic flows through Traefik by hostname (`{app}-{export}.{domain}`). The default. |
 | **Assigned export** | An export pinned to a stable host port via `type=assigned`. Bypasses Traefik. |
+| **Unpublished export** | An export declared with `type=unpublished`: containers get its discovery variables (`{service}` host + container port), but it gets no hostname, no host port, and no entry in the host-view env file. |
+| **Internal / external address** | The `_INTERNAL_HOST`/`_INTERNAL_PORT` pair is where a service is reached inside Docker (containers only). The `_EXTERNAL_HOST`/`_EXTERNAL_PORT` pair is where it is reached from outside Docker (the same value everywhere). |
 | **Hook** | A bash function that emits a generated compose overlay (`XCIND_HOOKS_GENERATE`) or runs a precondition (`XCIND_HOOKS_EXECUTE`). |
 | **Generated overlay** | A compose file produced by a hook, written to `.xcind/generated/` and passed to `docker compose -f`. Re-derived on input changes; never hand-edited. |
 | **Override file** | A sibling file with `.override` in the name (e.g. `compose.override.yaml`, `.env.override`). Picked up automatically if present. |
 | **Compose env file** | Env file passed via `--env-file` for `${VAR}` substitution in compose YAML. Listed in `XCIND_COMPOSE_ENV_FILES`. |
 | **App env file** | Env file injected into running containers via `env_file:`. Listed in `XCIND_APP_ENV_FILES`. |
-| **Host-view env file** | An opt-in dotenv file (`XCIND_HOST_ENV_FILE`) holding the service-discovery variables with host-flavored values for assigned exports (`127.0.0.1` + the assigned host port), so host-run processes resolve the same endpoints containers do. Proxied/apex hosts stay their routable hostname. |
+| **Host-view env file** | An opt-in dotenv file (`XCIND_HOST_ENV_FILE`) holding the service-discovery variables with host-flavored values for assigned exports (`127.0.0.1`, or a hostname with `XCIND_HOST_ENV_ASSIGNED_HOST=hostname`, + the assigned host port), so host-run processes resolve the same endpoints containers do. Proxied/apex hosts stay their routable hostname. |
 | **Bin** | A command inside a service container, declared in `XCIND_BINS`, run by `xcind-run` and exposed to IDE integrations. The reserved name `__default` declares the fallback service for unknown `xcind-run` names. |
 | **Script** | A named step list declared in `XCIND_SCRIPTS` and run by `xcind-run`. |
 | **Step** | One line of a script: a `@bin`/`@script` reference, an `@exec`/`@run`/`@compose` keyword, or a host command. |
