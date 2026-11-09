@@ -56,6 +56,17 @@ XCIND_PROXY_EXPORTS=(
 )
 ```
 
+`XCIND_ENV_MAP` gives discovery values your own names. Each entry is `KEY=template`; a template is literal text plus `${XCIND_...}` references, expanded separately for containers and for the host env file:
+
+```bash
+XCIND_ENV_MAP+=(
+    'DATABASE_HOST=${XCIND_SHOP_DATABASE_HOST}'
+    'DATABASE_URL=mysql://root@${XCIND_SHOP_DATABASE_HOST}:${XCIND_SHOP_DATABASE_PORT}/shop'
+)
+```
+
+Use single quotes. Any other `$` is an error, so is a backslash, a backtick, or a control character (including a newline), a key cannot start with `XCIND_`, and a reference that exists in neither view fails. See [Environment files](../guides/env-files.md#app-defined-names-xcind_env_map).
+
 Walkthrough: [Set up the Traefik proxy](../guides/proxy-setup.md). To serve
 apps through a Traefik that already runs on the host (e.g. Coolify's), see
 [Use an existing Traefik (external mode)](../guides/proxy-setup.md#use-an-existing-traefik-external-mode).

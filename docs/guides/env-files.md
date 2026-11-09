@@ -87,6 +87,25 @@ When you need a specific side regardless of where the code runs, use the explici
 - `XCIND_{APP}_{EXPORT}_INTERNAL_HOST` / `_INTERNAL_PORT` — the address inside Docker (the `{app}-{service}` alias in a workspace, else the compose service name, + the container port). Containers only.
 - `XCIND_{APP}_{EXPORT}_EXTERNAL_HOST` / `_EXTERNAL_PORT` — the address outside Docker. The same value in containers and in the host file, so a container can tell a browser or a developer how to reach a service.
 
+### App-defined names (`XCIND_ENV_MAP`)
+
+The dotenv expression above works only in a process that loads the dotenv file with expansion. A database CLI, a Node service, or a shell script in the same container sees the literal text. `XCIND_ENV_MAP` replaces it: Xcind does the expansion and injects plain values, so every process reads your names.
+
+```bash
+# .xcind.sh
+XCIND_ENV_MAP+=(
+    'DATABASE_HOST=${XCIND_SHOP_DATABASE_HOST}'
+    'DATABASE_URL=mysql://root@${XCIND_SHOP_DATABASE_HOST}:${XCIND_SHOP_DATABASE_PORT}/shop'
+)
+```
+
+- **Single quotes are required.** Without them the shell that sources `.xcind.sh` expands the `${...}` first.
+- Each entry is expanded once per view. `DATABASE_HOST` is `database` in a container and `127.0.0.1` in the host env file (with `XCIND_HOST_ENV_FILE` set).
+- Only `${XCIND_NAME}` references are allowed. Any other `$` is an error, and so is a reference that exists in neither view (a typo, or another app's variable).
+- A backslash, a backtick, or a control character (including a newline) in an entry is an error.
+- A mapping that uses an unpublished export or an `_INTERNAL_*` variable is left out of the host file.
+- A key cannot start with `XCIND_`. A mapped key overrides the same key in your compose `environment:` or `env_file:`, so remove the old dotenv line.
+
 ### Use a hostname instead of 127.0.0.1
 
 If your proxy domain resolves to the Docker host — for example a wildcard DNS record that points at the machine running Docker — you can write hostnames for assigned exports instead of `127.0.0.1`:

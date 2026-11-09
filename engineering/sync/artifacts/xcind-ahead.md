@@ -9,7 +9,7 @@ DIVERGENCE-must-be-earned, §5 Go/Bash exclusion), [`correspondence-map.md`](./c
 of `bin/xcind-*` + `lib/xcind/*.bash`.
 **Feeds**: P6 (PROMOTE → propose a Scind change), P7 (DIVERGENCE → registry),
 P3 (one apex row handed back).
-**Machine companion**: [`xcind-ahead.json`](./xcind-ahead.json) (45 capability records + 2 reverse gaps).
+**Machine companion**: [`xcind-ahead.json`](./xcind-ahead.json) (46 capability records + 2 reverse gaps).
 
 > **Supplement (2026-07-15) — human product-calls folded in.** After the initial
 > synthesis, three human product-calls were received; they **override** the
@@ -62,13 +62,13 @@ Bash-flavored, we promote the concept and note the mechanism as excluded.
 
 | Recommendation | Count |
 |----------------|------:|
-| **PROMOTE** (→ P6) | **20** |
+| **PROMOTE** (→ P6) | **22** |
 | **DIVERGENCE** (→ P7) | **13** |
 | **ESCALATE** (human call) | **11** |
-| **Total capabilities** | **44** |
+| **Total capabilities** | **46** |
 | Reverse gaps (Xcind *behind*; → P5/P3, out of scope) | 2 |
 
-*(Counts include the two supplement PROMOTE rows XA-0043/XA-0044.)*
+*(Counts include the two supplement PROMOTE rows XA-0043/XA-0044 and the post-sync rows XA-0045/XA-0046.)*
 
 **Not filed here (owned elsewhere):** the core `XCIND_INSTANCE` per-worktree
 isolation token and its auto-detection — global-context §2a Example B already rules
@@ -79,7 +79,7 @@ here, and they are handed back to P3 (XA-0025).
 
 ---
 
-## PROMOTE — 21 capabilities Scind should adopt (18 base + 2 supplement: XA-0043, XA-0044 + 1 post-sync: XA-0045)
+## PROMOTE — 22 capabilities Scind should adopt (18 base + 2 supplement: XA-0043, XA-0044 + 2 post-sync: XA-0045, XA-0046)
 
 Each names a target Scind change for P6.
 
@@ -132,6 +132,7 @@ Each names a target Scind change for P6.
 | ID | Capability | Target Scind change |
 |----|-----------|---------------------|
 | **XA-0045** | **Internal/external discovery pairs + `unpublished` port type (ADR-0024)** — every export carries `_INTERNAL_HOST/_PORT` (in-network alias + container port, container view only) and view-invariant `_EXTERNAL_HOST/_PORT`; a third port type `unpublished` gives containers discovery variables with no proxy route and no host port; an opt-in hostname mode for the assigned external host in the host-view env file; prefix collisions fail generation. Scind has two port types, no in-network variables for proxied exports, and leaves name collisions undefined. **Self-flagged PROMOTE in ADR-0024.** | Add `_INTERNAL_*`/`_EXTERNAL_*` to `environment-variables.md`; add `type: unpublished` to `port-types.md`/`configuration-schemas.md`; add the external-host mode to the host-view env file (Scind ADR-0015); specify the collision error. Reconcile Scind ADR-0002 ("protected services remain internal") with advisory `visibility`. |
+| **XA-0046** | **App-defined names for discovery variables (`XCIND_ENV_MAP`, ADR-0025)** — `KEY=template` entries over `${XCIND_*}` references, expanded separately for the container view (`compose.discovery.yaml`) and the host view (host env file), with strict syntax (any other `$` is an error), reserved `XCIND_` keys, per-view drop of references that exist in only one view, and an error when a reference exists in neither. Scind has no way for an application to name discovery values. **Self-flagged PROMOTE in ADR-0025.** | Add an `env_map:` block to `application.yaml` with `${SCIND_*}` references and the same rules; document it in `environment-variables.md` and `configuration-schemas.md`; render it in both the generated `environment:` block and the host-view env file (Scind ADR-0015). |
 
 ---
 

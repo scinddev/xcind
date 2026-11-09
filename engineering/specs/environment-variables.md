@@ -11,7 +11,7 @@ Xcind exposes export hostnames, ports, and URLs to applications two ways:
 1. **Injected discovery variables** (`xcind-discovery-hook` → `compose.discovery.yaml`) — an `environment:` block of `XCIND_{APP}_{EXPORT}_*` variables added to every container of the current app, so application code can read its own service hostnames at runtime without hardcoding them.
 2. **Docker labels** (`xcind-proxy-hook` → `compose.proxy.yaml`) — the same hostname/URL information as labels, for external tooling that inspects containers.
 
-This document covers both. See [ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the injection design and [ADR-0024](../decisions/0024-internal-external-discovery-and-unpublished-exports.md) for the internal/external pairs and unpublished exports.
+This document covers both. See [ADR-0018](../decisions/0018-service-discovery-env-injection.md) for the injection design and [ADR-0024](../decisions/0024-internal-external-discovery-and-unpublished-exports.md) for the internal/external pairs and unpublished exports, and [ADR-0025](../decisions/0025-discovery-env-map.md) for `XCIND_ENV_MAP`.
 
 ---
 
@@ -134,6 +134,61 @@ curl "http://${XCIND_MYAPP_WEB_INTERNAL_HOST}:${XCIND_MYAPP_WEB_INTERNAL_PORT}/h
 
 When `XCIND_PROXY_HTTP_PORT` or `XCIND_PROXY_HTTPS_PORT` is customized away
 from `80` or `443`, the matching URL variables include the explicit port.
+
+### App-defined names (`XCIND_ENV_MAP`)
+
+`XCIND_ENV_MAP` lets an application name discovery values itself
+([ADR-0025](../decisions/0025-discovery-env-map.md)). Each entry is
+`KEY=template`:
+
+```bash
+XCIND_ENV_MAP+=(
+  'DATABASE_HOST=${XCIND_MYAPP_DB_HOST}'
+  'DATABASE_URL=mysql://root@${XCIND_MYAPP_DB_HOST}:${XCIND_MYAPP_DB_PORT}/shop'
+)
+```
+
+Use single quotes so the shell that sources the config file does not expand the
+references.
+
+- **Rendering.** Xcind expands each template against the pair set of each view
+  and appends the result after the `XCIND_*` variables: to the `environment:`
+  block of every service in `compose.discovery.yaml` (container view) and to the
+  `XCIND_HOST_ENV_FILE` body (host view). One template gives each view its own
+  value.
+- **Template syntax.** Literal text plus `${XCIND_NAME}` references
+  (`NAME` matches `[A-Z0-9_]+`). Any other `$` is an error: `$NAME`, `${OTHER}`,
+  `${XCIND_X:-default}`, `$(...)`, a lone `$`. There is no shell evaluation and
+  no recursion, so a template cannot reference another mapped key. No rendered
+  value contains `$`. A template with no reference renders as a constant in both
+  views.
+- **Keys.** A key matches `[A-Za-z_][A-Za-z0-9_]*`. A key that starts with
+  `XCIND_` is an error. Byte-identical repeated entries are emitted once; the
+  same key with two different templates is an error.
+- **Missing references.** A reference that is absent from one view drops the
+  entry from that view only (for example, an unpublished export or an
+  `_INTERNAL_*` variable is absent from the host file). A reference that is
+  absent from both views fails generation with an error that names the entry
+  and the reference (a typo, or another app's variable: discovery is own-app
+  only).
+- **Forbidden characters.** A backslash, a backtick, or any control character
+  (including a newline) in an entry is an error: a newline would split one entry
+  into several env entries, and loaders and shells read a backslash or backtick
+  differently.
+- **Errors** are written to stderr with the prefix `xcind: XCIND_ENV_MAP`. The
+  discovery hook validates the map syntax (keys, templates, forbidden
+  characters, repeats) on every run, before it checks for `yq`, so a syntax error
+  fails generation even where the overlay is skipped. Reference resolution needs
+  the pair sets and runs whenever either hook renders. A map error fails the
+  hook that finds it and writes no file.
+- **Precedence.** The discovery overlay is merged last, so a mapped key
+  overrides the same key in the app's own `environment:` or `env_file:`. In
+  `block` mode of the host file, keep mapped keys out of the rest of the file.
+- **Freshness.** Both hooks run on every invocation, so values that use
+  `_HOST_PORT` or `_EXTERNAL_PORT` follow live assigned-port state.
+
+One shared builder (`__xcind-discovery-build-mapped-pairs`) computes both views,
+so the two callers apply the same rules.
 
 ---
 

@@ -260,6 +260,9 @@ The `--json` output follows the contract expected by the xcind JetBrains plugin:
     "hostname": "my-workspace-my-app.example.test",
     "url": "https://my-workspace-my-app.example.test",
     "scheme": "https"
+  },
+  "envMap": {
+    "DATABASE_HOST": "${XCIND_MY_APP_DB_HOST}"
   }
 }
 ```
@@ -273,6 +276,8 @@ The `assignedExports` object is keyed by export name. Each entry includes `compo
 The `proxiedExports` object is keyed by export name. Each entry includes `compose_service`, `container_port` (`null` when it cannot be inferred), `url` (the per-export hostname URL, computed from `XCIND_APP_URL_TEMPLATE`), and `tls` (the declared per-export mode). It is `{}` when the app declares no `type=proxied` exports. The **first** proxied export — the apex anchor — additionally carries `apex_url` and `apex_host`: the shorter canonical URL/host that actually serves the app's traffic (present only when an apex template is configured). Other proxied exports omit these keys. Consumers should prefer `apex_url` over `url` for the headlining export; `xcind-application urls`/`exports` do exactly this.
 
 The `unpublishedExports` object is keyed by export name. Each entry includes `compose_service` and `container_port` (`null` when it cannot be inferred). It is `{}` when the app declares no `type=unpublished` exports. These exports have no URL and no host port, so `xcind-application ports`/`urls` omit them; `xcind-application exports` lists them with `type: "unpublished"`.
+
+The `envMap` object holds the `XCIND_ENV_MAP` templates, keyed by mapped name, with the raw unexpanded template text as the value (see [`XCIND_ENV_MAP`](./configuration.md#xcind_env_map)). It shows what is declared and does not validate: for a key declared twice with different templates it shows the last one, and generation reports the conflict. It is `{}` when `XCIND_ENV_MAP` is unset or empty.
 
 The `apex` object describes the app's apex host derived from the shared proxy backend. It is **always present**: when an apex is available (`XCIND_APP_APEX_URL_TEMPLATE` is set and the app has at least one `type=proxied` export), `enabled` is `true` and `hostname`/`url`/`scheme` are populated; otherwise `enabled` is `false` and `hostname`/`url`/`scheme` are `null` (present-but-null, never omitted, so consumers can read `.apex.enabled` and `.apex.hostname` without existence checks). `url` is `scheme://hostname`; `scheme` is `http` or `https`.
 

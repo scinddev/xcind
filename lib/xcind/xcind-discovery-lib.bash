@@ -33,6 +33,11 @@
 #   Workspace mode:
 #     XCIND_WORKSPACE_NAME       the workspace name
 #
+# App-defined names (ADR-0025): each XCIND_ENV_MAP entry KEY=template is expanded
+# against the pair set of each view (see __xcind-discovery-build-mapped-pairs)
+# and appended after the XCIND_* variables, here for every service and in the
+# host env file for the host view.
+#
 # This file is auto-sourced by xcind-lib.bash. The hook is registered in
 # XCIND_HOOKS_GENERATE (last, after xcind-assigned-hook so host ports are
 # already allocated) and in XCIND_HOOKS_ALWAYS, because _HOST_PORT embeds live
@@ -418,6 +423,162 @@ __xcind-discovery-build-pairs() {
 }
 
 # --------------------------------------------------------------------------
+# App-defined names (XCIND_ENV_MAP, ADR-0025)
+# --------------------------------------------------------------------------
+
+# Expand one XCIND_ENV_MAP template against a pair set by scanning the string.
+# No shell evaluation: only `${XCIND_[A-Z0-9_]+}` references are recognized and
+# any other `$` is a syntax error.
+#   $1 template, $2 pair set (newline-separated KEY=VALUE lines)
+# Sets __XCIND_ENVMAP_VALUE (expanded text) and, when a reference is absent
+# from the pair set, __XCIND_ENVMAP_MISSING (first missing reference name).
+# Returns 0 on success, 1 when a reference is missing, 2 on a syntax error.
+__xcind-discovery-envmap-expand() {
+  local rest="$1" pairs="$2"
+  local nl=$'\n'
+  local haystack="${nl}${pairs}${nl}"
+  local out="" name val missing=""
+  __XCIND_ENVMAP_VALUE="" __XCIND_ENVMAP_MISSING=""
+  while [[ $rest == *'$'* ]]; do
+    out+="${rest%%\$*}"
+    rest="${rest#*\$}"
+    if [[ $rest =~ ^\{(XCIND_[A-Z0-9_]+)\} ]]; then
+      name="${BASH_REMATCH[1]}"
+      rest="${rest#\{"$name"\}}"
+      if [[ $haystack == *"${nl}${name}="* ]]; then
+        val="${haystack#*"${nl}${name}="}"
+        val="${val%%"$nl"*}"
+        out+="$val"
+      elif [[ -z $missing ]]; then
+        missing="$name"
+      fi
+    else
+      return 2
+    fi
+  done
+  out+="$rest"
+  __XCIND_ENVMAP_VALUE="$out"
+  __XCIND_ENVMAP_MISSING="$missing"
+  [[ -z $missing ]] || return 1
+  return 0
+}
+
+# Validate XCIND_ENV_MAP syntax only (keys, templates, forbidden characters,
+# repeats). Needs no pair sets, so callers can run it before any other work.
+# On success sets the globals __XCIND_ENVMAP_KEYS, __XCIND_ENVMAP_TMPLS and
+# __XCIND_ENVMAP_ENTRIES (parallel arrays, byte-identical repeats removed).
+# Errors go to stderr prefixed `xcind: XCIND_ENV_MAP`; returns 1 on error.
+# Prints nothing and succeeds when the map is unset or empty.
+__xcind-discovery-validate-env-map() {
+  __XCIND_ENVMAP_KEYS=() __XCIND_ENVMAP_TMPLS=() __XCIND_ENVMAP_ENTRIES=()
+  [[ -n ${XCIND_ENV_MAP+set} && ${#XCIND_ENV_MAP[@]} -gt 0 ]] || return 0
+
+  local entry key tmpl i dup rc shown bs=$'\\'
+  for entry in "${XCIND_ENV_MAP[@]}"; do
+    # Control characters (newline, CR, ...) would split one entry into several
+    # env entries; backslash and backtick are read differently by dotenv
+    # loaders and shells. Show the entry with %q so it prints safely.
+    if [[ $entry == *[[:cntrl:]]* || $entry == *"$bs"* || $entry == *'`'* ]]; then
+      shown=$(printf '%q' "$entry")
+      echo "xcind: XCIND_ENV_MAP entry $shown contains a control character, backslash, or backtick, which is not allowed" >&2
+      return 1
+    fi
+    if [[ $entry != *=* ]]; then
+      echo "xcind: XCIND_ENV_MAP entry '$entry' is not KEY=template" >&2
+      return 1
+    fi
+    key="${entry%%=*}"
+    tmpl="${entry#*=}"
+    if [[ ! $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      echo "xcind: XCIND_ENV_MAP entry '$entry' has an invalid key '$key' (expected [A-Za-z_][A-Za-z0-9_]*)" >&2
+      return 1
+    fi
+    if [[ $key == XCIND_* ]]; then
+      echo "xcind: XCIND_ENV_MAP entry '$entry' has a key that starts with XCIND_, which is reserved for discovery variables" >&2
+      return 1
+    fi
+    rc=0
+    __xcind-discovery-envmap-expand "$tmpl" "" || rc=$?
+    if [[ $rc -eq 2 ]]; then
+      echo "xcind: XCIND_ENV_MAP entry '$entry' has a '\$' that is not a \${XCIND_NAME} reference (only \${XCIND_[A-Z0-9_]+} is allowed)" >&2
+      return 1
+    fi
+    dup=false
+    for ((i = 0; i < ${#__XCIND_ENVMAP_KEYS[@]}; i++)); do
+      [[ ${__XCIND_ENVMAP_KEYS[$i]} == "$key" ]] || continue
+      if [[ ${__XCIND_ENVMAP_TMPLS[$i]} == "$tmpl" ]]; then
+        dup=true
+        break
+      fi
+      echo "xcind: XCIND_ENV_MAP entries '${__XCIND_ENVMAP_ENTRIES[$i]}' and '$entry' define key '$key' with different templates" >&2
+      return 1
+    done
+    [[ $dup == true ]] && continue
+    __XCIND_ENVMAP_KEYS+=("$key")
+    __XCIND_ENVMAP_TMPLS+=("$tmpl")
+    __XCIND_ENVMAP_ENTRIES+=("$entry")
+  done
+  return 0
+}
+
+# Build the XCIND_ENV_MAP pairs for an app under a view (container|host).
+#   __xcind-discovery-build-mapped-pairs <app_root> <view> [<own_view_pairs>]
+# Prints one KEY=VALUE per line. Computes BOTH views so the rules are applied
+# identically by both callers: an entry whose reference is missing from one view
+# is dropped from that view only; missing from both views is an error. Errors go
+# to stderr prefixed `xcind: XCIND_ENV_MAP` and return 1 (2 for an invalid view).
+# Prints nothing when XCIND_ENV_MAP is unset or empty.
+# The optional third argument is the caller's already-built pair set for <view>
+# (the output of __xcind-discovery-build-pairs); when given, only the other view
+# is built.
+__xcind-discovery-build-mapped-pairs() {
+  local app_root="$1" view="${2:-container}"
+  case "$view" in
+  container | host) ;;
+  *)
+    echo "xcind: invalid discovery view '$view' (expected: container|host)" >&2
+    return 2
+    ;;
+  esac
+
+  __xcind-discovery-validate-env-map || return 1
+  [[ ${#__XCIND_ENVMAP_KEYS[@]} -gt 0 ]] || return 0
+
+  local container_pairs host_pairs
+  if [[ $view == container ]]; then
+    if [[ $# -ge 3 ]]; then container_pairs="$3"; else
+      container_pairs=$(__xcind-discovery-build-pairs "$app_root" container) || return 1
+    fi
+    host_pairs=$(__xcind-discovery-build-pairs "$app_root" host) || return 1
+  else
+    if [[ $# -ge 3 ]]; then host_pairs="$3"; else
+      host_pairs=$(__xcind-discovery-build-pairs "$app_root" host) || return 1
+    fi
+    container_pairs=$(__xcind-discovery-build-pairs "$app_root" container) || return 1
+  fi
+
+  local i tmpl rc_c rc_h val_c val_h miss_c miss_h
+  for ((i = 0; i < ${#__XCIND_ENVMAP_KEYS[@]}; i++)); do
+    tmpl="${__XCIND_ENVMAP_TMPLS[$i]}"
+    rc_c=0 rc_h=0
+    __xcind-discovery-envmap-expand "$tmpl" "$container_pairs" || rc_c=$?
+    val_c="$__XCIND_ENVMAP_VALUE" miss_c="$__XCIND_ENVMAP_MISSING"
+    __xcind-discovery-envmap-expand "$tmpl" "$host_pairs" || rc_h=$?
+    val_h="$__XCIND_ENVMAP_VALUE" miss_h="$__XCIND_ENVMAP_MISSING"
+    if [[ $rc_c -ne 0 && $rc_h -ne 0 ]]; then
+      echo "xcind: XCIND_ENV_MAP entry '${__XCIND_ENVMAP_ENTRIES[$i]}' references \${${miss_c:-$miss_h}}, which is not defined in either the container or the host view" >&2
+      return 1
+    fi
+    if [[ $view == container ]]; then
+      [[ $rc_c -eq 0 ]] && printf '%s=%s\n' "${__XCIND_ENVMAP_KEYS[$i]}" "$val_c"
+    else
+      [[ $rc_h -eq 0 ]] && printf '%s=%s\n' "${__XCIND_ENVMAP_KEYS[$i]}" "$val_h"
+    fi
+  done
+  return 0
+}
+
+# --------------------------------------------------------------------------
 # Hook Function
 # --------------------------------------------------------------------------
 
@@ -426,6 +587,10 @@ __xcind-discovery-build-pairs() {
 # for all services.
 xcind-discovery-hook() {
   local app_root="$1"
+
+  # Validate the XCIND_ENV_MAP syntax first, so a map error fails generation
+  # even where the overlay is skipped below (no yq, no resolved config).
+  __xcind-discovery-validate-env-map || return 1
 
   # yq is required for service enumeration; record and soft-skip if missing.
   # The consolidated summary is emitted by __xcind-run-hooks at the end of the
@@ -451,6 +616,13 @@ xcind-discovery-hook() {
   while IFS= read -r _pair; do
     [[ -n $_pair ]] && env_lines+=("$_pair")
   done <<<"$pairs"
+
+  # Append app-defined names (XCIND_ENV_MAP, ADR-0025) after the XCIND_* pairs.
+  local mapped
+  mapped=$(__xcind-discovery-build-mapped-pairs "$app_root" container "$pairs") || return 1
+  while IFS= read -r _pair; do
+    [[ -n $_pair ]] && env_lines+=("$_pair")
+  done <<<"$mapped"
 
   # Nothing to inject (no exports, not in a workspace).
   if [[ ${#env_lines[@]} -eq 0 ]]; then
