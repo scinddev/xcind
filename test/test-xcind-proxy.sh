@@ -35,8 +35,11 @@ echo "=== Test: xcind-proxy init (mock HOME) ==="
 # write to the real ~/.config/xcind/proxy, clobbering live state.
 unset XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME
 
-# Use a temp dir as HOME to avoid touching real config
-REAL_HOME="$HOME"
+# Use a temp dir as HOME to avoid touching real config. REAL_HOME is a
+# sandbox too, not the developer's HOME: later blocks "restore" HOME to
+# it, and with XDG_STATE_HOME unset above, workspace discovery under the
+# real HOME would append test fixtures to the real workspace registry.
+REAL_HOME=$(mktemp_d)
 MOCK_HOME=$(mktemp_d)
 export HOME="$MOCK_HOME"
 

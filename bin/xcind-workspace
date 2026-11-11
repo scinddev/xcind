@@ -806,24 +806,29 @@ __xcind-workspace-list() {
       echo "Error: jq is required for --json output." >&2
       exit 1
     fi
-    local parts=() idx
+    # Stream one TSV row per workspace into a single jq on stdin. Passing
+    # the assembled array through --argjson fails once it exceeds the
+    # kernel's per-argument limit (MAX_ARG_STRLEN, 128 KiB on Linux) —
+    # reachable with a couple thousand registry entries — and one jq
+    # spawn per row is slow at that size. Registry paths cannot contain
+    # tabs or newlines (the registry is itself TSV).
+    local idx
     for idx in "${sorted_indices[@]+"${sorted_indices[@]}"}"; do
-      parts+=("$(jq -n \
-        --arg name "${names[$idx]}" \
-        --arg path "${paths[$idx]}" \
-        --arg domain "${domains[$idx]}" \
-        --argjson apps "${apps_counts[$idx]}" \
-        --argjson stale "${stale_flags[$idx]}" \
-        '{name: $name, path: $path, domain: $domain, apps: $apps, stale: $stale}')")
-    done
-    local workspaces_json="[]"
-    if [[ ${#parts[@]} -gt 0 ]]; then
-      workspaces_json=$(printf '%s\n' "${parts[@]}" | jq -s .)
-    fi
-    jq -n \
-      --argjson workspaces "$workspaces_json" \
+      printf '%s\t%s\t%s\t%s\t%s\n' \
+        "${names[$idx]}" "${paths[$idx]}" "${domains[$idx]}" \
+        "${apps_counts[$idx]}" "${stale_flags[$idx]}"
+    done | jq -nR \
       --argjson stale_count "$stale_count" \
-      '{workspaces: $workspaces, stale_count: $stale_count}'
+      '{
+        workspaces: [inputs | split("\t") | {
+          name: .[0],
+          path: .[1],
+          domain: .[2],
+          apps: (.[3] | tonumber),
+          stale: (.[4] == "true")
+        }],
+        stale_count: $stale_count
+      }'
     return 0
   fi
 

@@ -12,6 +12,19 @@
 _XCIND_TEST_TMPROOT=$(mktemp -d)
 export _XCIND_TEST_TMPROOT
 
+# Isolate the workspace registry. Workspace discovery auto-registers
+# every workspace it finds, so without this each test run appends its
+# tempdir fixtures to the developer's real
+# ~/.local/state/xcind/workspaces.tsv. Exporting XDG_STATE_HOME covers
+# child bin/xcind-* processes; the registry globals are rebound because
+# xcind-lib.bash is sourced (and computes them) before this file. Tests
+# that need their own registry still override XDG_STATE_HOME per call.
+export XDG_STATE_HOME="$_XCIND_TEST_TMPROOT/state"
+XCIND_REGISTRY_DIR="$XDG_STATE_HOME/xcind"
+XCIND_REGISTRY_FILE="$XCIND_REGISTRY_DIR/workspaces.tsv"
+XCIND_REGISTRY_LOCK="$XCIND_REGISTRY_DIR/workspaces.lock"
+export XCIND_REGISTRY_DIR XCIND_REGISTRY_FILE XCIND_REGISTRY_LOCK
+
 mktemp_d() {
   # Use the explicit-template form so we work on BSD mktemp (macOS) as
   # well as GNU coreutils; BSD mktemp has no `-p` / `--tmpdir` flag.
