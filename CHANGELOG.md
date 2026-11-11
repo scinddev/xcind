@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2] - 2026-11-11
+
+### Added
+
+- feat(discovery): internal/external pairs and type=unpublished exports (#100) by @simensen in [#100](https://github.com/scinddev/xcind/pull/100)
+- feat(discovery): XCIND_ENV_MAP — app-defined names for discovery variables (#101) by @simensen in [#101](https://github.com/scinddev/xcind/pull/101)
+
+### Fixed
+
+- fix(workspace): list --json past the argument size limit; isolate test registry (#102) by @simensen in [#102](https://github.com/scinddev/xcind/pull/102)
+
+### Maintenance
+
+- chore: drop macos-14 (#103) by @simensen in [#103](https://github.com/scinddev/xcind/pull/103)
 ## [0.8.1] - 2026-09-16
 
 ### Added
